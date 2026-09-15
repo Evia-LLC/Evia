@@ -1,0 +1,27 @@
+{
+ "text": "Steady. I'm mid-thought.",
+ "words": [
+  {
+   "word": "Steady.",
+   "charIndex": 0,
+   "charLength": 7,
+   "start": 0,
+   "end": 0.592
+  },
+  {
+   "word": "I'm",
+   "charIndex": 8,
+   "charLength": 3,
+   "start": 0.627,
+   "end": 0.731
+  },
+  {
+   "word": "mid-thought.",
+   "charIndex": 12,
+   "charLength": 12,
+   "start": 0.755,
+   "end": 1.44
+  }
+ ],
+ "duration": 1.44
+}

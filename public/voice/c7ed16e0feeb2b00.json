@@ -1,0 +1,27 @@
+{
+ "text": "I saw that.",
+ "words": [
+  {
+   "word": "I",
+   "charIndex": 0,
+   "charLength": 1,
+   "start": 0,
+   "end": 0.209
+  },
+  {
+   "word": "saw",
+   "charIndex": 2,
+   "charLength": 3,
+   "start": 0.29,
+   "end": 0.476
+  },
+  {
+   "word": "that.",
+   "charIndex": 6,
+   "charLength": 5,
+   "start": 0.534,
+   "end": 0.975
+  }
+ ],
+ "duration": 0.975
+}

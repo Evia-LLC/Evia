@@ -1,0 +1,81 @@
+/**
+ * Static assets the build can fetch instead of receiving.
+ *
+ * The painted character, the demo loops, the backdrops and the small art are
+ * binary, unchanging and ~1.7 MB together. They live in `public/` and are
+ * served from our own origin — that does not change. What this script changes
+ * is how they reach a build machine: a deploy uploaded through Netlify's MCP
+ * proxy is cut off after about 35 seconds, and on a slow connection that is
+ * a few megabytes, so the source zip has to be small. Any file listed in
+ * `scripts/static-assets.json` that is missing locally is downloaded from the
+ * last published deploy and verified against its recorded SHA-256 before it
+ * is written. A mismatch fails the build; nothing unverified is ever served.
+ *
+ * On a developer machine every file is already present and this is a no-op.
+ *
+ * Her fixed voice lines are handled the same way but generated rather than
+ * fetched: if `public/voice/manifest.json` is missing and the voice key and id
+ * are in the environment, `voice-lines-synth.mjs` synthesises them (about 800
+ * characters, once per build). Without a key they are skipped and the server
+ * speaks the lines on demand instead.
+ *
+ * Runs from `prebuild` after `sync-mediapipe.mjs`. By hand:
+ *
+ *   node scripts/fetch-static.mjs
+ *
+ * `ELOHIM_ASSET_ORIGIN` overrides where files are fetched from.
+ */
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const origin = (process.env.ELOHIM_ASSET_ORIGIN || 'https://elohim-consultant.netlify.app').replace(/\/$/, '');
+
+/** @type {Array<{ path: string; sha256: string; bytes: number }>} */
+/*
+ * 2026-09-16: the asset list is now EMPTY on purpose. It existed for the era
+ * when deploys were a hand-carried zip too small to hold the art, and the
+ * build refetched the art from the previous deploy by hash. Deploys ship the
+ * art with the source now - and the old list, frozen on 2026-09-07, spent a
+ * day silently reverting the rebaked character manifest and the repainted
+ * focused eyes to their September versions on every build. A hash list that
+ * can override the working tree must never outlive the reason it existed.
+ */
+const wanted = JSON.parse(fs.readFileSync(path.join(root, 'scripts', 'static-assets.json'), 'utf8'));
+
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+
+let present = 0;
+let fetched = 0;
+for (const asset of wanted) {
+  const target = path.join(root, 'public', ...asset.path.split('/'));
+  if (fs.existsSync(target) && fs.statSync(target).size === asset.bytes) {
+    present++;
+    continue;
+  }
+  const url = `${origin}/${asset.path}`;
+  const res = await fetch(url, { headers: { accept: '*/*' } });
+  if (!res.ok) throw new Error(`fetch-static: ${url} -> HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const got = sha256(buf);
+  if (got !== asset.sha256) {
+    throw new Error(`fetch-static: ${asset.path} hash mismatch (expected ${asset.sha256.slice(0, 12)}…, got ${got.slice(0, 12)}…). Put the file in the upload instead.`);
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, buf);
+  fetched++;
+}
+console.log(`static assets: ${present} present, ${fetched} fetched from ${origin}`);
+
+const voiceManifest = path.join(root, 'public', 'voice', 'manifest.json');
+if (fs.existsSync(voiceManifest)) {
+  console.log('voice lines already present');
+} else if (process.env.ELOHIM_VOICE_API_KEY && process.env.ELOHIM_VOICE_ID) {
+  console.log('voice lines missing; synthesising them in her voice');
+  execFileSync(process.execPath, [path.join(root, 'scripts', 'voice-lines-synth.mjs')], { stdio: 'inherit' });
+} else {
+  console.log('voice lines missing and no voice key in the environment; the server will speak them on demand');
+}

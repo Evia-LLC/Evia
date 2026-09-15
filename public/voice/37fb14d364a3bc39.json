@@ -1,0 +1,55 @@
+{
+ "text": "Careful — that's what I read with.",
+ "words": [
+  {
+   "word": "Careful",
+   "charIndex": 0,
+   "charLength": 7,
+   "start": 0,
+   "end": 0.43
+  },
+  {
+   "word": "—",
+   "charIndex": 8,
+   "charLength": 1,
+   "start": 0.453,
+   "end": 0.499
+  },
+  {
+   "word": "that's",
+   "charIndex": 10,
+   "charLength": 6,
+   "start": 0.522,
+   "end": 0.685
+  },
+  {
+   "word": "what",
+   "charIndex": 17,
+   "charLength": 4,
+   "start": 0.708,
+   "end": 0.801
+  },
+  {
+   "word": "I",
+   "charIndex": 22,
+   "charLength": 1,
+   "start": 0.836,
+   "end": 0.871
+  },
+  {
+   "word": "read",
+   "charIndex": 24,
+   "charLength": 4,
+   "start": 0.929,
+   "end": 1.057
+  },
+  {
+   "word": "with.",
+   "charIndex": 29,
+   "charLength": 5,
+   "start": 1.091,
+   "end": 1.625
+  }
+ ],
+ "duration": 1.625
+}

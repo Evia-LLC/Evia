@@ -1,0 +1,91 @@
+/**
+ * Database connection and migration runner.
+ *
+ * Uses node:sqlite, built into Node 24 — a real relational database with no
+ * native module to compile. Migrations are numbered SQL files applied once, in
+ * order, inside a transaction, and recorded in _migrations.
+ */
+import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { log } from '../lib/log.ts';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = path.resolve(here, '..', '..', 'data');
+const DB_PATH = process.env.ELOHIM_DB_PATH ?? path.join(DATA_DIR, 'elohim.db');
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+export const db = new DatabaseSync(DB_PATH);
+
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON');
+db.exec('PRAGMA busy_timeout = 5000');
+
+export function migrate(): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS _migrations (
+    name       TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+  )`);
+
+  const applied = new Set(
+    (db.prepare('SELECT name FROM _migrations').all() as Array<{ name: string }>).map(
+      (r) => r.name,
+    ),
+  );
+
+  const dir = path.join(here, 'migrations');
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    const sql = fs.readFileSync(path.join(dir, file), 'utf8');
+    db.exec('BEGIN');
+    try {
+      db.exec(sql);
+      db.prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)').run(
+        file,
+        new Date().toISOString(),
+      );
+      db.exec('COMMIT');
+      log.info('db', `applied migration ${file}`);
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw new Error(`migration ${file} failed: ${(err as Error).message}`);
+    }
+  }
+}
+
+/**
+ * Typed query helpers.
+ *
+ * node:sqlite returns `Record<string, SQLOutputValue>`, which no row interface
+ * structurally overlaps. These two wrappers keep the unavoidable assertion in
+ * one place instead of scattering `as unknown as` through every repository.
+ */
+export function rows<T>(sql: string, ...params: Array<string | number | null>): T[] {
+  return db.prepare(sql).all(...params) as unknown as T[];
+}
+
+export function row<T>(sql: string, ...params: Array<string | number | null>): T | undefined {
+  return db.prepare(sql).get(...params) as unknown as T | undefined;
+}
+
+/** Runs `fn` inside a transaction, rolling back on any throw. */
+export function transaction<T>(fn: () => T): T {
+  db.exec('BEGIN');
+  try {
+    const out = fn();
+    db.exec('COMMIT');
+    return out;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+export { DATA_DIR, DB_PATH };

@@ -1,0 +1,220 @@
+/*
+ * src/styles/tokens.css — imported FIRST from app.css (above ./auth.css).
+ *
+ * The only place a colour, size, space, duration or z-index is declared.
+ * Every name an existing selector reads is kept and revalued: --ink, --ink-soft,
+ * --ink-faint, --quiet, --line, --line-strong, --warm, --good, --bad, --radius,
+ * --radius-sm, --shadow, --font, --font-mono, --display, --ease, --ease-soft,
+ * --gutter, --rail-w, --tabbar-h, --page-w, --page-w-wide, --chat-width, --tap,
+ * --safe-*, --vvh, --kb, --sheet-h, --chat-chrome, --topbar-h, --panel-w, --free-w,
+ * --auth-ease, --auth-ease-soft, --auth-ease-press, --auth-quiet, --auth-display.
+ *
+ * --holo is NOT declared here. The hologram cyan is --holo-scene, and --holo is
+ * declared only on .stage-canvas below, so any var(--holo) left in a DOM rule
+ * resolves to nothing and shows up in review instead of silently staying cyan.
+ */
+
+/*
+ * Metric-matched fallbacks, so font-display: swap never reflows the hero.
+ * PLACEHOLDER METRICS — replace before merge with the output of
+ *   npx fontaine   (or @capsizecss/metrics) run against the exact files the
+ * Google stylesheet serves. Do not ship these numbers unmeasured.
+ */
+@font-face {
+  font-family: 'Manrope Fallback';
+  src: local('Segoe UI'), local('Roboto'), local('Helvetica Neue'), local('Arial');
+  size-adjust: 104%;      /* fontaine: replace */
+  ascent-override: 102%;  /* fontaine: replace */
+  descent-override: 27%;  /* fontaine: replace */
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Cormorant Garamond Fallback';
+  src: local('Iowan Old Style'), local('Palatino Linotype'), local('Georgia');
+  size-adjust: 89%;       /* fontaine: replace */
+  ascent-override: 104%;  /* fontaine: replace */
+  descent-override: 32%;  /* fontaine: replace */
+  line-gap-override: 0%;
+}
+
+:root {
+  /* ---- faces ---- */
+  --font: 'Manrope', 'Manrope Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Cormorant Garamond', 'Cormorant Garamond Fallback', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --display: var(--font);            /* the h1 is the body face one weight lighter; every old --display use resolves */
+  --font-mono: var(--font);          /* retired: numerals are tabular, not monospaced. .devstats re-pins itself. */
+  --num: 'tnum' 1, 'lnum' 1;
+
+  /* ---- type scale (no half pixels) ---- */
+  --t-xs: 11px;                      /* floor: caps labels, axis text, chips */
+  --t-sm: 12px;                      /* meta, legal, dates, deltas */
+  --t-md: 13px;                      /* secondary prose, notes, field labels */
+  --t-body: 15px;                    /* body, rows, transcript, inputs */
+  --t-lg: 17px;                      /* card / item titles */
+  --t-h2: 22px;                      /* prose-section titles, ring values, score */
+  --t-display: clamp(30px, 3.2vw, 40px);
+  --t-figure: clamp(34px, 3.6vw, 48px);
+  --t-voice: clamp(19px, 1.6vw, 22px);   /* her words: the serif floor is 19px */
+  --t-count: clamp(64px, 10vw, 96px);
+
+  --w-light: 300;
+  --w-regular: 400;
+  --w-medium: 500;                   /* the ceiling. Nothing on the DOM is 600. */
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.3;
+  --lh-body: 1.6;
+  --lh-voice: 1.45;
+
+  --trk-cap: 0.14em;                 /* the ONLY tracking for uppercase */
+  --trk-cta: 0.12em;
+  --trk-display: -0.02em;
+  --trk-figure: -0.03em;
+  --measure: 60ch;
+
+  /* ---- ink: three tiers ---- */
+  --ink: #edeff4;
+  --ink-soft: #aeb5c6;
+  --quiet: #8b94a9;                  /* AA at 11px over the ground; the only grey small text may use */
+  --ink-faint: var(--quiet);         /* retired tier, aliased so old rules stay legal */
+  --ink-on-metal: #0b0e15;
+
+  /* ---- ground and planes (no blur, no bevel, no scanline) ---- */
+  --bg: #0a0d14;
+  --ground-rgb: 6, 8, 14;            /* the one near-black every grade is built from */
+  --surface: rgba(12, 15, 23, 0.88);
+  --surface-strong: rgba(10, 13, 20, 0.96);
+  --surface-raised: rgba(237, 239, 244, 0.035);
+  --chip: rgba(6, 8, 14, 0.74);      /* small text over skin needs a ground, not tracking */
+
+  /* ---- hairlines ---- */
+  --hair: 1px;
+  --line: rgba(174, 181, 198, 0.14);
+  --line-strong: rgba(174, 181, 198, 0.28);
+  --line-metal: rgba(207, 187, 160, 0.55);
+
+  /* ---- the one metal: champagne ---- */
+  --metal: #cfbba0;
+  --metal-soft: #b3a289;
+  --metal-bright: #e8dac3;
+  --metal-rgb: 207, 187, 160;
+  --warm: var(--metal);              /* legacy name, same value */
+
+  /* ---- semantic: text and 5px dots only, never a fill ---- */
+  --good: #a6c9b7;
+  --bad: #d8a595;
+
+  /* ---- scene only ---- */
+  --holo-scene: #7fd4ff;
+  --holo-scene-rgb: 127, 212, 255;
+  /* The gate's two drifting lights (auth.css .auth__key / .auth__fill): light in
+     the room, not chrome. Declared here so the lint:chrome gate can stay strict
+     about literals in every other file; the values are unchanged. */
+  --auth-key-rgb: 230, 176, 122;
+  --auth-fill-rgb: 127, 212, 255;
+
+  /* ---- shape ---- */
+  --radius: 3px;
+  --radius-sm: 2px;
+  --radius-round: 50%;
+  --shadow: 0 24px 48px -32px rgba(0, 0, 0, 0.7);                        /* the reading dock only */
+  --halo: 0 1px 2px rgba(3, 5, 9, 0.65), 0 2px 28px rgba(3, 5, 9, 0.85);  /* display type over the room */
+
+  /* ---- motion: arrival and state change only ---- */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-1: 160ms;
+  --dur-2: 240ms;
+  --dur-3: 360ms;                    /* page arrival — the ceiling */
+
+  /* ---- space: 4-base, eight steps ---- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --gutter: clamp(16px, 2vw, 32px);
+
+  /* ---- layout ---- */
+  --rail-w: 72px;
+  --tabbar-h: 60px;
+  --page-w: min(560px, 46vw);
+  --page-w-wide: min(680px, 54vw);
+  --page-feather: 160px;
+  --chat-width: min(360px, 30vw);
+  --tap: 44px;
+
+  --z-chat: 3;
+  --z-page: 4;
+  --z-reading: 5;
+  --z-devstats: 5;
+  --z-nav: 8;
+  --z-auth: 20;
+  --z-intro: 40;
+
+  /* ---- environment (unchanged mechanics) ---- */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --vvh: 100dvh;
+  --kb: 0px;
+  --sheet-h: 0px;
+
+  /* ---- retired layout tokens: zeroed, not deleted, until .chat stops reading them ---- */
+  --topbar-h: 0px;
+  --panel-w: 0px;
+  --free-w: 100%;
+
+  /* ---- auth.css reads these; its own --auth-* declarations are deleted ---- */
+  --auth-ease: var(--ease);
+  --auth-ease-soft: var(--ease-soft);
+  --auth-ease-press: cubic-bezier(0.4, 0, 0.2, 1);
+  --auth-quiet: var(--quiet);
+  --auth-display: var(--display);
+}
+
+/* The scene owns the cyan. Nothing under .shell inherits this. */
+.stage-canvas {
+  --holo: var(--holo-scene);
+}
+
+/* Phone / portrait: the same tokens, recomposed. */
+@media (max-width: 860px), (orientation: portrait) {
+  :root {
+    --rail-w: 0px;
+    --page-w: 100vw;
+    --page-w-wide: 100vw;
+    --page-feather: 0px;
+    --chat-width: 100%;
+    --chat-chrome: 112px;
+    --surface: rgba(12, 15, 23, 0.94);
+    --t-display: clamp(26px, 6.4vw, 32px);
+    --t-figure: clamp(30px, 8vw, 40px);
+    --t-voice: 19px;
+  }
+}
+
+::selection {
+  background: rgba(207, 187, 160, 0.28);
+}
+
+/*
+ * The two arrival keyframes live here, not in pages.css / app.css, so auth.css
+ * (imported before pages.css) can reach page-in, and every file can reach fade.
+ */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}

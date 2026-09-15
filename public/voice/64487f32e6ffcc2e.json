@@ -1,0 +1,62 @@
+{
+ "text": "Bear with me — thinking about this one.",
+ "words": [
+  {
+   "word": "Bear",
+   "charIndex": 0,
+   "charLength": 4,
+   "start": 0,
+   "end": 0.325
+  },
+  {
+   "word": "with",
+   "charIndex": 5,
+   "charLength": 4,
+   "start": 0.383,
+   "end": 0.522
+  },
+  {
+   "word": "me",
+   "charIndex": 10,
+   "charLength": 2,
+   "start": 0.569,
+   "end": 0.639
+  },
+  {
+   "word": "—",
+   "charIndex": 13,
+   "charLength": 1,
+   "start": 0.662,
+   "end": 0.743
+  },
+  {
+   "word": "thinking",
+   "charIndex": 15,
+   "charLength": 8,
+   "start": 0.789,
+   "end": 1.045
+  },
+  {
+   "word": "about",
+   "charIndex": 24,
+   "charLength": 5,
+   "start": 1.08,
+   "end": 1.254
+  },
+  {
+   "word": "this",
+   "charIndex": 30,
+   "charLength": 4,
+   "start": 1.289,
+   "end": 1.416
+  },
+  {
+   "word": "one.",
+   "charIndex": 35,
+   "charLength": 4,
+   "start": 1.498,
+   "end": 1.95
+  }
+ ],
+ "duration": 1.95
+}

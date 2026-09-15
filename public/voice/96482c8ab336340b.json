@@ -1,0 +1,27 @@
+{
+ "text": "Whenever you're ready.",
+ "words": [
+  {
+   "word": "Whenever",
+   "charIndex": 0,
+   "charLength": 8,
+   "start": 0,
+   "end": 0.348
+  },
+  {
+   "word": "you're",
+   "charIndex": 9,
+   "charLength": 6,
+   "start": 0.383,
+   "end": 0.557
+  },
+  {
+   "word": "ready.",
+   "charIndex": 16,
+   "charLength": 6,
+   "start": 0.58,
+   "end": 1.115
+  }
+ ],
+ "duration": 1.115
+}

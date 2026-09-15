@@ -1,0 +1,55 @@
+{
+ "text": "I'm right here. What do you need?",
+ "words": [
+  {
+   "word": "I'm",
+   "charIndex": 0,
+   "charLength": 3,
+   "start": 0,
+   "end": 0.267
+  },
+  {
+   "word": "right",
+   "charIndex": 4,
+   "charLength": 5,
+   "start": 0.313,
+   "end": 0.441
+  },
+  {
+   "word": "here.",
+   "charIndex": 10,
+   "charLength": 5,
+   "start": 0.476,
+   "end": 0.615
+  },
+  {
+   "word": "What",
+   "charIndex": 16,
+   "charLength": 4,
+   "start": 0.639,
+   "end": 0.731
+  },
+  {
+   "word": "do",
+   "charIndex": 21,
+   "charLength": 2,
+   "start": 0.755,
+   "end": 0.801
+  },
+  {
+   "word": "you",
+   "charIndex": 24,
+   "charLength": 3,
+   "start": 0.859,
+   "end": 0.929
+  },
+  {
+   "word": "need?",
+   "charIndex": 28,
+   "charLength": 5,
+   "start": 0.964,
+   "end": 1.486
+  }
+ ],
+ "duration": 1.486
+}

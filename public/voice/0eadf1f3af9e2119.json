@@ -1,0 +1,76 @@
+{
+ "text": "I lost my connection for a moment. Say that again?",
+ "words": [
+  {
+   "word": "I",
+   "charIndex": 0,
+   "charLength": 1,
+   "start": 0,
+   "end": 0.209
+  },
+  {
+   "word": "lost",
+   "charIndex": 2,
+   "charLength": 4,
+   "start": 0.302,
+   "end": 0.522
+  },
+  {
+   "word": "my",
+   "charIndex": 7,
+   "charLength": 2,
+   "start": 0.569,
+   "end": 0.639
+  },
+  {
+   "word": "connection",
+   "charIndex": 10,
+   "charLength": 10,
+   "start": 0.697,
+   "end": 1.045
+  },
+  {
+   "word": "for",
+   "charIndex": 21,
+   "charLength": 3,
+   "start": 1.091,
+   "end": 1.196
+  },
+  {
+   "word": "a",
+   "charIndex": 25,
+   "charLength": 1,
+   "start": 1.231,
+   "end": 1.254
+  },
+  {
+   "word": "moment.",
+   "charIndex": 27,
+   "charLength": 7,
+   "start": 1.3,
+   "end": 1.579
+  },
+  {
+   "word": "Say",
+   "charIndex": 35,
+   "charLength": 3,
+   "start": 1.602,
+   "end": 1.753
+  },
+  {
+   "word": "that",
+   "charIndex": 39,
+   "charLength": 4,
+   "start": 1.8,
+   "end": 1.927
+  },
+  {
+   "word": "again?",
+   "charIndex": 44,
+   "charLength": 6,
+   "start": 1.962,
+   "end": 2.601
+  }
+ ],
+ "duration": 2.601
+}

@@ -1,0 +1,111 @@
+{
+ "text": "Everything's measured right here, on your device — nothing leaves it unless you say so.",
+ "words": [
+  {
+   "word": "Everything's",
+   "charIndex": 0,
+   "charLength": 12,
+   "start": 0,
+   "end": 0.476
+  },
+  {
+   "word": "measured",
+   "charIndex": 13,
+   "charLength": 8,
+   "start": 0.534,
+   "end": 0.871
+  },
+  {
+   "word": "right",
+   "charIndex": 22,
+   "charLength": 5,
+   "start": 0.952,
+   "end": 1.184
+  },
+  {
+   "word": "here,",
+   "charIndex": 28,
+   "charLength": 5,
+   "start": 1.254,
+   "end": 1.602
+  },
+  {
+   "word": "on",
+   "charIndex": 34,
+   "charLength": 2,
+   "start": 1.66,
+   "end": 1.858
+  },
+  {
+   "word": "your",
+   "charIndex": 37,
+   "charLength": 4,
+   "start": 1.904,
+   "end": 2.02
+  },
+  {
+   "word": "device",
+   "charIndex": 42,
+   "charLength": 6,
+   "start": 2.067,
+   "end": 2.461
+  },
+  {
+   "word": "—",
+   "charIndex": 49,
+   "charLength": 1,
+   "start": 2.485,
+   "end": 2.566
+  },
+  {
+   "word": "nothing",
+   "charIndex": 51,
+   "charLength": 7,
+   "start": 2.647,
+   "end": 2.961
+  },
+  {
+   "word": "leaves",
+   "charIndex": 59,
+   "charLength": 6,
+   "start": 3.019,
+   "end": 3.239
+  },
+  {
+   "word": "it",
+   "charIndex": 66,
+   "charLength": 2,
+   "start": 3.286,
+   "end": 3.355
+  },
+  {
+   "word": "unless",
+   "charIndex": 69,
+   "charLength": 6,
+   "start": 3.402,
+   "end": 3.669
+  },
+  {
+   "word": "you",
+   "charIndex": 76,
+   "charLength": 3,
+   "start": 3.704,
+   "end": 3.785
+  },
+  {
+   "word": "say",
+   "charIndex": 80,
+   "charLength": 3,
+   "start": 3.855,
+   "end": 4.005
+  },
+  {
+   "word": "so.",
+   "charIndex": 84,
+   "charLength": 3,
+   "start": 4.063,
+   "end": 4.598
+  }
+ ],
+ "duration": 4.598
+}

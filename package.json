@@ -1,0 +1,43 @@
+{
+  "name": "elohim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Elohim — AI beauty and skincare companion",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "dev:api": "node server/index.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "seed": "node scripts/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sync:mediapipe": "node scripts/sync-mediapipe.mjs",
+    "prebuild": "node scripts/sync-mediapipe.mjs && node scripts/fetch-static.mjs && node scripts/build-api.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "@types/pg": "^8.23.1",
+    "express": "^4.21.2",
+    "pg": "^8.23.0",
+    "serverless-http": "^4.0.0",
+    "tesseract.js": "^7.0.0",
+    "three": "^0.171.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@types/express": "^5.0.0",
+    "@types/three": "^0.171.0",
+    "svelte": "^5.19.0",
+    "svelte-check": "^4.1.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11",
+    "vitest": "^4.1.11"
+  }
+}

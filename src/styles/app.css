@@ -1,0 +1,1333 @@
+/*
+ * Elohim's visual language (brief §30).
+ *
+ * Premium, futuristic, human, medical-inspired, warm, cinematic, minimal.
+ * Deliberately not: a SaaS dashboard, neon cyberpunk, or a wall of panels. The
+ * 3D scene is the interface; this layer is the quiet frame around it.
+ *
+ * Mobile is the primary target (brief §29). Portrait is a recomposition, not a
+ * scaled-down desktop: the chat becomes a collapsible sheet that sits at a peek
+ * height so Elohim keeps ~70% of the screen, panels become real bottom sheets with
+ * a grip and their own scroll region, and every control clears a 44px target
+ * without the visual language turning chunky.
+ *
+ * Every colour, size, space, duration and z-index comes from tokens.css. Nothing
+ * below declares one; the `fade` and `page-in` keyframes are declared there too.
+ */
+
+/* Tokens first: every file after this reads them. */
+@import './tokens.css';
+/* The entry screen is one self-contained composition over the live stage, and
+   long enough to be worth its own file. Every rule in it is scoped to
+   `.auth--gate` and wins on specificity, so nothing here has to be ordered
+   around it. */
+@import './auth.css';
+/* The pages, the rail and the tab bar: every feature's frame. */
+@import './pages.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  font-weight: var(--w-regular);
+  font-feature-settings: var(--num);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /*
+   * `manipulation` keeps pan and pinch-zoom — which are accessibility features
+   * and must not be taken away — while dropping the double-tap-to-zoom gesture
+   * and the 300ms click delay that comes with it.
+   */
+  touch-action: manipulation;
+  /* No rubber-band on a shell that never scrolls. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  /*
+   * Small viewport, not dynamic.
+   *
+   * `100dvh` grows when Safari's toolbar retracts, but `html, body { height:
+   * 100% }` above resolves against the layout viewport and does not — so on iOS
+   * the app box became taller than its own parent and the strip below it showed
+   * a stale composited layer. That is the horizontal seam across an iPad, with
+   * a differently-framed copy of the room beneath it.
+   *
+   * `svh` is the height with the browser chrome *shown*, which is the one
+   * measurement that never grows mid-scroll. The canvas is fixed to the real
+   * viewport below, so the few pixels the toolbar frees up stay covered.
+   */
+  height: 100vh;
+  height: 100svh;
+  width: 100vw;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* One ring: a single metal hairline held off the control. No dark halo ring —
+   the offset is what keeps it legible against a bright hologram. A styled
+   label wrapping a visually-hidden file input shows the same ring when that
+   input is focused by keyboard. */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible,
+.btn:has(input:focus-visible) {
+  outline: 1px solid var(--metal);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+.toggle input,
+.field input[type='checkbox'] {
+  accent-color: var(--metal);
+}
+
+/* Focusable but visually hidden — used so a file input inside a styled label
+   stays reachable by keyboard. `hidden`/`display:none` would remove it. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- shell ---------------------------------------------------------------- */
+
+.shell {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.stage-canvas {
+  /*
+   * Fixed to the viewport rather than to its parent.
+   *
+   * As a percentage of an ancestor it inherited every rounding error in the
+   * chain above it, and on iOS that chain changes height as you scroll. It is
+   * a backdrop: it should cover what the eye can see and nothing should be able
+   * to leave a gap under it.
+   */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* Nothing on the canvas responds to drags, so swallow them rather than let
+     them turn into a page-level rubber-band on iOS. */
+  touch-action: none;
+}
+
+/* --- chat ----------------------------------------------------------------- */
+
+/*
+ * The conversation takes a full column on the right, on its own ground, so the
+ * transcript can be set as text rather than as bubbles.
+ */
+.chat {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--chat-width) + var(--s-8));
+  padding: max(var(--s-7), var(--safe-t)) max(var(--gutter), var(--safe-r))
+    max(var(--gutter), var(--safe-b)) var(--s-8);
+  z-index: var(--z-chat);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(var(--ground-rgb), 0) 0%,
+    rgba(var(--ground-rgb), 0.86) 30%
+  );
+}
+
+.chat > * {
+  pointer-events: auto;
+}
+
+/* The sheet grip only exists once the chat is a sheet — see the portrait block. */
+.sheet-grip {
+  display: none;
+}
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  /* Older messages fade rather than being clipped by a hard edge. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 42px);
+  mask-image: linear-gradient(to bottom, transparent, #000 42px);
+}
+
+/*
+ * Bottom-anchored without `justify-content: flex-end`, which historically makes
+ * the overflowing start of a flex scroller unreachable. An auto top margin on
+ * the first child pins the stack to the bottom when it fits and collapses to
+ * nothing when it does not, so scrolling back through history always works.
+ */
+.transcript > :first-child {
+  margin-top: auto;
+}
+
+/* A message is set text. The speaker label and the --s-4 gap do the
+   separating; there is no box and no hairline per message. */
+.bubble {
+  max-width: 100%;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  white-space: pre-wrap;
+  animation: fade var(--dur-2) var(--ease);
+}
+
+/* The speaker label, shown only where the speaker changes. */
+.bubble::before {
+  display: block;
+  margin-bottom: var(--s-1);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  color: var(--quiet);
+  white-space: normal;
+}
+.bubble--elohim::before {
+  content: 'Elohim';
+}
+.bubble--user::before {
+  content: 'You';
+}
+.bubble--elohim + .bubble--elohim::before,
+.bubble--user + .bubble--user::before {
+  display: none;
+}
+
+.bubble--elohim {
+  color: var(--ink);
+  text-shadow: 0 1px 12px rgba(var(--ground-rgb), 0.85);
+}
+
+/* The user's lines carry a hairline; hers carry the label, not a metal rule. */
+.bubble--user {
+  color: var(--ink-soft);
+  padding-left: var(--s-4);
+  border-left: var(--hair) solid var(--line-strong);
+}
+
+/* The 'Demo — local engine' fact lives once, in .nav__note. */
+.bubble__meta {
+  display: none;
+}
+
+/* 'Thinking' as a caps label instead of dots, breathing slowly so a long
+   wait reads as her working rather than the page hanging. The reduced-motion
+   block at the end of this file stills it. */
+.typing {
+  align-self: stretch;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  animation: thinking-pulse 1.6s ease-in-out infinite;
+}
+.typing i {
+  display: none;
+}
+.typing::before {
+  content: 'Thinking';
+  display: block;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Her voice's metal rule — the same vocabulary as .aside. */
+.offer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding: var(--s-1) 0 var(--s-1) var(--s-4);
+  border: 0;
+  border-left: var(--hair) solid var(--metal);
+  border-radius: 0;
+  background: none;
+  font-size: var(--t-body);
+  color: var(--ink-soft);
+}
+.offer button {
+  position: relative;
+  margin-left: auto;
+  padding: 0 0 2px;
+  border-radius: 0;
+  border-bottom: var(--hair) solid var(--line-metal);
+  background: none;
+  color: var(--metal-bright);
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+  white-space: nowrap;
+}
+
+/*
+ * A UI surface has to read the same whatever is behind it. The edge is what
+ * makes it an object: a plane, not a pane.
+ */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-strong);
+  background: var(--surface-strong);
+  backdrop-filter: none;
+  box-shadow: none;
+  transition: border-color var(--dur-1) var(--ease);
+}
+
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  resize: none;
+  max-height: 110px;
+  padding: 5px 0;
+}
+.composer textarea::placeholder {
+  color: var(--quiet);
+}
+.composer textarea:focus {
+  outline: none;
+}
+
+.send {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-round);
+  background: none;
+  border: var(--hair) solid var(--line-metal);
+  color: var(--metal-bright);
+  display: grid;
+  place-items: center;
+  transition: opacity var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.send:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.send:not(:disabled):hover {
+  transform: none;
+  border-color: var(--metal);
+}
+
+/* A rule reads as a fact. */
+.error {
+  padding: var(--s-1) 0 var(--s-1) var(--s-3);
+  border: 0;
+  border-left: 2px solid var(--bad);
+  border-radius: 0;
+  background: none;
+  color: var(--bad);
+  font-size: var(--t-md);
+  line-height: var(--lh-body);
+}
+
+/* --- list rows: one row, three names ------------------------------------- */
+
+.row,
+.line,
+.toggle {
+  display: flex;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-top: var(--hair) solid var(--line);
+  font-size: var(--t-body);
+}
+.row {
+  align-items: center;
+}
+.line {
+  align-items: center;
+  width: 100%;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: none;
+  text-align: left;
+  color: var(--ink);
+}
+.toggle {
+  align-items: flex-start;
+}
+.row:first-of-type,
+.line:first-child,
+.toggle:first-of-type {
+  border-top: none;
+}
+
+.row__label {
+  color: var(--ink-soft);
+}
+.row__value {
+  margin-left: auto;
+  font-family: var(--font);
+  font-size: var(--t-body);
+  font-feature-settings: var(--num);
+  color: var(--ink);
+}
+.row__value[data-tone='good'] {
+  color: var(--good);
+}
+.row__value[data-tone='bad'] {
+  color: var(--bad);
+}
+.row__note {
+  margin-left: auto;
+  font-size: var(--t-md);
+  color: var(--quiet);
+}
+.line__title {
+  display: block;
+  font-size: var(--t-body);
+  font-weight: var(--w-medium);
+}
+.line__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--t-md);
+  color: var(--quiet);
+}
+.line__end {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+  font-family: var(--font);
+  font-size: var(--t-md);
+  color: var(--ink-soft);
+  font-feature-settings: var(--num);
+}
+.toggle input {
+  margin-top: 3px;
+  accent-color: var(--metal);
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.toggle div strong {
+  display: block;
+  font-size: var(--t-body);
+  font-weight: var(--w-medium);
+}
+.toggle div small {
+  display: block;
+  margin-top: var(--s-1);
+  font-size: var(--t-md);
+  line-height: var(--lh-body);
+  color: var(--quiet);
+  max-width: var(--measure);
+}
+
+.bar {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  border-radius: 0;
+  background: var(--line);
+  overflow: hidden;
+}
+.bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--metal-soft);
+  border-radius: 0;
+  transition: width var(--dur-3) var(--ease);
+}
+
+/* --- fields --------------------------------------------------------------- */
+
+.field {
+  display: block;
+  margin-bottom: var(--s-5);
+}
+/* Sentence case is the base; a label never shouts. */
+.field span {
+  display: block;
+  margin-bottom: var(--s-2);
+  font-size: var(--t-md);
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+}
+/* A question asked in sentence case, above its control. */
+.field__ask {
+  display: block;
+  margin: 0 0 var(--s-2);
+  font-size: var(--t-body);
+  line-height: 1.45;
+  color: var(--ink);
+}
+/** Why the answer matters, under the control. */
+.field__note {
+  display: block;
+  margin-top: var(--s-2);
+  font-size: var(--t-md);
+  line-height: var(--lh-body);
+  color: var(--quiet);
+  max-width: var(--measure);
+}
+
+.field input,
+.field select,
+.field textarea,
+.text-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-body);
+  transition: border-color var(--dur-1) var(--ease);
+}
+.field textarea {
+  padding: var(--s-3);
+  min-height: 0;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.text-input:focus {
+  border-color: var(--metal);
+}
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: var(--s-6);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238b94a9' stroke-width='1'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right var(--s-3) center;
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 36px;
+  padding: 0 var(--s-4);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-strong);
+  background: none;
+  color: var(--ink-soft);
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+  letter-spacing: 0.01em;
+  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+.btn:hover {
+  background: var(--surface-raised);
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+.btn--primary {
+  background: none;
+  border-color: var(--line-metal);
+  color: var(--metal-bright);
+}
+.btn--primary:hover {
+  background: rgba(var(--metal-rgb), 0.06);
+  border-color: var(--metal);
+}
+.btn--danger {
+  border-color: var(--line-strong);
+  color: var(--bad);
+}
+.btn--danger:hover {
+  background: none;
+  border-color: var(--bad);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The compact button that sits at the end of a dense row. Visually small on
+   purpose; its touch target is grown separately under a coarse pointer. */
+.btn--mini {
+  min-height: 28px;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: var(--hair) solid var(--line-strong);
+  border-radius: 0;
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+  color: var(--ink-soft);
+}
+.btn--mini:hover {
+  background: none;
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+.btn[aria-pressed='true'],
+.btn:has(input:checked) {
+  border-color: var(--metal);
+  color: var(--ink);
+}
+
+/* --- auth ----------------------------------------------------------------- */
+
+/*
+ * The base layer, which is now only the boot screen: the stage has not mounted
+ * yet at that point, so this one is opaque and centred. The signed-out gate
+ * adds `.auth--gate` and takes over from `auth.css`, where it grades the live
+ * canvas instead of hiding it.
+ */
+.auth {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-auth);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: radial-gradient(120% 90% at 50% 0%, #131826 0%, #070a10 62%);
+  padding: max(24px, var(--safe-t)) max(20px, var(--safe-r)) max(24px, var(--safe-b))
+    max(20px, var(--safe-l));
+}
+
+/* The boot mark: the lowercase italic wordmark, no accent, no metal. */
+.auth__mark {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: var(--w-regular);
+  font-size: 34px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  text-align: center;
+  margin-bottom: var(--s-2);
+  color: var(--ink);
+  animation: fade var(--dur-3) var(--ease) both;
+}
+.auth__mark span {
+  color: inherit;
+}
+
+/* --- scan viewport -------------------------------------------------------- */
+
+.scan__viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 46dvh;
+  margin: 0 auto var(--s-4);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #05070c;
+  border: var(--hair) solid var(--line-strong);
+}
+
+.scan__viewport video,
+.scan__viewport img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Mirrored so framing feels like a mirror, not a photo of someone else. */
+  transform: scaleX(-1);
+}
+
+/* A whole person needs a taller frame than a face does. 3/4 crops the feet off
+   anyone standing far enough back for their hips to be in shot. */
+.scan__viewport--tall {
+  aspect-ratio: 9 / 16;
+}
+
+/* The oval is a face guide. A body wants an upright box it can stand inside,
+   and a side view a narrower one, because the framing that makes a profile
+   measurable is standing close to the centre line rather than filling the shot. */
+.scan__guide {
+  position: absolute;
+  inset: 12% 22%;
+  border: var(--hair) solid rgba(237, 239, 244, 0.4);
+  border-radius: 50% / 42%;
+  pointer-events: none;
+}
+.scan__guide--body {
+  inset: 4% 18%;
+  border-radius: var(--radius);
+}
+.scan__guide--profile {
+  inset: 4% 30%;
+  border-radius: var(--radius);
+}
+
+/* Which of the two body frames is being taken. A chip on its own ground:
+   small text over skin needs a ground, not tracking. */
+.scan__step {
+  position: absolute;
+  top: var(--s-2);
+  left: var(--s-2);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: var(--t-xs);
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--ink);
+  background: var(--chip);
+}
+
+/* The tap that opens the camera.
+   Centred in the empty viewport, because until it is pressed there is nothing
+   else in there to look at — and on iOS this, not the effect that runs when the
+   panel appears, is what reliably starts capture. */
+.scan__enable {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-height: 44px;
+  padding: 0 var(--s-5);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-metal);
+  background: rgba(var(--ground-rgb), 0.82);
+  color: var(--metal-bright);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cta);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.scan__enable:hover:not(:disabled) {
+  border-color: var(--metal);
+  background: rgba(var(--ground-rgb), 0.88);
+}
+.scan__enable:disabled {
+  opacity: 0.6;
+}
+
+/* --- developer instrumentation -------------------------------------------- */
+
+/* Behind `#stats`. Never part of the product. --font-mono is now an alias of
+   --font, so this is the one place monospace is re-pinned locally. */
+.devstats {
+  position: absolute;
+  left: calc(var(--rail-w) + var(--s-2));
+  bottom: 14px;
+  z-index: var(--z-devstats);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--quiet);
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+
+/* --- voice ---------------------------------------------------------------- */
+
+.composer--listening {
+  border-color: var(--metal);
+  box-shadow: none;
+}
+
+.composer textarea[readonly] {
+  color: var(--ink-soft);
+}
+
+.mic {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-round);
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  border: var(--hair) solid var(--line-strong);
+  transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.mic:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+/* Live is a still filled dot, not a ring that breathes. */
+.mic--on {
+  color: var(--metal);
+  background: none;
+  border-color: var(--metal);
+  animation: none;
+  box-shadow: none;
+}
+.mic--on::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--metal);
+}
+
+/*
+ * 'New from Elohim' - raised when a reply lands while the reader is scrolled
+ * back through the history. The transcript deliberately does not yank the
+ * view; this is the way down when they are ready.
+ */
+.new-pill {
+  align-self: center;
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-metal);
+  background: var(--surface-strong);
+  font-size: var(--t-sm);
+  color: var(--metal-bright);
+  white-space: nowrap;
+  animation: fade var(--dur-2) var(--ease);
+}
+.new-pill:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.speaking-stop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  align-self: flex-start;
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-strong);
+  background: var(--surface-strong);
+  backdrop-filter: none;
+  font-size: var(--t-sm);
+  color: var(--ink-soft);
+}
+.speaking-stop:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+/* At rest the four bars are a still 'audio' glyph. */
+.speaking-stop__wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 13px;
+}
+.speaking-stop__wave i {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--metal);
+  animation: none;
+  transform: none;
+}
+.speaking-stop__wave i:nth-child(1) { height: 5px; }
+.speaking-stop__wave i:nth-child(2) { height: 11px; }
+.speaking-stop__wave i:nth-child(3) { height: 8px; }
+.speaking-stop__wave i:nth-child(4) { height: 13px; }
+
+/* =========================================================================
+   Touch targets (brief §29)
+
+   Keyed off the input device, not the viewport: a touch laptop needs thumbs
+   accommodated at 1280px just as much as a phone does at 375px.
+
+   The rule everywhere below is the same — grow the *hit* area to 44px with a
+   transparent overlay, leave the *drawn* size alone. A restrained chip that is
+   easy to hit beats a chunky one that is easy to hit.
+   ========================================================================= */
+
+@media (pointer: coarse) {
+  .btn--mini::after,
+.offer button::after {
+    content: '';
+    position: absolute;
+    /* Vertical only. These controls are already wider than 44px, and growing
+       them sideways would overlap the control next to them. */
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: var(--tap);
+    transform: translateY(-50%);
+  }
+
+  .send::after,
+.mic::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--tap);
+    height: var(--tap);
+    transform: translate(-50%, -50%);
+  }
+
+  /* 38px drawn, 44px hit, and the 8px composer gap keeps the two overlays from
+     touching each other. */
+  .send,
+  .mic {
+    width: 38px;
+    height: 38px;
+  }
+
+  .btn {
+    min-height: var(--tap);
+    padding: 10px 18px;
+  }
+  .btn--mini {
+    /* Stays visually small — the ::after overlay above does the work. */
+    min-height: 0;
+    padding: 0 0 2px;
+  }
+
+  /*
+   * 16px is not a style choice. Below it, iOS Safari zooms the whole page in
+   * on focus and never zooms back out, which wrecks the layout for the rest of
+   * the session.
+   */
+  .field input,
+  .field select,
+  .field textarea,
+  .text-input,
+  .composer textarea {
+    font-size: 16px;
+  }
+
+  .field input,
+  .field select,
+  .field textarea,
+  .text-input {
+    min-height: var(--tap);
+  }
+
+  /* 24px line-height + 10px above and below lands exactly on 44. */
+  .composer textarea {
+    padding: 10px 0;
+    max-height: 132px;
+  }
+
+  .toggle input {
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+  }
+  /* The whole row is the target, and it is comfortably past 44px tall. */
+  .row,
+  .line,
+  .toggle {
+    padding: var(--s-4) 0;
+  }
+
+}
+
+/* =========================================================================
+   Recompose for portrait (brief §29)
+
+   Not a narrower desktop. The chat leaves the right-hand column entirely and
+   becomes a sheet across the bottom, at a peek height by default so that Elohim —
+   who is the interface — keeps roughly 70% of the screen at rest.
+
+   --chat-width, --surface and --chat-chrome are recomposed in tokens.css.
+   ========================================================================= */
+
+@media (max-width: 860px), (orientation: portrait) {
+
+  /* --- the chat sheet ---------------------------------------------------- */
+
+  .chat {
+    top: auto;
+    left: 0;
+    right: 0;
+    /* Rides above the on-screen keyboard rather than disappearing behind it. */
+    bottom: var(--kb);
+    width: auto;
+    height: auto;
+    padding: 0 max(var(--s-3), var(--safe-r)) max(var(--s-3), var(--safe-b))
+      max(var(--s-3), var(--safe-l));
+    gap: var(--s-2);
+    background: linear-gradient(to top, rgba(var(--ground-rgb), 0.94) 58%, transparent);
+    transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+  }
+
+  /* With the keyboard up, the sheet is sitting on the keyboard rather than on
+     the home indicator, so the safe-area reservation is dead space. */
+  :root[data-keyboard='true'] .chat {
+    padding-bottom: 10px;
+  }
+
+  /* A panel sheet and the chat sheet must not stack on top of each other. */
+  .chat[data-dimmed='true'] {
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+  }
+  .chat[data-dimmed='true'] > * {
+    pointer-events: none;
+  }
+
+  .sheet-grip {
+    display: flex;
+    position: relative;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 30px;
+    /* The drag is handled in script; the browser must not also try to pan. */
+    touch-action: none;
+  }
+  .sheet-grip::before {
+    content: '';
+    width: 32px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--line-strong);
+    transition: width 0.22s ease, background 0.22s ease;
+  }
+  .sheet-grip:hover::before,
+  .sheet-grip[aria-expanded='true']::before {
+    width: 40px;
+    background: var(--ink-soft);
+  }
+  /* 30px drawn + 7px either side = a 44px band across the full sheet width. */
+  .sheet-grip::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -7px;
+    bottom: -7px;
+  }
+
+  .transcript {
+    flex: none;
+    /*
+     * Peek: the tail of the last message, so she is still talking to you while
+     * staying out of her own way. Expanded: about 68% of the screen in total,
+     * always clamped to what the visual viewport can actually show so the
+     * composer survives the keyboard opening.
+     */
+    height: min(
+      clamp(64px, 15dvh, 132px),
+      calc(var(--vvh) - var(--chat-chrome) - 74px)
+    );
+    transition: height 0.34s cubic-bezier(0.2, 0.8, 0.3, 1);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22px);
+    mask-image: linear-gradient(to bottom, transparent, #000 22px);
+  }
+
+  .chat[data-sheet='full'] .transcript {
+    height: min(
+      calc(68dvh - var(--chat-chrome)),
+      calc(var(--vvh) - var(--chat-chrome) - 74px)
+    );
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34px);
+    mask-image: linear-gradient(to bottom, transparent, #000 34px);
+  }
+
+  /* While a thumb is on the grip the height is driven directly from the
+     pointer, so the easing has to get out of the way. */
+  .chat[data-dragging='true'] .transcript {
+    transition: none;
+  }
+
+  .bubble {
+    max-width: 100%;
+    font-size: var(--t-body);
+  }
+
+  .devstats {
+    display: none;
+  }
+}
+
+/* The smallest phone still in circulation. Nothing may break here. */
+@media (max-width: 380px) {
+
+  .chat {
+    padding-left: max(10px, var(--safe-l));
+    padding-right: max(10px, var(--safe-r));
+  }
+
+  .composer {
+    padding-left: var(--s-3);
+  }
+
+  /* Three action buttons will not sit on one 360px row without either wrapping
+     into a ragged shape or shrinking below a usable target. Stack them. */
+  .scan__actions .btn {
+    flex: 1 1 100%;
+  }
+
+}
+
+/* --- reduced motion ------------------------------------------------------- */
+
+/*
+ * The media query is the standard signal; `[data-reduced-motion]` is Elohim's own
+ * preference from the profile panel, so turning it on there damps the interface
+ * as well as her idle movement rather than only half of the product.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  .typing,
+  .new-pill {
+    animation: none;
+  }
+  .transcript,
+  .chat,
+  .sheet-grip::before,
+  .bar i,
+  .send {
+    transition-duration: 0.01ms;
+  }
+}
+
+.shell[data-reduced-motion='true'] .bubble,
+.shell[data-reduced-motion='true'] .typing,
+.shell[data-reduced-motion='true'] .new-pill {
+  animation: none;
+}
+.shell[data-reduced-motion='true'] .transcript,
+.shell[data-reduced-motion='true'] .chat,
+.shell[data-reduced-motion='true'] .sheet-grip::before,
+.shell[data-reduced-motion='true'] .bar i,
+.shell[data-reduced-motion='true'] .send {
+  transition-duration: 0.01ms;
+}
+
+/* --- trend rows ----------------------------------------------------------- */
+
+/*
+ * A trend row is a control now: it chooses what the chart above plots. It has
+ * to keep looking like a row of data rather than turning into a button, so it
+ * borrows the row layout wholesale and only adds the states that say it can be
+ * pressed. Selection is a metal left rule.
+ */
+.row--pick {
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  border-radius: 0;
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.row--pick:hover {
+  background: var(--surface-raised);
+}
+.row--pick[aria-pressed='true'] {
+  background: none;
+  box-shadow: inset 2px 0 0 var(--metal);
+  padding-left: var(--s-3);
+}
+.row--pick[aria-pressed='true'] .row__label {
+  color: var(--ink);
+}
+
+/*
+ * Touch targets that the visual design deliberately keeps small.
+ *
+ * A 20px checkbox and a 26px close button are the right *look*; they are not a
+ * reachable target under a thumb. Rather than inflate the control, an invisible
+ * overlay extends the hit area to 44px around it, so the design and the ergonomics
+ * stop competing. Same technique the chips use.
+ */
+@media (pointer: coarse) {
+  .toggle input,
+  .field input[type='checkbox'] {
+    position: relative;
+  }
+  .toggle input::after,
+  .field input[type='checkbox']::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  /* One pixel short of the target, which is the same as being short. */
+  .row--pick {
+    min-height: 44px;
+  }
+}
+
+/* --- prose actions -------------------------------------------------------- */
+
+/* An action worded as prose, because "skip it" belongs inside the sentence
+   that explains what skipping costs — not as a button beside it. */
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-metal);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  transition: text-decoration-color var(--dur-1) var(--ease);
+}
+.linkish:hover {
+  text-decoration-color: var(--metal);
+}
+.linkish:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* --- body history --------------------------------------------------------- */
+
+.bodyhist {
+  margin: var(--s-3) 0 var(--s-4);
+  padding: var(--s-4) 0 0;
+  border: 0;
+  border-top: var(--hair) solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+
+.bodyhist__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--s-2);
+}
+
+.bodyhist__label {
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+
+.bodyhist__count,
+.bodyhist__axis {
+  font-size: var(--t-sm);
+  color: var(--quiet);
+  font-feature-settings: var(--num);
+}
+
+.bodyhist__plot {
+  display: block;
+  width: 100%;
+  height: 74px;
+}
+
+.bodyhist__axis {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+}
+
+/* The reading, in its own units. A ratio, never a score out of a hundred —
+   this is the one number most likely to be read as a verdict on a body. */
+.bodyhist__now {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--s-3);
+}
+
+.bodyhist__now strong {
+  font-family: var(--font);
+  font-size: var(--t-h2);
+  font-weight: var(--w-light);
+  color: var(--ink);
+  font-feature-settings: var(--num);
+}
+
+.bodyhist__now > span {
+  font-size: var(--t-md);
+  color: var(--quiet);
+}
+
+.bodyhist__move {
+  margin-left: auto;
+  text-align: right;
+}
+
+.bodyhist__move[data-tone='good'] {
+  color: var(--good);
+}
+
+.bodyhist__move[data-tone='bad'] {
+  color: var(--bad);
+}

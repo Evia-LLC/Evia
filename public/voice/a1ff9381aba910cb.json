@@ -1,0 +1,48 @@
+{
+ "text": "That's one way to say hello.",
+ "words": [
+  {
+   "word": "That's",
+   "charIndex": 0,
+   "charLength": 6,
+   "start": 0,
+   "end": 0.348
+  },
+  {
+   "word": "one",
+   "charIndex": 7,
+   "charLength": 3,
+   "start": 0.395,
+   "end": 0.499
+  },
+  {
+   "word": "way",
+   "charIndex": 11,
+   "charLength": 3,
+   "start": 0.534,
+   "end": 0.627
+  },
+  {
+   "word": "to",
+   "charIndex": 15,
+   "charLength": 2,
+   "start": 0.673,
+   "end": 0.72
+  },
+  {
+   "word": "say",
+   "charIndex": 18,
+   "charLength": 3,
+   "start": 0.755,
+   "end": 0.871
+  },
+  {
+   "word": "hello.",
+   "charIndex": 22,
+   "charLength": 6,
+   "start": 0.917,
+   "end": 1.44
+  }
+ ],
+ "duration": 1.44
+}

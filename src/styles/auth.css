@@ -1,0 +1,1250 @@
+/*
+ * The entry screen.
+ *
+ * Imported from app.css rather than written into it, because this is one
+ * self-contained composition and the rest of that file is in flight.
+ *
+ * The screen renders over the live stage: by the time it mounts, Elohim is
+ * already standing in the lounge, breathing and blinking. That is the single
+ * most persuasive thing the product owns, so the backdrop here is a *grade*,
+ * not a cover — it ramps to near-opaque under the type and thins out over her.
+ * Everything below follows from that decision:
+ *
+ *   - no card. A panel floating on a gradient is what this screen used to be,
+ *     and a card would put a hard edge between the type and the room behind it.
+ *     Legibility comes from the ramp plus a soft dark halo on the display type,
+ *     which is how titles sit over film footage.
+ *   - no backdrop-filter. A full-screen blur recomputed against a WebGL canvas
+ *     every frame is the single most expensive thing this layer could ask for,
+ *     and the target machine is an HD 620.
+ *   - the veil is layered gradients only, so it cannot fail on an old driver.
+ *
+ * Import order note: this file lands *above* app.css, so anything that also
+ * carries a shared class is written at `.auth--gate .x` (0,2,0) or higher and
+ * wins on specificity rather than on source order.
+ *
+ * Tokens: every colour, size, space and duration below comes from tokens.css,
+ * which app.css imports first. The `--auth-ease`, `--auth-ease-soft`,
+ * `--auth-ease-press`, `--auth-quiet` and `--auth-display` names this file used
+ * to declare for itself are now aliases declared there.
+ */
+
+/* --- the field of light --------------------------------------------------- */
+
+.auth.auth--gate {
+  display: block;
+  padding: 0;
+  /* The scroll region is a child, so the graded backdrop and the two lights
+     stay put while the column moves under them. */
+  overflow: hidden;
+
+  /*
+   * Portrait grade: she keeps the top of the frame, the type sits on the solid
+   * floor below.
+   *
+   * This layer is now only the room grade. It used to also be the thing that
+   * made the type legible, keyed off viewport percentages, and that is what put
+   * her dimmed face directly behind the headline on a phone: the ramp finished
+   * where the *screen* said, not where the words started. The ground the type
+   * sits on is anchored to the column instead — see `.auth__col::before`.
+   */
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(var(--ground-rgb), 0.1) 0%,
+      rgba(var(--ground-rgb), 0.26) 40%,
+      rgba(var(--ground-rgb), 0.62) 76%,
+      rgba(var(--ground-rgb), 0.91) 100%
+    ),
+    radial-gradient(142% 72% at 50% 12%, rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* Signed in. The gate is dissolving over an interface that is already live
+   underneath it, so it stops taking clicks the moment it starts to go. */
+.auth.auth--leaving {
+  pointer-events: none;
+}
+
+/*
+ * Above the column, not behind it.
+ *
+ * Underneath, the two lights were painted over by the ground the type stands
+ * on, so everything below the fade was flat black — on a phone, where the
+ * ground covers almost the whole screen, that is the entire page. Lifting them
+ * over the top is what turns "she is not visible here" into "this is a lit
+ * room she is not standing in": the atmosphere comes from the light rather than
+ * from her. They never take a click.
+ */
+.auth--gate .auth__light {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.auth--gate .auth__scroll {
+  z-index: 1;
+}
+
+/*
+ * Two lights, not decoration: a warm key up near her and a cool fill down where
+ * the form is. It is the same two-source setup the lounge itself is lit with,
+ * which is what stops the UI layer reading as a sticker on top of the render.
+ */
+.auth--gate .auth__key,
+.auth--gate .auth__fill {
+  position: absolute;
+  /* Oversized so the drift never walks an edge into frame. */
+  inset: -22%;
+  display: block;
+  will-change: transform;
+}
+
+.auth--gate .auth__key {
+  background: radial-gradient(
+    54% 30% at 24% 10%,
+    rgba(var(--auth-key-rgb), 0.17),
+    rgba(var(--auth-key-rgb), 0) 72%
+  );
+  animation:
+    auth-key-drift 43s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate,
+    auth-in 1.9s var(--auth-ease-soft) both;
+}
+
+.auth--gate .auth__fill {
+  background: radial-gradient(
+    58% 34% at 86% 74%,
+    rgba(var(--auth-fill-rgb), 0.1),
+    rgba(var(--auth-fill-rgb), 0) 74%
+  );
+  animation:
+    auth-fill-drift 61s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate,
+    auth-in 2.4s var(--auth-ease-soft) both;
+}
+
+/* The scanline texture is retired: nothing on the DOM carries a scanline any
+   more. The element stays in the markup; it draws nothing. */
+.auth--gate .auth__grain {
+  display: none;
+}
+
+/* --- the column ----------------------------------------------------------- */
+
+.auth--gate .auth__scroll {
+  position: absolute;
+  inset: 0 0 auto 0;
+  /*
+   * `--vvh` is what the user can actually see. Anchoring the scroll region to
+   * it rather than to the shell means that when the keyboard opens on a 640px
+   * phone the region *is* the visible band, so scrolling inside it reaches
+   * every control instead of scrolling content further under the keys.
+   */
+  height: var(--vvh);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  /* Room above a field the browser scrolls into view on focus. */
+  scroll-padding-block: 28px;
+  padding: max(20px, var(--safe-t)) max(22px, var(--safe-r)) max(24px, var(--safe-b))
+    max(22px, var(--safe-l));
+}
+
+/*
+ * Her window. It takes whatever height is spare and gives all of it back the
+ * moment there is none, so the composition breathes on a tall phone and the
+ * form still fits on a short one without a second layout.
+ *
+ * `min-height` is deliberately 0 rather than a comfortable floor. A floor was
+ * the first build and it is a trap: a flex item cannot shrink past its
+ * min-height, so on a 375x812 phone with both disclosures showing it held onto
+ * 195px it did not have and pushed the button 100px under the fold.
+ */
+.auth--gate .auth__air {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 44vh;
+}
+
+/* The gate arrives as one column: a single 360ms rise, no per-element stagger.
+   `page-in` is declared in tokens.css so this file can reach it. */
+.auth--gate .auth__col {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 440px;
+  margin-inline: auto;
+  animation: page-in var(--dur-3) var(--ease) both;
+}
+
+/*
+ * The ground the type stands on, anchored to the column rather than to the
+ * viewport.
+ *
+ * This is the fix for the ghost. When the ramp was a percentage of screen
+ * height, a phone with two disclosures pushed the headline up into the part of
+ * the frame that was still half transparent, and Elohim's dimmed face ended up
+ * reading through the words — visible enough to distract, dim enough to haunt.
+ * Anchored here, the 132px fade always ends exactly where the first line
+ * begins, whatever the column's height or where it sits, so she is either
+ * properly in the room above the type or not in the picture at all.
+ *
+ * Full-bleed sideways and far past the bottom so no edge of it is ever findable.
+ */
+.auth--gate .auth__col::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: -50vw;
+  right: -50vw;
+  top: -132px;
+  /*
+   * Stops just past the content, not far below it. An absolutely positioned
+   * descendant still counts towards its scroll container's scrollable area, and
+   * running this one 60vh past the column added 460px of phantom scroll to a
+   * page that otherwise fits. The 26px is the container's own bottom padding,
+   * so it reaches the end of the scroll region and no further; the room grade
+   * closes out dark underneath it.
+   */
+  bottom: -26px;
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--ground-rgb), 0) 0px,
+    rgba(var(--ground-rgb), 0.18) 34px,
+    rgba(var(--ground-rgb), 0.52) 74px,
+    rgba(var(--ground-rgb), 0.86) 110px,
+    rgba(var(--ground-rgb), 0.975) 132px,
+    rgba(var(--ground-rgb), 0.985) 100%
+  );
+}
+
+/* --- masthead and promise ------------------------------------------------- */
+
+/* The wordmark: lowercase italic serif, no accented letter, no metal. */
+.auth--gate .auth__wordmark {
+  margin: 0 0 var(--s-5);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 34px;
+  font-weight: var(--w-regular);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.auth--gate .auth__wordmark span {
+  display: inline;
+  animation: none;
+}
+
+.auth--gate .auth__wordmark span.is-accent {
+  color: inherit;
+}
+
+.auth--gate .auth__lede {
+  margin: 0 0 var(--s-4);
+  /* The halo is what buys the right to have no card: a tight shadow for edge
+     contrast and a wide soft one that darkens whatever the scene happens to be
+     doing behind the glyphs. */
+  text-shadow: var(--halo);
+}
+
+.auth--gate .auth__lede span {
+  display: block;
+}
+
+/* The quiet half of the lede: a sentence-case introduction at body size. */
+.auth--gate .auth__lede-a {
+  font-size: var(--t-body);
+  font-weight: var(--w-regular);
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+}
+
+/* The display line: the body face one weight lighter, at the display size. */
+.auth--gate .auth__lede-b {
+  margin-top: var(--s-1);
+  font-family: var(--display);
+  font-size: var(--t-display);
+  font-weight: var(--w-light);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--trk-display);
+  /* A display line that breaks "…look at your / skin." is worse than one that
+     breaks in the middle. Balanced, the two halves carry roughly equal weight. */
+  text-wrap: balance;
+  color: var(--ink);
+}
+
+.auth--gate .auth__sub {
+  margin: 0 0 var(--s-5);
+  max-width: var(--measure);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  color: var(--ink-soft);
+  text-shadow: 0 1px 16px rgba(var(--ground-rgb), 0.8);
+}
+
+/*
+ * What she actually measures, in the pipeline's own words. It is here instead
+ * of three feature bullets because the specific vocabulary is the proof — a
+ * product that says "redness" and "under-eye" has looked at a face.
+ */
+.auth--gate .auth__reads {
+  margin: 0 0 var(--s-6);
+  font-family: var(--font);
+  font-size: var(--t-sm);
+  letter-spacing: 0;
+  line-height: 1.7;
+  text-transform: none;
+  color: var(--quiet);
+  /* Stops the last metric orphaning onto a line by itself. Ignored where it is
+     not supported, which costs nothing — the trailing separators already make
+     any break read as deliberate. */
+  text-wrap: balance;
+  clip-path: none;
+  animation: none;
+  font-feature-settings: var(--num);
+}
+
+.auth--gate .auth__reads-key {
+  color: var(--ink-soft);
+  opacity: 1;
+  margin-right: var(--s-1);
+}
+
+/* Separators are drawn, not typed: a 2px dot reads as an instrument tick, and
+   an empty `content` string keeps a screen reader from announcing punctuation
+   between every word. */
+.auth--gate .auth__reads b {
+  font-weight: inherit;
+  /* A metric name is one word even when it has a hyphen in it. */
+  white-space: nowrap;
+}
+
+/*
+ * The separator trails its item rather than leading the next one.
+ *
+ * As a `::before` it belonged to the word after it, so when the strip wrapped
+ * the dot went over the line break with the last metric and the line above
+ * ended on a dangling one. Trailing, a wrapped line ends on a separator, which
+ * reads as a continuation the way a hyphen does — and the last item drops its
+ * dot, so the strip never ends on punctuation.
+ */
+.auth--gate .auth__reads b:not(:last-of-type)::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 2px;
+  margin: 0 0 3px 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+  vertical-align: middle;
+}
+
+/* --- disclosures ---------------------------------------------------------- */
+
+/*
+ * Demo mode and the no-key engine are honesty disclosures, so they sit above
+ * the form: below the fold on a phone is the same thing as hidden.
+ *
+ * They are a hairline band and not two tinted boxes, which is what they were.
+ * Boxed, bordered and tinted, two of them ran to 190px and read as the loudest
+ * thing between the pitch and the form — the page's own purpose arriving third,
+ * after two notices. The information is identical here; only the volume is
+ * different. One row each, the tag doing the labelling, the rules doing the
+ * containing.
+ */
+.auth--gate .auth__notes {
+  margin: 0 0 var(--s-5);
+  border-top: var(--hair) solid var(--line);
+  border-bottom: var(--hair) solid var(--line);
+  opacity: 1;
+  font-size: var(--t-sm);
+}
+
+.auth--gate .auth__note {
+  display: flex;
+  flex-wrap: wrap;
+  /* Baseline, not centre: beside a body that wraps to three lines a centred tag
+     floats halfway down the row with nothing to sit against. */
+  align-items: baseline;
+  gap: var(--s-1) var(--s-3);
+  padding: var(--s-2) 0;
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--quiet);
+}
+
+.auth--gate .auth__note-tag {
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.auth--gate .auth__note--engine .auth__note-tag {
+  color: var(--ink-soft);
+}
+
+/* Takes the rest of the row when there is room for it and drops to its own line
+   when there is not, which is the only thing that has to happen at 375px. */
+.auth--gate .auth__note-body {
+  flex: 1 1 190px;
+}
+
+.auth--gate .auth__note code,
+.auth--gate .auth__note--engine code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
+/*
+ * Drawn at 26px, hit at 44 — the transparent-overlay pattern the rest of the
+ * stylesheet uses for chips. A control this quiet cannot be 44px tall without
+ * becoming the loudest thing in the band again, and the overlay only ever
+ * covers text.
+ */
+.auth--gate .auth__note-btn {
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 26px;
+  padding: 0 0 2px;
+  border-radius: 0;
+  border: 0;
+  border-bottom: var(--hair) solid var(--line-metal);
+  background: none;
+  font-family: var(--font);
+  font-size: var(--t-sm);
+  color: var(--metal-bright);
+  transition: border-color var(--dur-1) var(--ease);
+}
+
+.auth--gate .auth__note-btn::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--tap);
+  transform: translateY(-50%);
+}
+
+.auth--gate .auth__note-btn:hover {
+  border-bottom-color: var(--metal);
+  background: none;
+}
+
+/* --- mode rail ------------------------------------------------------------ */
+
+.auth--gate .auth__rail {
+  display: flex;
+  gap: clamp(20px, 5vw, 30px);
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.auth--gate .auth__tab {
+  position: relative;
+  padding: 0 0 var(--s-3);
+  /* "Sign in" sets 42px wide, which is two short of a thumb. The min-width only
+     ever adds a pixel either side of the shorter label. */
+  min-height: var(--tap);
+  min-width: var(--tap);
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+  letter-spacing: 0.01em;
+  color: var(--quiet);
+  transition: color var(--dur-2) var(--ease-soft);
+}
+
+.auth--gate .auth__tab:hover {
+  color: var(--ink-soft);
+}
+
+.auth--gate .auth__tab[data-active='true'] {
+  color: var(--ink);
+}
+
+/*
+ * The indicator is two hairlines, not one that moves.
+ *
+ * A single sliding bar needs the tabs measured, and measurement means a
+ * ResizeObserver plus a reflow on every font swap. With exactly two tabs the
+ * direction of travel is fixed — left tab is always reached from the right,
+ * right tab always from the left — so anchoring each bar's transform-origin
+ * accordingly makes the wipe-out and the wipe-in read as one continuous slide
+ * with no JavaScript at all. The incoming bar is held back 100ms so the
+ * outgoing one clears first.
+ */
+.auth--gate .auth__tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  border-radius: 0;
+  background: var(--metal);
+  transform: scaleX(0);
+  transition: transform 0.26s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.auth--gate .auth__tab:first-child::after {
+  transform-origin: right center;
+}
+
+.auth--gate .auth__tab:last-child::after {
+  transform-origin: left center;
+}
+
+.auth--gate .auth__tab[data-active='true']::after {
+  transform: scaleX(1);
+  transition: transform 0.4s var(--auth-ease) 0.1s;
+}
+
+/* --- fields --------------------------------------------------------------- */
+
+.auth--gate .auth__field {
+  position: relative;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.auth--gate .auth__label {
+  display: block;
+  margin-bottom: var(--s-2);
+  font-size: var(--t-md);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+  transition: color var(--dur-2) var(--ease-soft);
+}
+
+.auth--gate .auth__field:focus-within .auth__label {
+  color: var(--ink);
+}
+
+.auth--gate .auth__input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--s-3);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--ink);
+  font: inherit;
+  /*
+   * 16px is not a taste decision. Mobile Safari zooms the whole page in when a
+   * field smaller than 16px takes focus, and on this screen that throws the
+   * composition sideways and leaves the page horizontally scrolled.
+   */
+  font-size: 16px;
+  transition: border-color var(--dur-1) var(--ease);
+}
+
+.auth--gate .auth__input::placeholder {
+  color: var(--quiet);
+}
+
+.auth--gate .auth__input:hover {
+  border-color: var(--ink-soft);
+}
+
+/* No box-shadow here on purpose: the global :focus-visible ring is an outline,
+   and this rule only moves the border to the metal. */
+.auth--gate .auth__input:focus {
+  border-color: var(--metal);
+  outline-offset: 3px;
+}
+
+/* The underline light that used to run along the bottom edge on focus is gone:
+   the border change is the whole focus state. */
+.auth--gate .auth__field::after {
+  content: none;
+}
+
+.auth--gate .auth__field--password .auth__input {
+  /* Room for the reveal control. */
+  padding-right: 74px;
+}
+
+.auth--gate .auth__peek {
+  position: absolute;
+  right: 3px;
+  /* 44 inside a 48px field: two pixels of air top and bottom. */
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  min-width: var(--tap);
+  height: 44px;
+  padding: 0 var(--s-2);
+  border-radius: var(--radius);
+  font-size: var(--t-xs);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--quiet);
+  transition: color var(--dur-1) var(--ease);
+}
+
+.auth--gate .auth__peek:hover {
+  color: var(--ink-soft);
+}
+
+.auth--gate .auth__error {
+  margin: 4px 0 12px;
+}
+
+/* --- call to action ------------------------------------------------------- */
+
+/*
+ * The one metal edge on the screen. Dark ground, champagne hairline, the
+ * letterform carrying the weight (uppercase, tracked, small). No fill, no glow,
+ * no lift, no sweep: busy is a state, and the label says so.
+ */
+.auth--gate .auth__cta {
+  position: relative;
+  overflow: visible;
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin-top: var(--s-5);
+  padding: 0 var(--s-5);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-metal);
+  background: rgba(var(--ground-rgb), 0.4);
+  color: var(--metal-bright);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cta);
+  text-transform: uppercase;
+  box-shadow: none;
+  animation: none;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+
+.auth--gate .auth__cta:not(:disabled):hover {
+  transform: none;
+  border-color: var(--metal);
+  background: rgba(var(--metal-rgb), 0.06);
+  color: var(--metal-bright);
+  box-shadow: none;
+}
+
+.auth--gate .auth__cta:not(:disabled):active {
+  transform: none;
+  background: rgba(var(--metal-rgb), 0.1);
+  box-shadow: none;
+}
+
+.auth--gate .auth__cta:disabled {
+  cursor: default;
+  border-color: var(--line-strong);
+  color: var(--quiet);
+}
+
+.auth--gate .auth__cta::after {
+  content: none;
+}
+
+.auth--gate .auth__cta[data-busy='true'] {
+  color: var(--metal-soft);
+  border-color: var(--line-metal);
+}
+
+/* Both labels occupy the same cell so one can leave while the other arrives
+   without the button changing size. */
+.auth--gate .auth__cta-label {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 50px;
+}
+
+.auth--gate .auth__cta-label > span {
+  grid-area: 1 / 1;
+}
+
+/* The server-unreachable notice. Sits where the error would, reads as a state
+   rather than a failure — because it is one: nothing has gone wrong, there is
+   simply nothing behind this build to sign in to. */
+.auth--gate .auth__offline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+  padding: var(--s-1) 0 var(--s-1) var(--s-3);
+  border: 0;
+  border-left: 2px solid var(--line-strong);
+  border-radius: 0;
+  background: none;
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+/* The way in without an account. Quiet — it is the second choice on the screen
+   — but a real control, and it says what it costs on its own face. */
+.auth--gate .auth__guest {
+  display: block;
+  width: 100%;
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-strong);
+  background: none;
+  color: var(--ink-soft);
+  font-size: var(--t-body);
+  letter-spacing: 0;
+  text-align: center;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+
+.auth--gate .auth__guest:hover {
+  border-color: var(--ink-soft);
+  background: none;
+  color: var(--ink);
+}
+
+.auth--gate .auth__guest small {
+  display: block;
+  margin-top: var(--s-1);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--quiet);
+}
+
+.auth--gate .auth__promise {
+  margin: var(--s-4) 0 0;
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--quiet);
+  animation: none;
+}
+
+/* --- landscape ------------------------------------------------------------ */
+
+/*
+ * The same two queries the rest of the stylesheet splits on, so this screen can
+ * never disagree with the app it opens into about what a phone is.
+ *
+ * Landscape is a two-zone frame rather than a stack: the type takes a column on
+ * the left, she keeps the centre and right of the plate. The grade is angled a
+ * few degrees off vertical so the falloff across her reads as a key light
+ * coming from her side of the room, not as a rectangle of dimming.
+ */
+@media (min-width: 861px) and (orientation: landscape) {
+  /*
+   * The falloff across the room, as one radial anchored off the left edge.
+   *
+   * It was an angled linear ramp, and a linear ramp with widely spaced stops
+   * has a kink where its slope changes — which is exactly the vertical seam
+   * that showed up around x≈420 at 1100px. A radial cannot produce a straight
+   * boundary at all, and the eleven stops below are close enough together that
+   * no single one of them is findable. It reads as a shadow thrown across the
+   * room rather than as a rectangle of dimming, which is what it is meant to be.
+   */
+  .auth.auth--gate {
+    background:
+      radial-gradient(
+        112% 150% at -14% 50%,
+        rgba(var(--ground-rgb), 0.97) 0%,
+        rgba(var(--ground-rgb), 0.96) 12%,
+        rgba(var(--ground-rgb), 0.92) 22%,
+        rgba(var(--ground-rgb), 0.85) 32%,
+        rgba(var(--ground-rgb), 0.81) 42%,
+        rgba(var(--ground-rgb), 0.73) 52%,
+        rgba(var(--ground-rgb), 0.64) 62%,
+        rgba(var(--ground-rgb), 0.54) 72%,
+        rgba(var(--ground-rgb), 0.41) 82%,
+        rgba(var(--ground-rgb), 0.36) 92%,
+        rgba(var(--ground-rgb), 0.34) 100%
+      ),
+      /*
+       * A pool of shade over her, not a vignette around her.
+       *
+       * This used to be the opposite: transparent out to 26% centred on
+       * (62%, 34%), which is exactly where her head sits — so the one part of
+       * the frame the grade protected was her face. She came out the brightest
+       * object on a screen whose job is a headline and a form, and read as a
+       * figure looming between the two columns. Darkest where she is, clearing
+       * as it moves away.
+       */
+      radial-gradient(
+        58% 74% at 60% 32%,
+        rgba(var(--ground-rgb), 0.72) 0%,
+        rgba(var(--ground-rgb), 0.6) 30%,
+        rgba(var(--ground-rgb), 0.34) 62%,
+        rgba(var(--ground-rgb), 0) 100%
+      );
+  }
+
+  /* The column stands beside her here, not on top of her, so it needs no ground
+     of its own — and a full-bleed one would darken the room she is standing in. */
+  .auth--gate .auth__col::before {
+    display: none;
+  }
+
+  /* Aimed into the room, deliberately off her.
+     At 64% 30% this warm key was landing on her face and undoing the shade
+     above it — two layers competing over the same pixels. */
+  .auth--gate .auth__key {
+    background: radial-gradient(
+      34% 44% at 82% 66%,
+      rgba(var(--auth-key-rgb), 0.12),
+      rgba(var(--auth-key-rgb), 0) 72%
+    );
+  }
+
+  .auth--gate .auth__fill {
+    background: radial-gradient(
+      38% 42% at 16% 78%,
+      rgba(var(--auth-fill-rgb), 0.08),
+      rgba(var(--auth-fill-rgb), 0) 74%
+    );
+  }
+
+  .auth--gate .auth__scroll {
+    align-items: flex-start;
+    padding-left: max(clamp(44px, 8vw, 132px), var(--safe-l));
+    padding-right: max(32px, var(--safe-r));
+  }
+
+  /* Her window is the whole right of the frame here, so the spacer has no job.
+     `margin-block: auto` centres the column while it fits and still lets it
+     scroll from the top when it does not — which `justify-content` would not. */
+  .auth--gate .auth__air {
+    display: none;
+  }
+
+  .auth--gate .auth__col {
+    width: min(560px, 100%);
+    /* The stacked rule caps the measure at 440px. Without lifting it here the
+       wide column silently stays phone-width, which is what "crammed into a
+       narrow strip on the far left" actually was. */
+    max-width: none;
+    margin-inline: 0;
+    margin-block: auto;
+  }
+
+  /*
+   * The blocks are deliberately not the same width and the gaps between them
+   * are deliberately not the same size. One column of identical measure with an
+   * even rhythm is a stack, not a composition: the headline is allowed to run
+   * out past everything else, the sentence under it is set to a reading measure,
+   * and the form is the narrowest thing on the page. What varies is what gives
+   * it a focal point.
+   */
+  .auth--gate .auth__lede {
+    width: min(620px, 54vw);
+    margin-bottom: 24px;
+  }
+
+  /*
+   * Two groups, not six evenly spaced blocks. The mark, the headline, the
+   * sentence and the strip are one thing — the pitch — and they are set tight
+   * against each other; then a gap twice the size of any inside it, and below
+   * that the machinery. Even spacing is what made this read as a stack.
+   */
+  .auth--gate .auth__sub {
+    max-width: 52ch;
+    margin-bottom: 15px;
+  }
+
+  .auth--gate .auth__notes {
+    margin-bottom: 26px;
+  }
+
+  /*
+   * The controls are the narrowest measure on the page and the line under them
+   * is not — capping the form itself would force the closing sentence into the
+   * same 400px trench as the fields and break it over two lines for no reason.
+   */
+  .auth--gate .auth__form {
+    max-width: none;
+  }
+
+  .auth--gate .auth__rail,
+  .auth--gate .auth__field,
+  .auth--gate .auth__cta {
+    max-width: 400px;
+  }
+
+  .auth--gate .auth__promise {
+    max-width: 520px;
+  }
+}
+
+/* --- short viewports ------------------------------------------------------ */
+
+/*
+ * Compaction, in two steps, keyed off height rather than width.
+ *
+ * A 1280x800 laptop is a *short* viewport for this composition. Measured, the
+ * full-rhythm column overruns it by 36px and leaves the closing line under the
+ * fold, which is the one thing a sign-in screen cannot do. Nothing is dropped
+ * to fix it and the disclosures especially are not droppable; the rhythm closes
+ * up. The threshold is 860 rather than 800 so that a window a little taller
+ * than a laptop is not sitting right on the edge of the switch.
+ */
+@media (max-height: 860px) {
+  .auth--gate .auth__scroll {
+    padding-top: max(16px, var(--safe-t));
+    padding-bottom: max(18px, var(--safe-b));
+  }
+
+  .auth--gate .auth__lede {
+    margin-bottom: 14px;
+  }
+
+  .auth--gate .auth__sub {
+    margin-bottom: 14px;
+  }
+
+  .auth--gate .auth__notes {
+    margin-bottom: 18px;
+  }
+
+  .auth--gate .auth__note {
+    padding: 7px 0;
+  }
+
+  .auth--gate .auth__rail {
+    margin-bottom: 14px;
+  }
+
+  .auth--gate .auth__field {
+    margin-bottom: 10px;
+  }
+
+  .auth--gate .auth__promise {
+    margin-top: 12px;
+  }
+}
+
+/* A landscape phone, or a desktop window pulled down to a third of the screen.
+   Her window is the first thing to go, because at this height it is a sliver
+   that reads as a gap rather than as a room. */
+@media (max-height: 620px) {
+  .auth--gate .auth__air {
+    min-height: 0;
+  }
+
+  .auth--gate .auth__sub {
+    margin-bottom: 14px;
+  }
+}
+
+/*
+ * Short *and* wide — a desktop window pulled down to a band. Stacked, that
+ * column runs to nearly twice the height available and turns a sign-in into
+ * two screens of scrolling; the width to fix it is sitting right there unused,
+ * so the pitch keeps the left and the form moves beside it. Recompose, don't
+ * shrink (brief §29) — the same rule the holo layout follows.
+ *
+ * 560px rather than the 861px the rest of the landscape rules use. A 577x397
+ * window is well under that threshold and was scrolling 378px with the button
+ * far below the fold; two columns is what fixes it, and two columns fit long
+ * before a viewport is 861px wide.
+ */
+@media (min-width: 560px) and (orientation: landscape) and (max-height: 620px) {
+  .auth--gate .auth__col {
+    width: min(840px, 100%);
+    /* The stacked rule caps the measure at 440px, which would otherwise sit on
+       top of the wider grid and squeeze column one to nothing. */
+    max-width: none;
+    display: grid;
+    /* The control column takes 40% of what is available, floored so the fields
+       stay usable and capped so it never widens past a form's measure. A fixed
+       336px track was fine at 974 and left the pitch 169px wide at 577. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, clamp(240px, 40%, 336px));
+    column-gap: clamp(28px, 4vw, 52px);
+    align-items: start;
+  }
+
+  /* Explicit placement, both on row one. Letting the form span the pitch's rows
+     instead was the first build: a spanning item's height is shared out across
+     every row it covers, which pulled the wordmark and the lede 350px apart. */
+  .auth--gate .auth__pitch {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .auth--gate .auth__form {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .auth--gate .auth__notes {
+    margin-bottom: 14px;
+  }
+}
+
+/*
+ * Portrait rhythm.
+ *
+ * Tighter than the default stack, because on a phone every 10px the pitch gives
+ * back is 10px of room she can stand in above it. Grouped the same way the wide
+ * layout groups: the pitch set close, then a real break before the machinery.
+ */
+@media (max-width: 860px), (orientation: portrait) {
+  .auth--gate .auth__lede {
+    margin-bottom: 12px;
+  }
+
+  .auth--gate .auth__sub {
+    margin-bottom: 15px;
+  }
+
+  .auth--gate .auth__notes {
+    margin-bottom: 20px;
+  }
+
+  /*
+   * Run-in rather than a flex row. At this width the tag takes a third of the
+   * line and pushes the sentence into a narrow trench beside it, which costs a
+   * whole extra line per disclosure; as a lead-in the text simply flows past it.
+   */
+  .auth--gate .auth__note {
+    display: block;
+    padding: 8px 0;
+  }
+
+  .auth--gate .auth__note-tag {
+    margin-right: 9px;
+  }
+
+  /* Its own line under the sentence at this width, which is the only shape
+     these three parts fit into on a 375px screen. */
+  .auth--gate .auth__note-btn {
+    display: flex;
+    width: fit-content;
+    margin-top: 7px;
+  }
+
+  .auth--gate .auth__rail {
+    margin-bottom: 15px;
+  }
+}
+
+@media (max-width: 380px) {
+  .auth--gate .auth__scroll {
+    padding-left: max(18px, var(--safe-l));
+    padding-right: max(18px, var(--safe-r));
+  }
+
+  .auth--gate .auth__reads b:not(:last-of-type)::after {
+    margin-left: 4px;
+  }
+}
+
+/* --- motion --------------------------------------------------------------- */
+
+@keyframes auth-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * Ambient drift. Two lights on 43s and 61s, both `alternate`, so the combined
+ * pattern does not repeat for about twenty minutes — long enough that nobody
+ * sitting on a sign-in screen ever sees it come back round. Transform only:
+ * these are large layers and repainting them would be the one expensive thing
+ * on the screen.
+ */
+@keyframes auth-key-drift {
+  from {
+    transform: translate3d(-1.6%, -1.2%, 0) scale(1.01);
+  }
+  to {
+    transform: translate3d(1.8%, 1.4%, 0) scale(1.06);
+  }
+}
+
+@keyframes auth-fill-drift {
+  from {
+    transform: translate3d(1.5%, 1.1%, 0) scale(1.05);
+  }
+  to {
+    transform: translate3d(-1.4%, -0.9%, 0) scale(1.01);
+  }
+}
+
+/*
+ * Reduced motion: everything stops. The column's arrival (`page-in`) and the
+ * lights' fade-in are written with a `from` only, so the element's resting
+ * state *is* the base rule and removing the animation leaves the screen fully
+ * composed rather than blank — which is the failure mode of animating in the
+ * other direction.
+ *
+ * The app's own `[data-reduced-motion]` preference is not mirrored here: it
+ * comes off `session.user`, and on this screen there is no user yet. The media
+ * query is the only signal that exists at the gate.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .auth--gate .auth__key,
+  .auth--gate .auth__fill,
+  .auth--gate .auth__col {
+    animation: none;
+  }
+
+  .auth--gate .auth__key,
+  .auth--gate .auth__fill {
+    will-change: auto;
+  }
+
+  .auth--gate .auth__tab,
+  .auth--gate .auth__tab::after,
+  /* The active bar carries its own higher-specificity transition *and* a 100ms
+     hold-back, so a blanket duration override at (0,2,1) would not reach it. */
+  .auth--gate .auth__tab[data-active='true']::after,
+  .auth--gate .auth__label,
+  .auth--gate .auth__input,
+  .auth--gate .auth__peek,
+  .auth--gate .auth__note-btn,
+  .auth--gate .auth__cta {
+    transition-duration: 0.01ms;
+    transition-delay: 0s;
+  }
+}
+
+/* ===========================================================================
+ * Composition pass: she has to actually be in the picture.
+ *
+ * What was wrong, measured rather than felt: `.auth__col::before` is a
+ * full-bleed ground that reaches 0.985 opacity 132px below the top of the
+ * column. On a wide screen the column sits beside her and that is fine. On a
+ * narrow one the column starts at the top of the viewport — so from about
+ * 165px down, the entire screen was 98.5% black. She was not dimmed behind the
+ * type, she was gone, and the screen read as a text file on a dark background.
+ *
+ * The fix is room. The type is given a portrait window above it to stand
+ * under, the ground still begins exactly 132px before the first line, and the
+ * grade over her is lifted so the room she is standing in is actually lit.
+ * =========================================================================== */
+
+@media (max-width: 860px), (orientation: portrait) {
+  /*
+   * The window. Everything above the type is hers.
+   *
+   * A viewport fraction rather than a fixed height, because what has to be
+   * visible is her head and shoulders, and that is a proportion of the frame
+   * on every screen. The floor keeps a usable portrait on a short phone in
+   * landscape; the ceiling stops a tall tablet turning it into a poster with a
+   * form hidden below the fold.
+   */
+  .auth--gate .auth__col {
+    /*
+     * Margin, not padding, and the difference is the whole fix.
+     *
+     * The ground behind the type is `.auth__col::before`, positioned against
+     * the column's *box* at `top: -132px`. Padding sits inside that box, so
+     * padding pushed the words down while leaving the box — and therefore the
+     * ground — starting at the top of the screen: the window was opened and
+     * then painted over. A margin moves the box itself, and the ground follows
+     * it down.
+     */
+    /*
+     * Enough room for a face, not just a hairline.
+     *
+     * 34vh cleared her forehead and cut the fade across her eyes, which is the
+     * worst possible place to put one. Her head needs about 44vh at this
+     * camera, so that is what it gets: the window is sized to the subject
+     * rather than to a number that looked reasonable.
+     */
+    margin-top: clamp(216px, 44vh, 380px);
+  }
+
+  /*
+   * A softer landing than the old wall.
+   *
+   * Still opaque where the words are — legibility is not negotiable — but it
+   * arrives over a longer run so the transition from room to page reads as
+   * light falling off rather than a panel starting.
+   */
+  .auth--gate .auth__col::before {
+    /*
+     * Begins higher and lands later, so her face clears it.
+     *
+     * At -132px the fade was already at two thirds by her mouth, which read as
+     * the character sinking into the page rather than standing behind it. A
+     * face is legible or it is not; there is no good amount of gradient to put
+     * across one.
+     */
+    /*
+     * The fade finishes where the words start, not before them.
+     *
+     * Every stop below is measured from 150px above the column, so full
+     * opacity lands within a few pixels of the first line. Anything earlier
+     * eats the picture; anything later puts type on the room.
+     */
+    top: -150px;
+    background: linear-gradient(
+      to bottom,
+      rgba(var(--ground-rgb), 0) 0px,
+      rgba(var(--ground-rgb), 0.08) 42px,
+      rgba(var(--ground-rgb), 0.28) 78px,
+      rgba(var(--ground-rgb), 0.6) 112px,
+      rgba(var(--ground-rgb), 0.88) 138px,
+      rgba(var(--ground-rgb), 0.96) 156px,
+      rgba(var(--ground-rgb), 0.975) 100%
+    );
+  }
+
+  /*
+   * Let the room show. The base grade darkened the top of the frame by up to
+   * 0.55 through a radial centred at 12% height — which is exactly the part of
+   * the picture this composition now depends on.
+   */
+  .auth.auth--gate {
+    background:
+      linear-gradient(
+        to bottom,
+        rgba(var(--ground-rgb), 0) 0%,
+        rgba(var(--ground-rgb), 0.06) 30%,
+        rgba(var(--ground-rgb), 0.3) 62%,
+        rgba(var(--ground-rgb), 0.72) 88%,
+        rgba(var(--ground-rgb), 0.91) 100%
+      ),
+      radial-gradient(150% 60% at 50% 6%, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.34) 100%);
+  }
+}
+
+/* ===========================================================================
+ * Type.
+ *
+ * Two faces, both from tokens.css: the interface face (`--font`, Manrope) for
+ * everything, and the serif (`--font-serif`, Cormorant Garamond) for exactly
+ * one line on this screen — the lowercase italic wordmark at 34px. The display
+ * line under it is the interface face one weight lighter, not a second serif.
+ *
+ * Both families come from Google Fonts through the <link> tags in index.html.
+ * The fonts.googleapis.com link is allowed here now because tokens.css declares
+ * metric-matched local fallbacks ('Manrope Fallback', 'Cormorant Garamond
+ * Fallback') for each family, so the page composes correctly before the
+ * webfont lands and does not reflow when it swaps in. Because the same family
+ * names are used throughout, self-hosting later is a drop-in: replace the link
+ * with four @font-face rules pointing at public/fonts/ and nothing in this
+ * file changes.
+ * =========================================================================== */

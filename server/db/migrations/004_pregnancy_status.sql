@@ -1,0 +1,11 @@
+-- Pregnancy status, as its own field.
+--
+-- The retinoid recommendation has always carried a pregnancy veto, but the only
+-- way to trigger it was for the user to type "pregnancy" into a free-text
+-- sensitivities box labelled "fragrance, essential oils". This gives the
+-- question somewhere to live so it can actually be asked.
+--
+-- The default is 'unknown', not 'no'. Every existing row is unanswered, and an
+-- unanswered question must not read as a negative answer — 'prefer not to say'
+-- lands here too, and means the same thing: do not assume.
+ALTER TABLE skin_profiles ADD COLUMN pregnancy_status TEXT NOT NULL DEFAULT 'unknown';

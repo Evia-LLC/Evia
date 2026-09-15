@@ -1,0 +1,27 @@
+{
+ "text": "Mind the coat.",
+ "words": [
+  {
+   "word": "Mind",
+   "charIndex": 0,
+   "charLength": 4,
+   "start": 0,
+   "end": 0.406
+  },
+  {
+   "word": "the",
+   "charIndex": 5,
+   "charLength": 3,
+   "start": 0.453,
+   "end": 0.522
+  },
+  {
+   "word": "coat.",
+   "charIndex": 9,
+   "charLength": 5,
+   "start": 0.546,
+   "end": 1.022
+  }
+ ],
+ "duration": 1.022
+}

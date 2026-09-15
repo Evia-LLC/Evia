@@ -1,0 +1,34 @@
+{
+ "text": "Gently — I'm working.",
+ "words": [
+  {
+   "word": "Gently",
+   "charIndex": 0,
+   "charLength": 6,
+   "start": 0,
+   "end": 0.488
+  },
+  {
+   "word": "—",
+   "charIndex": 7,
+   "charLength": 1,
+   "start": 0.534,
+   "end": 0.58
+  },
+  {
+   "word": "I'm",
+   "charIndex": 9,
+   "charLength": 3,
+   "start": 0.604,
+   "end": 0.72
+  },
+  {
+   "word": "working.",
+   "charIndex": 13,
+   "charLength": 8,
+   "start": 0.755,
+   "end": 1.347
+  }
+ ],
+ "duration": 1.347
+}

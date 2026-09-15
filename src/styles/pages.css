@@ -1,0 +1,1082 @@
+/*
+ * Pages.
+ *
+ * The rework in one paragraph: features stopped being panels that appear over
+ * the room and became pages with addresses. This file is the frame those pages
+ * share — the rail and the tab bar that move between them, the column and its
+ * ground, the hero, and the handful of surfaces the pages are built from.
+ *
+ * The room is still the interface. Every rule here keeps her in frame:
+ * the column takes one side of the screen and grades to nothing over her, and
+ * on a phone it rises from the bottom and leaves her the top. Nothing is a
+ * modal, nothing is a dashboard, and nothing is behind glass on a phone
+ * (ARCHITECTURE §9 — a backdrop-filter over a WebGL canvas is the single most
+ * expensive thing this layer can ask for).
+ *
+ * Every colour, size, space, duration and z-index comes from tokens.css. This
+ * file declares no tokens. The one metal (champagne) is spent as a 1px edge —
+ * the .cta border, the "you are here" hairline, her .aside rule — and nothing
+ * on the DOM glows, blurs or pulses. The hologram cyan belongs to the scene.
+ */
+
+/* =========================================================================
+   The rail (desktop)
+   ========================================================================= */
+
+.nav {
+  position: absolute;
+  z-index: var(--z-nav);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: max(var(--s-5), var(--safe-t)) 0 max(var(--s-4), var(--safe-b));
+  padding-left: var(--safe-l);
+  background: linear-gradient(
+    to right,
+    rgba(var(--ground-rgb), 0.78),
+    rgba(var(--ground-rgb), 0.42) 70%,
+    rgba(var(--ground-rgb), 0)
+  );
+  pointer-events: none;
+}
+.nav > * {
+  pointer-events: auto;
+}
+
+/* The wordmark is lowercase italic 'Elohim' — no accented letter, no metal. */
+.nav__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-1);
+  margin-bottom: var(--s-6);
+  text-decoration: none;
+  color: var(--ink);
+}
+.nav__mark {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 22px;
+  font-weight: var(--w-regular);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1;
+  margin-right: 0;
+  color: var(--ink);
+}
+.nav__mark i {
+  font-style: inherit;
+  color: inherit;
+}
+.nav__note {
+  max-width: 60px;
+  font-size: var(--t-xs);
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: var(--lh-snug);
+  color: var(--quiet);
+  text-align: center;
+  white-space: normal;
+}
+
+/* Voice and sound: the two switches that are not pages. Same family as the
+   nav items, smaller; on-state is the icon in champagne, never an underline
+   (underlines mean links here). */
+.nav__tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin: var(--s-3) 0 0;
+}
+.nav__tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-1);
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--radius);
+  border: 0;
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease);
+}
+.nav__tool svg {
+  width: 17px;
+  height: 17px;
+}
+.nav__tool span {
+  font-size: var(--t-xs);
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1;
+}
+.nav__tool:hover {
+  color: var(--ink);
+}
+.nav__tool[aria-pressed='true'] {
+  color: var(--ink);
+}
+.nav__tool[aria-pressed='true'] svg {
+  color: var(--metal);
+}
+.nav__tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The rail runs one colour. The rail is 72 and the item 56, so -8px lands
+   the "you are here" hairline at x=0, on screen. */
+.nav__item,
+.nav__foot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-1);
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+  border: 0;
+  color: var(--quiet);
+  text-decoration: none;
+  text-shadow: none;
+  transition: color var(--dur-1) var(--ease);
+}
+.nav__item svg,
+.nav__foot svg {
+  width: 20px;
+  height: 20px;
+  transition: none;
+}
+.nav__item span,
+.nav__foot span {
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1;
+}
+.nav__item:hover,
+.nav__foot:hover {
+  color: var(--ink);
+}
+.nav__item:hover svg {
+  transform: none;
+}
+.nav__item[aria-current='page'],
+.nav__foot[aria-current='page'] {
+  color: var(--ink);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.nav__item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: var(--s-4);
+  bottom: var(--s-4);
+  width: 1px;
+  border-radius: 0;
+  background: var(--metal);
+  box-shadow: none;
+  animation: none;
+}
+/* Kept as a no-op so markup that still carries it compiles. */
+.nav__item--go,
+.nav__item--go:hover,
+.nav__item--go[aria-current='page'] {
+  color: inherit;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.nav__item--go:hover {
+  color: var(--ink);
+}
+.nav__item--go[aria-current='page'] {
+  color: var(--ink);
+}
+.nav__item--go[aria-current='page']::before {
+  background: var(--metal);
+  box-shadow: none;
+}
+.nav__foot {
+  margin-top: auto;
+  width: 56px;
+  height: 56px;
+}
+
+/* =========================================================================
+   The page
+   ========================================================================= */
+
+.page {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-page);
+  pointer-events: none;
+}
+
+/*
+ * The ground the column stands on.
+ *
+ * A grade rather than a card: near-solid under the type and thinning to
+ * nothing over her. No scanline layer, no width transition over WebGL.
+ */
+.page__ground {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--rail-w) + var(--page-w) + var(--page-feather));
+  background: linear-gradient(
+    to right,
+    rgba(var(--ground-rgb), 0.94) 0%,
+    rgba(var(--ground-rgb), 0.9) calc(var(--rail-w) + var(--page-w) - 24px),
+    rgba(var(--ground-rgb), 0.5) calc(var(--rail-w) + var(--page-w) + 48px),
+    rgba(var(--ground-rgb), 0) 100%
+  );
+  transition: none;
+}
+.page--wide .page__ground {
+  width: calc(var(--rail-w) + var(--page-w-wide) + var(--page-feather));
+  background: linear-gradient(
+    to right,
+    rgba(var(--ground-rgb), 0.94) 0%,
+    rgba(var(--ground-rgb), 0.9) calc(var(--rail-w) + var(--page-w-wide) - 24px),
+    rgba(var(--ground-rgb), 0.5) calc(var(--rail-w) + var(--page-w-wide) + 48px),
+    rgba(var(--ground-rgb), 0) 100%
+  );
+}
+
+/*
+ * Mirrored: the column on the right, the room on the left.
+ *
+ * The clinic blocks her stage-left with the holograms around her, so the scan
+ * page takes the other side. The ground is the same grade reflected, and the
+ * rail keeps its edge — only the column moves.
+ */
+.page--right .page__ground {
+  left: auto;
+  right: 0;
+  width: calc(var(--page-w) + var(--page-feather));
+  background: linear-gradient(
+    to left,
+    rgba(var(--ground-rgb), 0.94) 0%,
+    rgba(var(--ground-rgb), 0.9) calc(var(--page-w) - 24px),
+    rgba(var(--ground-rgb), 0.5) calc(var(--page-w) + 48px),
+    rgba(var(--ground-rgb), 0) 100%
+  );
+}
+.page--right.page--wide .page__ground {
+  width: calc(var(--page-w-wide) + var(--page-feather));
+  background: linear-gradient(
+    to left,
+    rgba(var(--ground-rgb), 0.94) 0%,
+    rgba(var(--ground-rgb), 0.9) calc(var(--page-w-wide) - 24px),
+    rgba(var(--ground-rgb), 0.5) calc(var(--page-w-wide) + 48px),
+    rgba(var(--ground-rgb), 0) 100%
+  );
+}
+
+/* One 360ms arrival for the whole column; nothing inside it staggers. */
+.page__scroll {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail-w);
+  width: var(--page-w);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  padding: 0 var(--s-6) max(var(--s-6), var(--safe-b));
+  pointer-events: auto;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--s-3),
+    #000 calc(100% - var(--s-6)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--s-3),
+    #000 calc(100% - var(--s-6)),
+    transparent
+  );
+  animation: page-in var(--dur-3) var(--ease) both;
+}
+.page--wide .page__scroll {
+  width: var(--page-w-wide);
+}
+.page--right .page__scroll {
+  left: auto;
+  right: 0;
+  padding-right: max(var(--s-6), var(--safe-r));
+}
+
+/* Headroom above the hero. On a desktop it is only breathing room. */
+.page__air {
+  height: max(var(--s-7), var(--safe-t));
+}
+
+/* --- hero ----------------------------------------------------------------- */
+
+/* The eyebrow is not metal — the metal is spent on the action. */
+.hero {
+  margin: 0 0 var(--s-7);
+  padding-bottom: var(--s-5);
+  border-bottom: var(--hair) solid var(--line);
+}
+.hero__eyebrow {
+  margin: 0 0 var(--s-3);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+.hero__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--t-display);
+  font-weight: var(--w-light);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--trk-display);
+  text-wrap: balance;
+  color: var(--ink);
+  text-shadow: var(--halo);
+}
+.hero__lede {
+  margin: var(--s-4) 0 0;
+  max-width: var(--measure);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  color: var(--ink-soft);
+}
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-5);
+  margin-top: var(--s-5);
+}
+
+/* --- sections --------------------------------------------------------------- */
+
+.page__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+/* The column arrives as one; a section never rises on its own. */
+.sec {
+  animation: none;
+}
+
+/* Data sections open on a hairline with a caps label; the meta shares its
+   tracking on the same baseline. Only a `.sec--prose` carries the light title. */
+.sec__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding-top: var(--s-3);
+  margin-bottom: var(--s-4);
+  border-top: var(--hair) solid var(--line);
+}
+/* The hero already closes on a hairline; the first section under it does not
+   draw a second one a breath later. */
+.page__body > .sec:first-child > .sec__head {
+  padding-top: 0;
+  border-top: 0;
+}
+.sec__title {
+  margin: 0;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--quiet);
+}
+.sec--prose .sec__title {
+  font-size: var(--t-h2);
+  font-weight: var(--w-light);
+  letter-spacing: -0.01em;
+  text-transform: none;
+  line-height: var(--lh-snug);
+  color: var(--ink);
+}
+.sec__meta {
+  font-family: var(--font);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  color: var(--quiet);
+  font-feature-settings: var(--num);
+}
+.sec--prose .sec__meta {
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.sec__lede {
+  margin: 0 0 var(--s-4);
+  max-width: var(--measure);
+  font-size: var(--t-md);
+  line-height: var(--lh-body);
+  color: var(--quiet);
+}
+
+/* A card is no longer a box. `.card--plane` is the single opt-in surface
+   (ScanCapture viewport card, CompareFaces); `.card--warm` is her voice's rule. */
+.card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.card--holo {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  background-size: auto;
+  background-position: 0 0;
+  box-shadow: none;
+}
+.card--warm {
+  padding-left: var(--s-4);
+  border-left: var(--hair) solid var(--metal);
+  border-radius: 0;
+  background: none;
+}
+.card--plane {
+  padding: var(--s-4);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.card__title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--t-lg);
+  font-weight: var(--w-medium);
+  line-height: var(--lh-snug);
+  color: var(--ink);
+}
+.card__text {
+  margin: 0;
+  max-width: var(--measure);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  color: var(--ink-soft);
+}
+
+/* A big number with its unit and its movement, for a headline stat. */
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+.stat__n {
+  font-family: var(--font);
+  font-size: var(--t-figure);
+  font-weight: var(--w-light);
+  letter-spacing: var(--trk-figure);
+  line-height: 1;
+  color: var(--ink);
+  font-feature-settings: var(--num);
+  font-variant-numeric: tabular-nums;
+}
+.stat__u {
+  font-size: var(--t-md);
+  color: var(--quiet);
+}
+.stat__move {
+  margin-left: auto;
+  font-family: var(--font);
+  font-size: var(--t-sm);
+  color: var(--quiet);
+  font-feature-settings: var(--num);
+}
+.stat__move[data-tone='good'] {
+  color: var(--good);
+}
+.stat__move[data-tone='bad'] {
+  color: var(--bad);
+}
+
+/* A ring field: a deliberate 3x3 at every width, on the bare ground. */
+.rings {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-5) var(--s-4);
+  justify-items: stretch;
+}
+
+/* The list row (.line) lives in app.css alongside .row and .toggle. */
+
+/* An empty state she can say something about: hairline-topped text. */
+.empty {
+  padding: var(--s-4) 0 0;
+  border: 0;
+  border-top: var(--hair) solid var(--line);
+  border-radius: 0;
+  text-align: left;
+}
+.empty__title {
+  margin: 0 0 var(--s-1);
+  font-size: var(--t-body);
+  font-weight: var(--w-medium);
+}
+.empty__text {
+  margin: 0;
+  max-width: var(--measure);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  color: var(--quiet);
+}
+
+/* The primary: a dark plane with the one champagne edge. One per screen;
+   everything else is .cta--quiet or .linkish. */
+.cta {
+  position: relative;
+  overflow: visible;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-5);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line-metal);
+  background: rgba(var(--ground-rgb), 0.4);
+  color: var(--metal-bright);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cta);
+  text-transform: uppercase;
+  text-decoration: none;
+  box-shadow: none;
+  transform: none;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+.cta:hover:not(:disabled) {
+  transform: none;
+  border-color: var(--metal);
+  background: rgba(var(--metal-rgb), 0.06);
+  color: var(--metal-bright);
+}
+.cta:active:not(:disabled) {
+  transform: none;
+  background: rgba(var(--metal-rgb), 0.1);
+}
+.cta:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cta::after {
+  content: none;
+}
+/* Kept empty so markup that still carries it compiles. */
+.cta--holo {
+}
+.cta--quiet {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: var(--t-body);
+  font-weight: var(--w-regular);
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.cta--quiet:hover:not(:disabled) {
+  background: none;
+  border: 0;
+  color: var(--ink);
+  text-decoration-color: var(--ink-soft);
+}
+
+/* Status is a word with a dot; components set the copy in sentence case. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: var(--t-md);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--quiet);
+}
+.tag::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.tag--good {
+  color: var(--good);
+  border: 0;
+}
+.tag--bad {
+  color: var(--bad);
+  border: 0;
+}
+.tag--holo,
+.tag--warm {
+  color: var(--ink-soft);
+  border: 0;
+}
+.tag--warm::before {
+  background: var(--metal);
+}
+
+/* Something she wants said, in her voice: the serif italic on the metal
+   hairline — the same vocabulary as .offer. */
+.aside {
+  position: relative;
+  padding: var(--s-1) 0 var(--s-1) var(--s-4);
+  border-left: var(--hair) solid var(--metal);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 20px;
+  line-height: var(--lh-voice);
+  color: var(--ink);
+  text-shadow: var(--halo);
+}
+.aside strong {
+  font-style: normal;
+  font-weight: var(--w-medium);
+  color: var(--ink);
+}
+
+/* Two paragraphs separated by a hairline, at every width. */
+.cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+.cols > .card + .card {
+  margin-top: var(--s-5);
+  padding-top: var(--s-5);
+  border-top: var(--hair) solid var(--line);
+}
+
+/* The clinical disclaimer: quiet, present, not dismissible. Once per screen. */
+.legal {
+  max-width: var(--measure);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  letter-spacing: 0;
+  color: var(--quiet);
+}
+.reading__legal {
+  margin: var(--s-4) 0 0;
+}
+
+/* --- the home page: conversation ------------------------------------------- */
+
+/* The chat is the home page. Everywhere else it is not on screen. */
+.shell[data-route]:not([data-route='home']) .chat {
+  display: none;
+}
+
+/* Home carries no column, but she should not be greeted by an empty room:
+   a line from her, and the way in, sit where a page's hero would — the text
+   edge lands at rail + 32px, the same x as every page hero. */
+.welcome {
+  position: absolute;
+  z-index: var(--z-page);
+  left: calc(var(--rail-w) + var(--s-6));
+  top: max(var(--s-7), var(--safe-t));
+  max-width: min(440px, 36vw);
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  background: none;
+  pointer-events: none;
+  animation: page-in var(--dur-3) var(--ease) both;
+}
+/* The lounge is lit exactly where these words land — a lamp sits behind
+   them — so they stand on their own pool of shade. Feathered wide so it
+   reads as the room being darker there, not as a box. */
+.welcome::before {
+  content: '';
+  position: absolute;
+  inset: -48px -96px -64px -64px;
+  z-index: -1;
+  background: radial-gradient(
+    120% 110% at 30% 40%,
+    rgba(var(--ground-rgb), 0.72) 0%,
+    rgba(var(--ground-rgb), 0.5) 45%,
+    rgba(var(--ground-rgb), 0) 100%
+  );
+  pointer-events: none;
+}
+.welcome > * {
+  pointer-events: auto;
+}
+.welcome__eyebrow {
+  margin: 0 0 var(--s-3);
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--quiet);
+}
+.welcome__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--t-display);
+  font-weight: var(--w-light);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--trk-display);
+  text-wrap: balance;
+  color: var(--ink);
+  text-shadow: var(--halo);
+}
+.welcome__sub {
+  margin: var(--s-4) 0 0;
+  max-width: 44ch;
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  color: var(--ink-soft);
+  text-shadow: 0 1px 14px rgba(var(--ground-rgb), 0.8);
+}
+.welcome__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-5);
+  margin-top: var(--s-5);
+}
+
+/* --- the scan page: the caption dock --------------------------------------- */
+
+/*
+ * Once there is a reading, the room is the page. The holograms carry the
+ * numbers; this carries her words. Docked low and centred under her: the
+ * readout column stands at her left shoulder and the projected face with its
+ * callouts at her right, so the one band the assembly can spare is the middle
+ * of the ring field, where the platform meets the floor.
+ *
+ * The dock is the one real plane in the clinic and it is neutral — the opaque
+ * surface with the one --shadow. Her words are the serif italic; the eyebrow,
+ * meta, scores and actions stay in the sans.
+ */
+.reading {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-reading);
+  pointer-events: none;
+}
+.reading__dock {
+  position: absolute;
+  left: calc(var(--rail-w) + (100% - var(--rail-w)) / 2);
+  bottom: max(var(--gutter), var(--safe-b));
+  width: min(560px, 46vw);
+  transform: translateX(-50%);
+  padding: var(--s-5) var(--s-6);
+  border-radius: var(--radius);
+  border: var(--hair) solid var(--line);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: page-in var(--dur-3) var(--ease) both;
+}
+.reading__eyebrow {
+  margin: 0 0 var(--s-3);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--trk-cap);
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+.reading__meta {
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+.reading__words {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--t-voice);
+  line-height: var(--lh-voice);
+  color: var(--ink);
+  white-space: pre-wrap;
+  min-height: 4.5em;
+  max-height: 26vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.reading__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-5);
+  margin-top: var(--s-5);
+}
+.reading__actions .cta {
+  min-height: 40px;
+  padding: 0 var(--s-4);
+  font-size: var(--t-xs);
+}
+.reading .error {
+  margin-top: var(--s-3);
+}
+/* The dock while she thinks: the same slow breath as the chat's label, so a
+   long wait reads as her working rather than the dock hanging. The scan page
+   sets the label's type; only the pulse lives here. */
+.reading__words .thinking {
+  animation: dock-thinking-pulse 1.6s ease-in-out infinite;
+}
+@keyframes dock-thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reading__words .thinking {
+    animation: none;
+  }
+}
+.shell[data-reduced-motion='true'] .reading__words .thinking {
+  animation: none;
+}
+
+/* =========================================================================
+   Phone: the tab bar, and the column rising under her
+   (the token recompose for this breakpoint lives in tokens.css)
+   ========================================================================= */
+
+@media (max-width: 860px), (orientation: portrait) {
+  /* The rail becomes a bar across the bottom. The voice/sound switches leave
+     the bar (they are on Profile as toggle rows). */
+  .nav {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    height: calc(var(--tabbar-h) + var(--safe-b));
+    flex-direction: row;
+    align-items: stretch;
+    padding: 0;
+    padding-bottom: var(--safe-b);
+    padding-left: var(--safe-l);
+    padding-right: var(--safe-r);
+    background: rgba(var(--ground-rgb), 0.94);
+    border-top: var(--hair) solid var(--line);
+  }
+  .nav__brand,
+  .nav__foot,
+  .nav__tools {
+    display: none;
+  }
+  .nav__list {
+    flex: 1;
+    flex-direction: row;
+    gap: 0;
+  }
+  .nav__list li {
+    flex: 1;
+    display: flex;
+  }
+  .nav__item {
+    flex: 1;
+    width: auto;
+    height: var(--tabbar-h);
+    border-radius: 0;
+    gap: var(--s-1);
+  }
+  .nav__item svg {
+    width: 21px;
+    height: 21px;
+  }
+  .nav__item span {
+    font-size: var(--t-xs);
+  }
+  /* The mark moves to the top edge and sits under the item as a hairline. */
+  .nav__item[aria-current='page']::before {
+    left: 30%;
+    right: 30%;
+    top: -1px;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+    animation: none;
+  }
+
+  /* The room keeps the top of the frame; the column rises under her. */
+  .page__ground,
+  .page--right .page__ground {
+    top: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    background: linear-gradient(
+      to bottom,
+      rgba(var(--ground-rgb), 0.06) 0%,
+      rgba(var(--ground-rgb), 0.3) 16%,
+      rgba(var(--ground-rgb), 0.82) 30%,
+      rgba(var(--ground-rgb), 0.94) 44%,
+      rgba(var(--ground-rgb), 0.96) 100%
+    );
+  }
+  .page__scroll,
+  .page--wide .page__scroll,
+  .page--right .page__scroll {
+    left: 0;
+    right: 0;
+    width: auto;
+    bottom: calc(var(--tabbar-h) + var(--safe-b));
+    padding: 0 max(var(--s-4), var(--safe-r)) var(--s-5) max(var(--s-4), var(--safe-l));
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  /* Her window. It yields first, but never below what shows a face. */
+  .page__air {
+    height: clamp(140px, 26vh, 240px);
+  }
+
+  /* On the home page the chat sheet sits on the tab bar, not the home bar.
+     Written at (0,2,0): app.css sets `.chat { bottom: var(--kb) }` in its own
+     portrait block, later in the cascade, and this has to win. */
+  .shell .chat {
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--kb));
+    padding-bottom: 10px;
+    background: linear-gradient(to top, rgba(var(--ground-rgb), 0.96) 58%, transparent);
+  }
+  :root[data-keyboard='true'] .shell .chat {
+    bottom: var(--kb);
+  }
+  /* With the keyboard up, the bar has nothing to offer and takes the space back. */
+  :root[data-keyboard='true'] .nav {
+    transform: translateY(100%);
+  }
+
+  /* A band from the top edge, feathered to nothing — never a shape. */
+  .welcome {
+    left: 0;
+    right: 0;
+    top: 0;
+    max-width: none;
+    margin: 0;
+    padding: max(var(--s-5), var(--safe-t)) max(var(--s-4), var(--safe-r)) var(--s-6)
+      max(var(--s-4), var(--safe-l));
+    background: linear-gradient(
+      to bottom,
+      rgba(var(--ground-rgb), 0.62),
+      rgba(var(--ground-rgb), 0.3) 60%,
+      rgba(var(--ground-rgb), 0)
+    );
+  }
+  .welcome::before {
+    content: none;
+  }
+  .welcome__sub {
+    display: block;
+    font-size: var(--t-md);
+  }
+
+  .reading__dock {
+    left: 0;
+    right: 0;
+    top: auto;
+    transform: none;
+    bottom: calc(var(--tabbar-h) + var(--safe-b));
+    width: auto;
+    max-height: 52dvh;
+    display: flex;
+    flex-direction: column;
+    padding: var(--s-4) max(var(--s-4), var(--safe-r)) var(--s-3) max(var(--s-4), var(--safe-l));
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: none;
+    background: var(--surface-strong);
+    box-shadow: none;
+  }
+  .reading__words {
+    flex: 1;
+    min-height: 4.5em;
+    max-height: none;
+  }
+  .reading__actions {
+    flex: none;
+  }
+  .reading__legal {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .cta {
+    min-height: var(--tap);
+  }
+}
+
+/* --- reduced motion --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .page__scroll,
+  .welcome,
+  .reading__dock {
+    animation: none;
+  }
+  .page__ground,
+  .bar i {
+    transition-duration: 0.01ms;
+  }
+}
+.shell[data-reduced-motion='true'] .page__scroll,
+.shell[data-reduced-motion='true'] .welcome,
+.shell[data-reduced-motion='true'] .reading__dock {
+  animation: none;
+}

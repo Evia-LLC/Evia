@@ -1,0 +1,64 @@
+# Elohim on Netlify.
+#
+# The browser half is a static build; the API is one function running the same
+# Express app the local server runs. The database is any hosted Postgres,
+# reached through DATABASE_URL (see RUNBOOK.md) — the app used to keep its data
+# in a SQLite file, and a file does not survive a platform that rebuilds the
+# filesystem for every request.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Pinned to match the version this is developed and tested on. Without it
+  # Netlify picks its own default, and "works locally" stops being evidence.
+  NODE_VERSION = "24"
+
+[functions]
+  node_bundler = "esbuild"
+  # `migrate()` reads these off disk with readdirSync at runtime. Without this
+  # the bundle contains the code that looks for them and none of the files, and
+  # the first request to a cold instance dies on an empty migrations directory.
+  included_files = ["server/db/migrations/**"]
+
+# Single page. Anything that is not a real file, and not the API function
+# above, is the app. Declared after the function so it cannot swallow /api.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers for the whole site.
+#
+# The content policy is deliberately narrow: scripts only from this origin
+# (plus the WebAssembly the vision model needs), fonts from Google Fonts,
+# images from anywhere over https (the shelf's product pictures live on the
+# shop's CDN), connections only back to this origin. No third-party script can
+# ever run on a page that looks at someone's face.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), microphone=(self), geolocation=(), payment=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' blob: data:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+# The MediaPipe runtime is served from our own origin on purpose — the vision
+# model that looks at photographs of people should not be fetched from someone
+# else's CDN. Large, and immutable once built.
+[[headers]]
+  for = "/mediapipe/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/models/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

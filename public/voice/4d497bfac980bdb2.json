@@ -1,0 +1,27 @@
+{
+ "text": "Careful. I crease.",
+ "words": [
+  {
+   "word": "Careful.",
+   "charIndex": 0,
+   "charLength": 8,
+   "start": 0,
+   "end": 0.522
+  },
+  {
+   "word": "I",
+   "charIndex": 9,
+   "charLength": 1,
+   "start": 0.557,
+   "end": 0.604
+  },
+  {
+   "word": "crease.",
+   "charIndex": 11,
+   "charLength": 7,
+   "start": 0.673,
+   "end": 1.3
+  }
+ ],
+ "duration": 1.3
+}

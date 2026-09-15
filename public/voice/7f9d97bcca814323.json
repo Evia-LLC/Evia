@@ -1,0 +1,48 @@
+{
+ "text": "Hi. Yes, this is my face.",
+ "words": [
+  {
+   "word": "Hi.",
+   "charIndex": 0,
+   "charLength": 3,
+   "start": 0,
+   "end": 0.383
+  },
+  {
+   "word": "Yes,",
+   "charIndex": 4,
+   "charLength": 4,
+   "start": 0.499,
+   "end": 0.72
+  },
+  {
+   "word": "this",
+   "charIndex": 9,
+   "charLength": 4,
+   "start": 0.743,
+   "end": 0.871
+  },
+  {
+   "word": "is",
+   "charIndex": 14,
+   "charLength": 2,
+   "start": 0.917,
+   "end": 0.998
+  },
+  {
+   "word": "my",
+   "charIndex": 17,
+   "charLength": 2,
+   "start": 1.045,
+   "end": 1.115
+  },
+  {
+   "word": "face.",
+   "charIndex": 20,
+   "charLength": 5,
+   "start": 1.173,
+   "end": 1.718
+  }
+ ],
+ "duration": 1.718
+}

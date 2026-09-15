@@ -1,0 +1,125 @@
+{
+ "text": "Let me take a proper look at your skin. I'll read nine things, just using your camera.",
+ "words": [
+  {
+   "word": "Let",
+   "charIndex": 0,
+   "charLength": 3,
+   "start": 0,
+   "end": 0.139
+  },
+  {
+   "word": "me",
+   "charIndex": 4,
+   "charLength": 2,
+   "start": 0.174,
+   "end": 0.244
+  },
+  {
+   "word": "take",
+   "charIndex": 7,
+   "charLength": 4,
+   "start": 0.267,
+   "end": 0.418
+  },
+  {
+   "word": "a",
+   "charIndex": 12,
+   "charLength": 1,
+   "start": 0.441,
+   "end": 0.464
+  },
+  {
+   "word": "proper",
+   "charIndex": 14,
+   "charLength": 6,
+   "start": 0.499,
+   "end": 1.219
+  },
+  {
+   "word": "look",
+   "charIndex": 21,
+   "charLength": 4,
+   "start": 1.265,
+   "end": 1.382
+  },
+  {
+   "word": "at",
+   "charIndex": 26,
+   "charLength": 2,
+   "start": 1.416,
+   "end": 1.474
+  },
+  {
+   "word": "your",
+   "charIndex": 29,
+   "charLength": 4,
+   "start": 1.509,
+   "end": 1.625
+  },
+  {
+   "word": "skin.",
+   "charIndex": 34,
+   "charLength": 5,
+   "start": 1.695,
+   "end": 2.113
+  },
+  {
+   "word": "I'll",
+   "charIndex": 40,
+   "charLength": 4,
+   "start": 2.148,
+   "end": 2.299
+  },
+  {
+   "word": "read",
+   "charIndex": 45,
+   "charLength": 4,
+   "start": 2.345,
+   "end": 2.508
+  },
+  {
+   "word": "nine",
+   "charIndex": 50,
+   "charLength": 4,
+   "start": 2.624,
+   "end": 3.007
+  },
+  {
+   "word": "things,",
+   "charIndex": 55,
+   "charLength": 7,
+   "start": 3.065,
+   "end": 3.495
+  },
+  {
+   "word": "just",
+   "charIndex": 63,
+   "charLength": 4,
+   "start": 3.518,
+   "end": 3.646
+  },
+  {
+   "word": "using",
+   "charIndex": 68,
+   "charLength": 5,
+   "start": 3.692,
+   "end": 3.878
+  },
+  {
+   "word": "your",
+   "charIndex": 74,
+   "charLength": 4,
+   "start": 3.913,
+   "end": 4.005
+  },
+  {
+   "word": "camera.",
+   "charIndex": 79,
+   "charLength": 7,
+   "start": 4.04,
+   "end": 4.876
+  }
+ ],
+ "duration": 4.876
+}

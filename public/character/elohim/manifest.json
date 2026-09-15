@@ -1,0 +1,118 @@
+{
+ "frame": [
+  2048,
+  2048
+ ],
+ "regions": {
+  "eyes": [
+   747,
+   244,
+   1219,
+   488
+  ],
+  "eyesClosed": [
+   803,
+   328,
+   1163,
+   448
+  ],
+  "mouth": [
+   799,
+   451,
+   1167,
+   677
+  ]
+ },
+ "mouths": {
+  "AA": "mouth-AA.webp",
+  "EE": "mouth-EE.webp",
+  "FV": "mouth-FV.webp",
+  "IH": "mouth-IH.webp",
+  "MBP": "mouth-MBP.webp",
+  "OH": "mouth-OH.webp",
+  "OU": "mouth-OU.webp",
+  "smile": "mouth-smile.webp"
+ },
+ "eyes": {
+  "warm": "eyes-warm.webp",
+  "curious": "eyes-curious.webp",
+  "concerned": "eyes-concerned.webp",
+  "focused": "eyes-focused.webp",
+  "look-left": "eyes-look-left.webp",
+  "look-right": "eyes-look-right.webp",
+  "look-up": "eyes-look-up.webp",
+  "look-down": "eyes-look-down.webp",
+  "smile": "eyes-smile.webp",
+  "surprised": "eyes-surprised.webp",
+  "closed": "eyes-closed.webp"
+ },
+ "head": {
+  "box": [
+   575,
+   52,
+   1383,
+   728
+  ],
+  "file": "head.webp"
+ },
+ "outfits": {
+  "casual": {
+   "explain": {
+    "box": [
+     361,
+     53,
+     1468,
+     1657
+    ],
+    "file": "body-casual-explain.webp"
+   },
+   "present": {
+    "box": [
+     217,
+     48,
+     1499,
+     2048
+    ],
+    "file": "body-casual-present.webp"
+   },
+   "rest": {
+    "box": [
+     534,
+     52,
+     1494,
+     2048
+    ],
+    "file": "body-casual-rest.webp"
+   }
+  },
+  "clinical": {
+   "explain": {
+    "box": [
+     380,
+     53,
+     1524,
+     1426
+    ],
+    "file": "body-clinical-explain.webp"
+   },
+   "present": {
+    "box": [
+     367,
+     54,
+     1521,
+     1425
+    ],
+    "file": "body-clinical-present.webp"
+   },
+   "rest": {
+    "box": [
+     534,
+     51,
+     1461,
+     1964
+    ],
+    "file": "body-clinical-rest.webp"
+   }
+  }
+ }
+}

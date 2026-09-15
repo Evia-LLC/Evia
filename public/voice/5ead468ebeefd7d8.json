@@ -1,0 +1,97 @@
+{
+ "text": "I'll remember what I see, and next time I'll show you what changed.",
+ "words": [
+  {
+   "word": "I'll",
+   "charIndex": 0,
+   "charLength": 4,
+   "start": 0,
+   "end": 0.186
+  },
+  {
+   "word": "remember",
+   "charIndex": 5,
+   "charLength": 8,
+   "start": 0.244,
+   "end": 0.534
+  },
+  {
+   "word": "what",
+   "charIndex": 14,
+   "charLength": 4,
+   "start": 0.569,
+   "end": 0.673
+  },
+  {
+   "word": "I",
+   "charIndex": 19,
+   "charLength": 1,
+   "start": 0.72,
+   "end": 0.743
+  },
+  {
+   "word": "see,",
+   "charIndex": 21,
+   "charLength": 4,
+   "start": 0.824,
+   "end": 1.01
+  },
+  {
+   "word": "and",
+   "charIndex": 26,
+   "charLength": 3,
+   "start": 1.033,
+   "end": 1.138
+  },
+  {
+   "word": "next",
+   "charIndex": 30,
+   "charLength": 4,
+   "start": 1.231,
+   "end": 1.474
+  },
+  {
+   "word": "time",
+   "charIndex": 35,
+   "charLength": 4,
+   "start": 1.509,
+   "end": 1.776
+  },
+  {
+   "word": "I'll",
+   "charIndex": 40,
+   "charLength": 4,
+   "start": 1.823,
+   "end": 1.962
+  },
+  {
+   "word": "show",
+   "charIndex": 45,
+   "charLength": 4,
+   "start": 1.985,
+   "end": 2.113
+  },
+  {
+   "word": "you",
+   "charIndex": 50,
+   "charLength": 3,
+   "start": 2.171,
+   "end": 2.252
+  },
+  {
+   "word": "what",
+   "charIndex": 54,
+   "charLength": 4,
+   "start": 2.287,
+   "end": 2.426
+  },
+  {
+   "word": "changed.",
+   "charIndex": 59,
+   "charLength": 8,
+   "start": 2.473,
+   "end": 3.251
+  }
+ ],
+ "duration": 3.251
+}

@@ -1,0 +1,48 @@
+{
+ "text": "Go on — ask me properly.",
+ "words": [
+  {
+   "word": "Go",
+   "charIndex": 0,
+   "charLength": 2,
+   "start": 0,
+   "end": 0.244
+  },
+  {
+   "word": "on",
+   "charIndex": 3,
+   "charLength": 2,
+   "start": 0.325,
+   "end": 0.476
+  },
+  {
+   "word": "—",
+   "charIndex": 6,
+   "charLength": 1,
+   "start": 0.511,
+   "end": 0.557
+  },
+  {
+   "word": "ask",
+   "charIndex": 8,
+   "charLength": 3,
+   "start": 0.58,
+   "end": 0.766
+  },
+  {
+   "word": "me",
+   "charIndex": 12,
+   "charLength": 2,
+   "start": 0.801,
+   "end": 0.871
+  },
+  {
+   "word": "properly.",
+   "charIndex": 15,
+   "charLength": 9,
+   "start": 0.906,
+   "end": 1.625
+  }
+ ],
+ "duration": 1.625
+}
