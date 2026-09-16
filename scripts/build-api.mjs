@@ -19,6 +19,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
+/*
+ * Only bundle where the bundle is consumed: inside a Vercel build (or when
+ * forced by hand). A committed stub lives at api/index.js so Vercel's
+ * pre-build validation finds the path; overwriting it on every LOCAL build
+ * left the working tree permanently dirty for a file only Vercel reads.
+ * Netlify has its own function entry and ignores api/ entirely.
+ */
+if (!process.env.VERCEL && !process.argv.includes('--force')) {
+  console.log('api bundle: skipped (not a Vercel build; pass --force to bundle anyway)');
+  process.exit(0);
+}
+
 await build({
   entryPoints: [path.join(root, 'server', 'vercel.ts')],
   outfile: path.join(root, 'api', 'index.js'),
