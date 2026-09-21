@@ -19,7 +19,7 @@
 
 /** The intro narrations, in beat order. Consumed by `INTRO_BEATS` in intro.ts. */
 export const INTRO_LINES: readonly string[] = [
-  "Hi — I'm Elohim.",
+  "Hi — I'm Ese.",
   "Let me take a proper look at your skin. I'll read nine things, just using your camera.",
   "Everything's measured right here, on your device — nothing leaves it unless you say so.",
   "I'll remember what I see, and next time I'll show you what changed.",
@@ -59,7 +59,7 @@ export const CONNECTION_LOST_LINE = 'I lost my connection for a moment. Say that
 export const LONG_THINK_LINE = 'Bear with me — thinking about this one.';
 
 /** The sample line for the voice picker. Used by voice/controller.ts. */
-export const VOICE_PREVIEW_LINE = "Hey, it's Elohim. This is what I sound like.";
+export const VOICE_PREVIEW_LINE = "Hey, it's Ese. This is what I sound like.";
 
 /**
  * Everything above, flat, in the order the voice tooling has always used -

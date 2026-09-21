@@ -7,11 +7,14 @@
    * page's hero would, so moving between pages never moves the eye.
    */
   import ChatPanel from '@/chat/ChatPanel.svelte';
+  import { onMount } from 'svelte';
+  import { openConversation } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
   import { link, router } from '@/router/router.svelte.ts';
   import { arrive, depart } from '@/lib/motion.ts';
 
   const hour = new Date().getHours();
+  onMount(() => { void openConversation(); });
   const greeting = hour < 5 ? 'Still up' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   const dateFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long' });

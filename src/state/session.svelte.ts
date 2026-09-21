@@ -81,6 +81,10 @@ class SessionState {
   guest = $state(false);
 
   sceneMode = $state<SceneMode>('lounge');
+  entryStage = $state<'film' | 'intake' | 'app'>('film');
+  onboardingActive = $state(false);
+  characterStatus = $state<'loading' | 'ready' | 'error'>('loading');
+  scanResultVisible = $state(false);
 
   scans = $state<SkinAnalysis[]>([]);
   /**
@@ -192,6 +196,11 @@ class SessionState {
     this.summary = null;
     this.latestScan = null;
     this.sceneMode = 'lounge';
+    this.entryStage = 'film';
+    this.onboardingActive = false;
+    this.scanResultVisible = false;
+    this.lastMesh = null;
+    this.localImages = {};
     this.pendingOffer = null;
     this.plan = null;
     this.picks = [];

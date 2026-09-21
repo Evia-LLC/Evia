@@ -15,7 +15,7 @@
  * dependency for that would be a dependency for a `switch`.
  */
 
-export type RouteId = 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy';
+export type RouteId = 'landing' | 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy';
 
 export interface Route {
   id: RouteId;
@@ -29,12 +29,13 @@ export interface Route {
 }
 
 export const ROUTES: readonly Route[] = [
-  { id: 'home', path: '/', label: 'Talk', title: 'Elohim', nav: true },
-  { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Elohim', nav: true },
-  { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Elohim', nav: true },
-  { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Elohim', nav: true },
-  { id: 'profile', path: '/profile', label: 'You', title: 'You — Elohim', nav: true },
-  { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Elohim', nav: false },
+  { id: 'landing', path: '/', label: 'Welcome', title: 'Ese — Your skin, understood', nav: false },
+  { id: 'home', path: '/lounge', label: 'Lounge', title: 'The lounge — Ese', nav: true },
+  { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Ese', nav: true },
+  { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Ese', nav: true },
+  { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Ese', nav: true },
+  { id: 'profile', path: '/profile', label: 'You', title: 'You — Ese', nav: true },
+  { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Ese', nav: false },
 ];
 
 const HOME = ROUTES[0];
@@ -85,7 +86,7 @@ class Router {
 
   back(): void {
     if (history.length > 1) history.back();
-    else this.go('/');
+    else this.go('/lounge');
   }
 }
 

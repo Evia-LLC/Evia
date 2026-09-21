@@ -12,9 +12,8 @@
  * moves when the camera moves, because it is actually there. Text stays sharp
  * because a 512px canvas drawn once is sharper than the card is ever rendered.
  *
- * Additive blending on purpose — everything drawn on black composites as light,
- * so a card reads as a projection rather than as a sheet of plastic with
- * writing on it.
+ * A translucent ground preserves readable text; separate additive light rails
+ * and fine interference lines give the panels their holographic character.
  */
 import * as THREE from 'three';
 
@@ -36,7 +35,7 @@ export const TONE_GOOD: CardTone = { hue: 'rgba(166,201,183,', accent: '#a6c9b7'
 export const TONE_BAD: CardTone = { hue: 'rgba(216,165,149,', accent: '#d8a595' };
 
 /** Pixels per world metre. High enough that a card never resolves its texels. */
-const RESOLUTION = 900;
+const RESOLUTION = 1200;
 
 /*
  * Canvas text does not reflow.
@@ -73,6 +72,7 @@ export class HoloCard {
   private ctx: CanvasRenderingContext2D;
   private texture: THREE.CanvasTexture;
   private material: THREE.MeshBasicMaterial;
+  private frame: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 
   /** 0..1 arrival, driven by the boot cascade. */
   private reveal = 0;
@@ -121,6 +121,25 @@ export class HoloCard {
 
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.material);
     this.mesh.frustumCulled = false;
+    // Separate light rails sit behind the readable glass. Their real depth is
+    // visible during camera moves; text stays on one stable, sharp surface.
+    const rails: number[] = [];
+    const x = width * 0.495, y = height * 0.45;
+    const cut = Math.min(width, height) * 0.13;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const cx = sx * x, cy = sy * y;
+      rails.push(cx - sx * cut, cy, -0.008, cx, cy, -0.008);
+      rails.push(cx, cy, -0.008, cx, cy - sy * cut, -0.008);
+      rails.push(cx, cy, -0.008, cx + sx * 0.003, cy + sy * 0.003, -0.021);
+    }
+    const frameGeometry = new THREE.BufferGeometry();
+    frameGeometry.setAttribute('position', new THREE.Float32BufferAttribute(rails, 3));
+    this.frame = new THREE.LineSegments(frameGeometry, new THREE.LineBasicMaterial({
+      color: 0x8caeff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+      depthTest: false, depthWrite: false, toneMapped: false,
+    }));
+    this.frame.frustumCulled = false;
+    this.mesh.add(this.frame);
   }
 
   /**
@@ -644,21 +663,39 @@ export class HoloCard {
      * additive blending turns it into a *dimming* rather than a black
      * rectangle, so it still reads as projected light.
      */
-    ctx.fillStyle = 'rgba(4,6,14,0.62)';
+    ctx.fillStyle = 'rgba(7,9,25,0.76)';
     this.roundRect(pad, pad, w - pad * 2, h - pad * 2, r);
     ctx.fill();
 
     const wash = ctx.createLinearGradient(0, 0, 0, h);
-    wash.addColorStop(0, tone.hue + '0.16)');
-    wash.addColorStop(1, tone.hue + '0.05)');
+    wash.addColorStop(0, tone.hue + '0.20)');
+    wash.addColorStop(0.32, 'rgba(95,81,173,0.08)');
+    wash.addColorStop(1, tone.hue + '0.035)');
     ctx.fillStyle = wash;
     this.roundRect(pad, pad, w - pad * 2, h - pad * 2, r);
     ctx.fill();
 
-    ctx.strokeStyle = tone.hue + '0.34)';
+    ctx.strokeStyle = tone.hue + '0.50)';
     ctx.lineWidth = Math.max(2, h * 0.012);
     this.roundRect(pad, pad, w - pad * 2, h - pad * 2, r);
     ctx.stroke();
+    // Fine upper reflection and a restrained interference pattern belong to
+    // the plate, beneath the ink, so the words retain their full contrast.
+    ctx.save();
+    this.roundRect(pad, pad, w - pad * 2, h - pad * 2, r);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(190,219,255,0.035)';
+    ctx.lineWidth = 1;
+    for (let y = pad + 4; y < h - pad; y += 5) {
+      ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+    }
+    const glint = ctx.createLinearGradient(pad, 0, w - pad, 0);
+    glint.addColorStop(0, 'rgba(175,220,255,0)');
+    glint.addColorStop(0.3, 'rgba(203,230,255,0.65)');
+    glint.addColorStop(1, 'rgba(155,171,255,0)');
+    ctx.fillStyle = glint;
+    ctx.fillRect(pad + r, pad, w - pad * 2 - r * 2, Math.max(1, h * 0.006));
+    ctx.restore();
 
   }
 
@@ -816,12 +853,16 @@ export class HoloCard {
     const flicker = 0.985 + Math.sin(elapsed * 5.3 + index) * 0.015 - glitch * 0.1;
     this.material.opacity = this.reveal * presence * flicker;
     this.mesh.visible = this.material.opacity > 0.01;
+    this.frame.material.opacity = this.material.opacity * 0.52;
+    this.frame.renderOrder = this.mesh.renderOrder;
   }
 
   private lastBob: number | null = null;
 
   dispose(): void {
     awaitingFont.delete(this);
+    this.frame.geometry.dispose();
+    this.frame.material.dispose();
     this.mesh.geometry.dispose();
     this.material.dispose();
     this.texture.dispose();

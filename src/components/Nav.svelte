@@ -25,11 +25,20 @@
    * either way the switch shows what is actually true right now, and turning
    * it off stops her mid-sentence rather than after it.
    */
-  const voiceOn = $derived(Boolean(session.user?.preferences.voiceEnabled) && session.canSpeak);
+  const voiceOn = $derived(Boolean(session.user?.preferences.voiceEnabled) && session.canSpeak &&
+    (session.guest || session.user?.consents.cloud_reasoning === true));
   let sound = $state(soundEnabled());
 
   function toggleVoice() {
-    const next = !session.user?.preferences.voiceEnabled;
+    const next = !voiceOn;
+    if (next && session.guest) {
+      router.go('/profile');
+      return;
+    }
+    if (next && !session.user?.consents.cloud_reasoning) {
+      router.go('/privacy');
+      return;
+    }
     if (session.guest) setGuestVoice(next);
     else void setVoiceEnabled(next);
     if (!next) stopSpeaking();
@@ -49,9 +58,9 @@
   };
 </script>
 
-<nav class="nav" aria-label="Elohim">
-  <a class="nav__brand" href="/" use:link aria-label="Elohim, home">
-    <span class="nav__mark">Elohim</span>
+<nav class="nav" aria-label="Ese">
+  <a class="nav__brand" href="/lounge" use:link aria-label="Ese, lounge">
+    <span class="nav__mark">Ese</span>
     {#if session.guest}
       <span class="nav__note">Nothing saved</span>
     {:else if session.demoMode || !session.modelAvailable}
@@ -82,7 +91,7 @@
       type="button"
       class="nav__tool"
       aria-pressed={voiceOn}
-      title={voiceOn ? 'Her voice is on' : 'Her voice is off'}
+      title={voiceOn ? 'Mute the AI-generated voice' : session.guest ? 'Choose OpenAI voice in Profile' : 'Enable AI-generated voice'}
       onclick={toggleVoice}
       disabled={!session.canSpeak}
     >

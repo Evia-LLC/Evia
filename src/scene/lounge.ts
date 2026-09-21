@@ -1,358 +1,213 @@
-/**
- * The lounge — Elohim's conversational environment.
- *
- * This is where the user actually spends their time, so it has to feel like a
- * *place* rather than a backdrop, while staying quiet enough that she remains
- * the subject. Warm, minimal, low-poly.
- *
- * Everything the eye reads as depth here is a gradient, an additive plane or a
- * vertex-coloured ramp. There are no shadow maps, no volumetrics and no
- * post-processing (ARCHITECTURE §9) — the depth is painted, not simulated.
- */
+/** A furnished warm lounge, built in room coordinates rather than on an image plate. */
 import * as THREE from 'three';
-import { LIGHTING, PALETTE } from '@/character/palette.ts';
-import { radialTexture } from './textures.ts';
+import { LIGHTING } from '@/character/palette.ts';
 import type { EnvironmentLights, ElohimEnvironment } from './environment.ts';
 import { clamp } from '@/lib/math.ts';
-
-/** The rendered interior, served from `public/`. */
-// Versioned: the plate changed (bright to dark) and the file name did not, so
-// browsers that had the old one kept showing it.
-const PLATE_URL = '/backdrops/lounge.webp';
-const PLATE_SIZE = 7.2;
-const PLATE_Z = -3.4;
-/** Where the horizon sits in the picture, and the height it must land at. */
-const PLATE_HORIZON = 0.56;
-const PLATE_EYE_LEVEL = 1.5;
+import { RoomGeometry } from './room-geometry.ts';
 
 export class LoungeEnvironment implements ElohimEnvironment {
   readonly group = new THREE.Group();
   readonly lights: EnvironmentLights;
-  readonly background = new THREE.Color(0x0b0d15);
-
-  private materials: THREE.Material[] = [];
-  private geometries: THREE.BufferGeometry[] = [];
+  readonly background = new THREE.Color(0x100c10);
+  private room = new RoomGeometry();
   private presence = 1;
-  private baseIntensities: [number, number, number];
-  private baseOpacity = new WeakMap<THREE.Material, number>();
-
-  private lampGlow!: THREE.Mesh;
-  private lampCore!: THREE.Mesh;
-  private motes: THREE.Points | null = null;
-  private moteDrift!: Float32Array;
+  private baseIntensities: readonly [number, number, number];
+  private motes: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null = null;
+  private disposed = false;
 
   constructor(opts: { particles?: boolean; ground?: boolean } = {}) {
     const cfg = LIGHTING.lounge;
-
     const key = new THREE.DirectionalLight(cfg.key.color, cfg.key.intensity);
     key.position.set(...cfg.key.position);
-    const rim = new THREE.DirectionalLight(cfg.rim.color, cfg.rim.intensity);
-    rim.position.set(...cfg.rim.position);
-    const ambient = new THREE.AmbientLight(cfg.ambient.color, cfg.ambient.intensity);
-
+    key.target.position.set(0, 1.4, -2.4);
+    const rim = new THREE.DirectionalLight(0xaba2d2, 1.15);
+    rim.position.set(-2.5, 2.6, -2.0);
+    rim.target.position.set(1.3, 1.1, -4.5);
+    const ambient = new THREE.AmbientLight(0xb5a3a1, .65);
     this.lights = { key, rim, ambient };
-    this.baseIntensities = [cfg.key.intensity, cfg.rim.intensity, cfg.ambient.intensity];
-    this.group.add(key, rim, ambient);
-
-    this.build(opts.particles !== false, opts.ground !== false);
-  }
-
-  private track<T extends THREE.Object3D>(obj: T): T {
-    const mesh = obj as unknown as THREE.Mesh;
-    if (mesh.geometry) this.geometries.push(mesh.geometry);
-    if (mesh.material) {
-      const material = mesh.material as THREE.Material & { opacity: number };
-      this.materials.push(material);
-      this.baseOpacity.set(material, material.opacity);
+    this.baseIntensities = [cfg.key.intensity, 1.15, .65];
+    this.group.name = 'LoungeEnvironment';
+    this.group.add(key, key.target, rim, rim.target, ambient, this.room.group);
+    this.buildRoom();
+    // The architecture always includes its floor. `ground` now controls only
+    // the optional character contact patch; a cropped sprite needs no patch.
+    if (opts.ground !== false) {
+      const shadow = this.room.light('Character contact', 0xffffff, .54);
+      this.room.floorPatch(shadow, [0, .009, 0], [.43, .28], 0x000000, 1);
     }
-    return obj;
+    this.room.finish('Warm lounge');
+    if (opts.particles !== false) this.buildMotes();
+    this.setPresence(1);
   }
 
-  /**
-   * Builds the room.
-   *
-   * `ground` covers the floor disc, its reflection smear and the contact
-   * shadow — everything that exists to sit a standing figure on a surface.
-   * With the painted Elohim, who is cropped at the hips and has no feet, all
-   * three describe a floor nobody is standing on: an empty lit patch below a
-   * character who visibly never reaches it. The backdrop plate has a
-   * photographed floor of its own and covers the frame without them.
-   */
-  private build(withMotes: boolean, ground: boolean): void {
-    if (ground) this.buildFloor();
-    this.buildBackdrop();
-    this.buildLamp();
-    if (ground) this.buildContactShadow();
-    if (withMotes) this.buildMotes();
-  }
+  private buildRoom(): void {
+    const r = this.room;
+    const plaster = r.surface('Warm plaster', 0x312c30, .9);
+    const wood = r.surface('Smoked walnut', 0x3f2d28, .48);
+    const dark = r.surface('Cabinet recess and joints', 0x100e15, .7);
+    const bronze = r.surface('Brushed champagne', 0xb59768, .34, .48);
+    const floor = r.surface('Polished dark stone', 0x3b3034, .19, .23, .035);
+    const stone = r.surface('Stone veins', 0x54404a, .4);
+    const linen = r.surface('Ivory upholstery', 0xbfb2a2, .92);
+    const pillow = r.surface('Mauve velvet', 0x786775, .94);
+    const curtain = r.surface('Pleated warm linen', 0xbd9770, .92, 0, .25);
+    const glass = r.surface('Smoked glass products', 0x4c4549, .19, .22);
+    const ceramic = r.surface('Porcelain products', 0xcac1af, .4);
+    const leaves = r.surface('Plant foliage', 0x283933, .84);
+    const amber = r.light('Warm architectural lighting', 0xffd4a0);
+    const lilac = r.light('Lavender cabinet accent', 0x9a82cf);
+    const window = r.light('Warm daylight glazing', 0xd5b68d);
+    const reflections = r.light('Soft floor light', 0xffffff, .48, true);
+    const shadow = r.light('Furniture contact shading', 0xffffff, .56);
+    r.translucent(curtain, .84);
+    r.grain(floor, 16, .011); r.grain(wood, 8, .009); r.grain(linen, 14, .004);
+    r.marble(floor, 0x3e3438, 0x9b8e86);
 
-  /**
-   * Floor: a disc that is warm directly under her and falls to black at the
-   * edge, so the room has no visible boundary. The gradient is the light pool —
-   * cheaper and more controllable than an actual spot light.
-   */
-  private buildFloor(): void {
-    const geo = new THREE.CircleGeometry(7, 32);
-    geo.rotateX(-Math.PI / 2);
-    this.radialTint(geo, new THREE.Color(0x2f2a33), new THREE.Color(0x08090e), 4.2, 1.35);
-
-    const floor = this.track(
-      new THREE.Mesh(
-        geo,
-        new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 1 }),
-      ),
-    );
-    this.group.add(floor);
-
-    // A faint elongated smear under her reads as a soft reflection on a
-    // polished floor. Additive, so it only ever brightens.
-    const reflectGeo = new THREE.CircleGeometry(0.5, 20);
-    reflectGeo.rotateX(-Math.PI / 2);
-    reflectGeo.scale(1, 1, 2.4);
-    this.radialTint(reflectGeo, new THREE.Color(0x6a5a72), new THREE.Color(0x000000), 0.5, 1.8);
-    const reflection = this.track(
-      new THREE.Mesh(
-        reflectGeo,
-        new THREE.MeshBasicMaterial({
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.5,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-      ),
-    );
-    reflection.position.set(0, 0.006, 0.42);
-    this.group.add(reflection);
-  }
-
-  /**
-   * Backdrop: a curved wall carrying a vertical ramp plus a horizontal warm
-   * bias towards the lamp side. Two axes of gradient is what stops it reading
-   * as flat colour.
-   */
-  /**
-   * The lounge, as a rendered plate.
-   *
-   * Same reasoning as the clinic: the thing being chased here — warm practical
-   * lamps, sheer curtains catching light, a sofa, wood with real reflections —
-   * is photography, and a vertex-tinted gradient wall was never going to be it.
-   * The floor, the lamp glow and the contact shadow stay as geometry, because
-   * those are the parts that have to agree with where she is actually standing.
-   */
-  private buildBackdrop(): void {
-    const geometry = new THREE.PlaneGeometry(PLATE_SIZE, PLATE_SIZE);
-    const material = new THREE.MeshBasicMaterial({
-      transparent: true,
-      // Built at full opacity: `setPresence` takes whatever it is made with as
-      // the base and multiplies by the transition, so a zero here fades from
-      // nothing to nothing.
-      opacity: 1,
-      toneMapped: false,
-      depthWrite: false,
-    });
-
-    const plate = this.track(new THREE.Mesh(geometry, material));
-    // Hung by its horizon rather than its middle, so the picture and the camera
-    // agree about where the ground is.
-    plate.position.set(0, PLATE_EYE_LEVEL - (PLATE_HORIZON - 0.5) * PLATE_SIZE, PLATE_Z);
-    plate.renderOrder = -10;
-
-    /*
-     * Width from the image, not from a constant.
-     *
-     * The geometry is square and the first plates happened to be square too, so
-     * nothing caught it. A 16:9 plate on a square quad is stretched 78%
-     * vertically — a room that looks subtly, unplaceably wrong. Reading the
-     * aspect off the texture means a new backdrop at any shape just works,
-     * which is the whole point of the backdrop being an image.
-     */
-    const texture = new THREE.TextureLoader().load(PLATE_URL, (loaded) => {
-      const { width, height } = loaded.image as { width: number; height: number };
-      if (width && height) plate.scale.x = width / height;
-    });
-    texture.colorSpace = THREE.SRGBColorSpace;
-    material.map = texture;
-    material.needsUpdate = true;
-    this.group.add(plate);
-  }
-
-  private buildLamp(): void {
-    /*
-     * Dimmer than it was, and smaller.
-     *
-     * The plate behind this went dark — a room after hours, lit by its own
-     * strips — and a three-metre additive disc at 0.75 that once read as a
-     * lamp in a bright room now flooded half the frame back to daylight. The
-     * lamp is a lamp again: a pool, not a sun.
-     */
-    // A textured quad, not a vertex-tinted disc: the tint is linear from the
-    // centre vertex to a black rim, and against a dark plate that rim is a
-    // visible polygon. The texture falls off smoothly to nothing.
-    const glowGeo = new THREE.PlaneGeometry(2.4, 2.4);
-    this.lampGlow = this.track(
-      new THREE.Mesh(
-        glowGeo,
-        new THREE.MeshBasicMaterial({
-          map: radialTexture(2.1),
-          color: PALETTE.loungeAccent,
-          transparent: true,
-          opacity: 0.4,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-      ),
-    );
-    this.lampGlow.position.set(-1.15, 1.62, -2.4);
-    this.group.add(this.lampGlow);
-
-    /*
-     * The core needs a falloff like everything else that glows in here.
-     *
-     * It was a flat 16-segment disc of solid #ffe0b8, additively blended at
-     * 0.85 — every other glow in this file is radially tinted, and this one was
-     * not. On screen that is not a light, it is a hard white sticker with a
-     * visible polygon edge sitting on the left of frame. More segments so the
-     * rim is a circle rather than a hexadecagon, and a tint so it falls off.
-     */
-    const coreGeo = new THREE.CircleGeometry(0.13, 32);
-    this.radialTint(coreGeo, new THREE.Color(0xffe0b8), new THREE.Color(0), 0.13, 0.85);
-    this.lampCore = this.track(
-      new THREE.Mesh(
-        coreGeo,
-        new THREE.MeshBasicMaterial({
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.6,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-      ),
-    );
-    this.lampCore.position.set(-1.15, 1.62, -2.38);
-    this.group.add(this.lampCore);
-  }
-
-  /** Grounds her. A shadow map for one contact patch would be absurd. */
-  private buildContactShadow(): void {
-    const geo = new THREE.CircleGeometry(0.46, 20);
-    geo.rotateX(-Math.PI / 2);
-    this.radialTint(geo, new THREE.Color(0x000000), new THREE.Color(0x121522), 0.46, 1.1);
-    const contact = this.track(
-      new THREE.Mesh(
-        geo,
-        new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.62 }),
-      ),
-    );
-    contact.position.y = 0.004;
-    this.group.add(contact);
-  }
-
-  /** Dust in the lamp light. Six-ish pixels of atmosphere, one draw call. */
-  private buildMotes(): void {
-    const COUNT = 90;
-    const positions = new Float32Array(COUNT * 3);
-    this.moteDrift = new Float32Array(COUNT);
-    for (let i = 0; i < COUNT; i++) {
-      positions[i * 3] = -2.4 + Math.random() * 3.2;
-      positions[i * 3 + 1] = 0.5 + Math.random() * 2.2;
-      positions[i * 3 + 2] = -2.2 + Math.random() * 2.0;
-      this.moteDrift[i] = 0.006 + Math.random() * 0.016;
+    // A complete open-front interior: all six planes have thickness and depth.
+    r.box(floor, [6.0, .14, 9.4], [0, -.085, -2.0]);
+    r.box(plaster, [5.85, 3.38, .18], [0, 1.68, -6.32]);
+    r.box(wood, [.18, 3.4, 8.7], [2.94, 1.7, -2.0]);
+    r.box(dark, [6.1, .16, 9.0], [0, 3.43, -2.05]);
+    r.box(wood, [.18, 3.4, 1.1], [-2.95, 1.7, -5.83]);
+    // Full-height left window wall and the real pleated curtains in front.
+    r.box(window, [.04, 3.13, 6.65], [-2.91, 1.65, -2.43]);
+    for (let i = 0; i < 8; i++) {
+      const z = .62 - i * .89;
+      r.box(bronze, [.09, 3.23, .027], [-2.81, 1.64, z]);
+      r.box(dark, [.045, .05, .8], [-2.81, .63, z - .41]);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    r.box(wood, [.23, .16, 7.2], [-2.79, 3.29, -2.45]);
+    r.box(amber, [.035, .025, 7.1], [-2.655, 3.20, -2.45]);
+    r.curtain(curtain, -2.63, -5.97, .79, 3.14);
+    // The hem, mullions and individual folds read in parallax as the camera moves.
+    for (const z of [-5.8, -.0, .9]) r.box(wood, [.22, 3.35, .20], [-2.60, 1.68, z]);
 
-    this.motes = this.track(
-      new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({
-          color: 0xffd9ac,
-          size: 0.014,
-          transparent: true,
-          opacity: 0.35,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          sizeAttenuation: true,
-        }),
-      ),
-    ) as unknown as THREE.Points;
-    this.group.add(this.motes);
-  }
-
-  /**
-   * Centre-to-edge colour ramp baked into vertex colours. `falloff` above 1
-   * concentrates the bright centre, which is what makes a flat disc read as a
-   * pool of light rather than a painted circle.
-   */
-  private radialTint(
-    geo: THREE.BufferGeometry,
-    inner: THREE.Color,
-    outer: THREE.Color,
-    radius: number,
-    falloff = 1,
-  ): void {
-    const pos = geo.getAttribute('position');
-    const colors = new Float32Array(pos.count * 3);
-    const c = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const d = clamp(Math.hypot(pos.getX(i), pos.getZ(i) || pos.getY(i)) / radius);
-      c.copy(inner).lerp(outer, Math.pow(d, falloff));
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
+    // Walnut wall paneling and thin champagne inlays on the sofa wall.
+    for (let i = 0; i < 12; i++) {
+      const z = -5.87 + i * .60;
+      r.box(wood, [.035, 2.9, .57], [2.83, 1.75, z], .005, [0, 0, 0], .74 + (i % 3) * .08);
+      if (i % 3 === 0) r.box(bronze, [.02, 2.8, .012], [2.797, 1.8, z - .287]);
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  }
+    for (const x of [-2.8, 2.78]) r.box(bronze, [.018, .045, 8], [x, .11, -2.15]);
+    r.box(dark, [5.6, .09, .10], [0, .085, -6.19]);
 
-  update(_dt: number, elapsed: number): void {
-    if (this.presence < 0.01) return;
-
-    // The practical breathes very slightly — enough that the frame is never a
-    // still image, not enough to register as an effect.
-    //
-    // The base levels come from `baseOpacity`, which `track` records at build
-    // time. They used to be restated here as literals, and when the lamp was
-    // retuned for the dark plate the constructor's new levels were silently
-    // overwritten every frame by this method's old ones. Whatever the lamp is
-    // built at is what breathes.
-    const flicker = 1 + Math.sin(elapsed * 0.47) * 0.06 + Math.sin(elapsed * 1.31) * 0.02;
-    const glow = this.lampGlow.material as THREE.MeshBasicMaterial;
-    const core = this.lampCore.material as THREE.MeshBasicMaterial;
-    glow.opacity = (this.baseOpacity.get(glow) ?? 1) * this.presence * flicker;
-    core.opacity = (this.baseOpacity.get(core) ?? 1) * this.presence * flicker;
-
-    if (this.motes) {
-      const attr = this.motes.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const arr = attr.array as Float32Array;
-      for (let i = 0; i < this.moteDrift.length; i++) {
-        arr[i * 3 + 1] += this.moteDrift[i] * _dt;
-        // Sideways sway, so they float rather than rise like a fountain.
-        arr[i * 3] += Math.sin(elapsed * 0.3 + i) * 0.0006;
-        if (arr[i * 3 + 1] > 2.9) arr[i * 3 + 1] = 0.4;
+    // Rear display cabinet: recessed cubbies, slab shelves, doors and bottles.
+    r.box(wood, [3.87, 3.15, .48], [-.19, 1.62, -5.96], .025);
+    r.box(dark, [3.58, 2.47, .065], [-.19, 1.90, -5.685]);
+    r.box(wood, [3.60, .60, .38], [-.19, .39, -5.70], .016);
+    for (let i = 0; i < 6; i++) {
+      r.box(wood, [.571, .50, .045], [-1.66 + i * .592, .39, -5.474], .008, [0, 0, 0], .83 + (i % 2) * .15);
+      r.box(bronze, [.15, .009, .018], [-1.66 + i * .592, .57, -5.442], .003);
+    }
+    for (let col = 0; col <= 4; col++) {
+      const x = -1.96 + col * .885;
+      r.box(bronze, [.018, 2.48, .31], [x, 1.9, -5.5]);
+    }
+    const shelves = [.71, 1.29, 1.89, 2.51];
+    for (let row = 0; row < shelves.length; row++) {
+      const y = shelves[row];
+      r.box(wood, [3.56, .045, .43], [-.19, y, -5.52], .008);
+      for (let col = 0; col < 4; col++) {
+        const x = -1.52 + col * .887;
+        r.box((row + col) % 5 === 0 ? lilac : amber, [.80, .017, .018], [x, y + .029, -5.303]);
+        r.box(wood, [.83, .49, .025], [x, y + .28, -5.64], .003, [0, 0, 0], .55 + row * .08);
+        r.recessShade(shadow, .83, .48, [x, y + .28, -5.617]);
+        for (let item = 0; item < 3; item++) {
+          const h = .16 + .065 * ((row * 3 + col + item) % 3), px = x - .23 + item * .19;
+          r.bottle((col + item) % 3 === 0 ? ceramic : glass, bronze, ceramic, [px, y + .027, -5.42], h, .038 + (item % 2) * .009, row + col + item);
+        }
       }
-      attr.needsUpdate = true;
     }
+    r.box(amber, [3.56, .019, .022], [-.19, 3.125, -5.40]);
+    // A structural pier beside the cabinet, with a subtle violet foot light.
+    r.box(wood, [.27, 3.3, .35], [-2.24, 1.65, -5.54], .018);
+    r.box(lilac, [.27, .018, .36], [-2.24, .11, -5.52]);
+
+    // An upholstered sectional occupies the right side, leaving the centre open.
+    r.box(dark, [1.18, .17, 2.75], [2.02, .16, -4.0], .07);
+    r.box(linen, [1.18, .33, 2.75], [2.02, .39, -4.0], .14);
+    r.box(linen, [.30, .65, 2.85], [2.60, .71, -4.0], .13);
+    r.box(linen, [1.08, .18, .86], [1.93, .62, -4.91], .085);
+    r.box(linen, [1.08, .18, .86], [1.93, .62, -4.00], .085);
+    r.box(linen, [1.08, .18, .86], [1.93, .62, -3.09], .085);
+    r.box(linen, [1.08, .51, .28], [2.02, .63, -2.55], .12);
+    r.box(linen, [1.12, .48, .29], [2.00, .62, -5.47], .12);
+    r.box(linen, [1.24, .45, 1.02], [1.02, .41, -4.95], .15);
+    for (let i = 0; i < 4; i++) {
+      r.box(i % 2 ? pillow : linen, [.22, .53, .56], [2.29, .91, -5.08 + i * .70], .085, [0, -.12, -.20], .90 + i * .025);
+    }
+    // Thin welt seams give the cushions a tailored edge without extra materials.
+    for (const z of [-4.47, -3.56, -2.66]) r.box(pillow, [1.02, .009, .009], [1.91, .642, z]);
+    r.floorPatch(shadow, [1.75, .008, -4.05], [1.15, 1.7], 0x000000, 1);
+    r.recessShade(shadow, 2.62, .49, [2.432, .76, -4.0], [0, -Math.PI / 2, 0], .70);
+
+    // Foreground side table, a small tray and a full, real-leaf arrangement.
+    r.cylinder(bronze, .39, .034, [1.78, .65, -2.20], .39, [0, 0, 0], 32);
+    r.cylinder(dark, .28, .60, [1.78, .32, -2.20], .32, [0, 0, 0], 24);
+    r.box(wood, [.28, .018, .20], [1.63, .681, -2.07], .008);
+    r.cylinder(glass, .047, .075, [1.64, .727, -2.06], .05);
+    r.plant(glass, wood, leaves, [1.93, .68, -2.32], .68);
+    r.floorPatch(shadow, [1.78, .008, -2.2], [.48, .40], 0x000000, .8);
+    // Inset artwork is geometry: a bronze frame and restrained raised linework.
+    r.box(dark, [.055, 1.23, .89], [2.76, 2.04, -3.57], .03);
+    r.box(pillow, [.03, 1.12, .78], [2.718, 2.04, -3.57], .02);
+    for (let i = 0; i < 7; i++) r.curve(bronze, [[2.69, 1.63 + i * .04, -3.87], [2.69, 1.75 + i * .06, -3.57], [2.69, 2.30 + i * .024, -3.28]], .003, 12, 4);
+
+    // Recessed ceiling tray follows the warm reference's rectangular silhouette.
+    r.box(wood, [5.45, .18, 7.6], [0, 3.30, -2.38]);
+    r.box(dark, [4.52, .05, 6.52], [0, 3.183, -2.42], .12);
+    r.frame(bronze, 4.58, 6.59, .22, .035, [0, 3.166, -2.42], [Math.PI / 2, 0, 0]);
+    r.frame(amber, 4.44, 6.46, .19, .016, [0, 3.14, -2.42], [Math.PI / 2, 0, 0]);
+    for (const x of [-2.47, 2.47]) for (const z of [-5.45, -3.45, -1.45, .55]) {
+      r.cylinder(bronze, .055, .024, [x, 3.195, z], .055, [0, 0, 0], 12);
+      r.cylinder(amber, .038, .005, [x, 3.178, z], .038, [0, 0, 0], 12);
+    }
+
+    // Polished stone seams, veins, and inexpensive soft reflected window light.
+    for (let x = -2.7; x < 3; x += .9) r.box(dark, [.006, .003, 8.8], [x, -.012, -2]);
+    for (let z = -6; z < 2.5; z += 1.3) r.box(dark, [5.7, .003, .006], [0, -.011, z]);
+    for (let i = 0; i < 13; i++) r.box(stone, [.005, .002, .65 + (i % 3) * .24], [-2.3 + (i * .73) % 4.7, -.009, -5.8 + (i * .89) % 7.6], 0, [0, -.8 + i * .17, 0], .20);
+    for (let i = 0; i < 7; i++) r.floorPatch(reflections, [-1.87, -.005, -5.4 + i * .84], [.74, .25], 0xdfaa72, .62);
+    r.floorPatch(reflections, [-.2, -.004, -5.24], [1.9, .34], 0xc49278, .24);
+    r.reflectionStrip(reflections, -1.50, -1.55, .78, 6.0, 0xf3ca9e, .48);
+    r.reflectionStrip(reflections, -.96, -1.87, .31, 5.7, 0xd0a887, .38);
   }
 
-  setPresence(presence: number): void {
-    this.presence = clamp(presence);
-    this.group.visible = this.presence > 0.001;
-    for (const material of this.materials) {
-      material.transparent = true;
-      const base = this.baseOpacity.get(material) ?? 1;
-      // Scale each material's *own* opacity rather than flattening them all to
-      // the presence value, which used to make the additive layers slam to full
-      // brightness for a frame at the start of a transition.
-      (material as THREE.Material & { opacity: number }).opacity = base * this.presence;
+  private buildMotes(): void {
+    const positions = new Float32Array(54 * 3);
+    for (let i = 0; i < 54; i++) {
+      positions[i * 3] = -2.4 + (i * .173) % 4.3;
+      positions[i * 3 + 1] = .4 + (i * .217) % 2.5;
+      positions[i * 3 + 2] = -5.2 + (i * .371) % 4;
     }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({ color: 0xf4cb9b, size: .009, transparent: true, opacity: .2, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.motes = new THREE.Points(geo, material); this.motes.name = 'Window dust'; this.group.add(this.motes);
+  }
+
+  update(dt: number, elapsed: number): void {
+    if (this.presence < .01 || !this.motes) return;
+    const attr = this.motes.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < attr.count; i++) {
+      attr.setY(i, .3 + ((attr.getY(i) - .3 + dt * (.006 + (i % 5) * .002)) % 2.65));
+    }
+    attr.needsUpdate = true;
+    this.motes.material.opacity = this.presence * (.18 + .015 * Math.sin(elapsed * .4));
+  }
+
+  setPresence(value: number): void {
+    this.presence = clamp(value); this.group.visible = this.presence > .001;
+    this.room.setPresence(this.presence);
+    if (this.motes) this.motes.material.opacity = .2 * this.presence;
     this.lights.key.intensity = this.baseIntensities[0] * this.presence;
     this.lights.rim.intensity = this.baseIntensities[1] * this.presence;
     this.lights.ambient.intensity = this.baseIntensities[2] * this.presence;
   }
 
   dispose(): void {
-    for (const g of this.geometries) g.dispose();
-    for (const m of this.materials) m.dispose();
-    this.group.removeFromParent();
+    if (this.disposed) return; this.disposed = true;
+    this.room.dispose(); this.motes?.geometry.dispose(); this.motes?.material.dispose();
+    this.lights.key.dispose(); this.lights.rim.dispose(); this.lights.ambient.dispose();
+    this.motes = null; this.group.clear(); this.group.removeFromParent();
   }
 }

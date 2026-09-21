@@ -2,6 +2,9 @@
 
 An AI beauty and skincare consultant who happens to have a physical digital presence.
 
+See [UPGRADE-NOTES.md](UPGRADE-NOTES.md) for the current 3D rooms, hologram preview,
+OpenAI voice setup, verification, and deployment status.
+
 Elohim is conversation-first. You talk to her; she asks about your skin, and when it would
 actually help, the room changes and she takes a proper look. She is not a selfie scanner
 with a chat box attached.
@@ -15,7 +18,8 @@ reasoning behind each.
 ## Running it
 
 ```bash
-npm install
+npm ci
+npm run sync:mediapipe
 ```
 
 ```bash
@@ -39,14 +43,15 @@ calls `node.exe scripts/dev.mjs` directly, which is also what `npm run dev` does
 
 ### First run
 
-Demo mode is on by default outside production, so an account already exists:
+Demo mode starts automatically only with a local database outside deployment environments.
+It creates this development account:
 
 ```
 demo@elohim.local / demo1234
 ```
 
 It comes with six scans across ten weeks and two tracked products, so trends, the noise
-floor and the correlation reporting all have real data to work on. Those fixtures are
+floor and the correlation reporting have synthetic example data to work on. Those fixtures are
 labelled `DEMO FIXTURE` on every scan.
 
 ### Configuration
@@ -56,43 +61,43 @@ in a stated way rather than silently.
 
 | Variable | Effect when unset |
 |---|---|
-| `ANTHROPIC_API_KEY` | Conversation runs the local **Demo Elohim** engine, badged as such in the UI. Scans, storage and trends are unaffected and fully real. |
+| `OPENAI_API_KEY` | Without either provider key, conversation uses the labeled local engine and speech is unavailable. OpenAI is preferred when configured; `ANTHROPIC_API_KEY` is an optional legacy conversation provider. |
 | `ELOHIM_BLOB_KEY` | Face images are **not stored at all**, rather than stored unencrypted. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
-| `DEMO_MODE` | Defaults to `1` outside production. |
-| `ELOHIM_MODEL` | Defaults to `claude-opus-5`. |
+| `DEMO_MODE` | Auto-enabled only for local development databases; explicitly set `0` in deployments. |
+| `OPENAI_MODEL` | Defaults to `gpt-4.1-2025-04-14`. |
+| `OPENAI_TTS_MODEL` / `OPENAI_TTS_VOICE` | Defaults to `gpt-4o-mini-tts-2025-12-15` / `marin`. |
 
 ---
 
 ## What is real
 
-Per §33 of the brief, nothing fakes. Specifically:
+The app distinguishes measured image features, model observations, and demo fixtures:
 
-- **The skin analysis is real computer vision**, running on your device. Face regions come
-  from YCbCr skin-chroma segmentation; the nine metrics are documented functions of real
-  pixels in CIELAB, and the pipeline is deterministic — the same image always produces the
-  same numbers. Formulas and their calibration are in `src/skin-analysis/metrics.ts`.
+- **The local image pipeline computes visual features from pixels.** These scores are
+  appearance proxies, not validated medical or physiological measurements. Lighting,
+  camera, pose, and skin tone can affect them; a photo does not measure hydration.
+  Formulas are in `src/skin-analysis/metrics.ts`.
 - **The progress bar tracks the actual pipeline**, not a timer.
-- **Every number Elohim says comes out of SQLite.** If she says your hydration improved, it
-  improved.
+- **Saved scan scores and trends come from Postgres.** A change in an image-derived score
+  is not proof of a biological change or a treatment effect.
 - **A change smaller than the metric's noise floor is reported as "holding steady"**, not
   as progress.
 - **Product effects are reported as correlation**, in those words, never as cause.
-- **Label scanning is real OCR**, running in the browser. Your photo is not uploaded; the
-  text recogniser is downloaded once. The read is always shown for you to correct before
-  anything is saved.
-- **Voice is real in both directions** — speech recognition for input, synthesis for
-  output — and the mouth is driven by the engine's actual word-boundary events, not a
-  guess laid alongside the audio.
+- **Label scanning supports local OCR and consented cloud reading.** The read is shown
+  for correction before saving. Cloud image observations require the applicable consent.
+- **Replies use OpenAI Marin after opt-in.** Mouth activity follows the audio waveform;
+  word and phoneme timing is estimated from the clip duration, not provider timestamps.
+  Browser speech recognition provides voice input where supported.
 
 The one labelled exception is Demo Elohim, above. It is a rule-based engine, marked in the UI
-on every message, and it reads the same real data the model would.
+on every message, and it reads the same stored context the model would.
 
 ### Talking to her
 
 Tap the microphone and speak; the composer fills in live with what she is hearing. Turn on
-*Let Elohim speak* in Profile and she reads her replies aloud, with her mouth locked to the
-audio. You can pick her voice there too — the default is the best feminine voice your
-system has installed.
+*Let me speak* in Profile to hear her AI-generated OpenAI Marin voice. Account voice
+also requires cloud-processing consent in Privacy. Turning voice off stops playback and
+clears the browser's decoded speech cache. See [VOICE-UPGRADE.md](VOICE-UPGRADE.md).
 
 Tapping any metric in the clinical room asks her about it, rather than opening a panel. She
 is the interpreter; the holograms are her whiteboard.
@@ -109,7 +114,7 @@ so whenever it meets something it does not know.
 ## Layout
 
 ```
-server/           API. Express + node:sqlite.
+server/           API. Express + Postgres.
   ai/             persona, classification, context retrieval, orchestrator, fallback
   db/             migrations and repositories
   skin/           longitudinal model, ingredient assessment
@@ -138,6 +143,8 @@ still hold a correct conversation and store correct scans.
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run check        # svelte-check
+npm run test:local   # full suite with a disposable database
+npm run build       # production web build
 ```
 
 In a dev build the scene director is on `window.__elohim`:

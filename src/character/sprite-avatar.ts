@@ -20,7 +20,7 @@
  *   body    the base painting from the shoulders down
  *   head    the same painting's head, drawn over it so it can move on its own
  *   eyes    an expression patch, swapped per `Expression`
- *   mouth   two quads cross-fading between viseme shapes
+ *   mouth   one opaque viseme drawing, gated by audible speech
  *
  * Eyes and mouth are separate patches so expression and speech compose: four
  * expressions and seven mouths give twenty-eight faces from eleven paintings,
@@ -29,6 +29,7 @@
 import * as THREE from 'three';
 
 import { CharacterStateMachine } from './state-machine.ts';
+import { EXPRESSION_POSES, PAINTED_PRESENCE } from './expressions.ts';
 import { Spring, damp } from '@/lib/math.ts';
 import type { AvatarContext, ElohimAvatar, Outfit } from './types.ts';
 import type { CharacterDirective, CharacterState, Expression, Gesture, Viseme } from '@shared/types.ts';
@@ -354,6 +355,12 @@ export class SpriteAvatar implements ElohimAvatar {
 
   private loaded = false;
   private baseScale = 1;
+  private breathPivotY = 0;
+  private breathPhase = 0;
+  private breathRate = PAINTED_PRESENCE.IDLE.breathRate;
+  private breathDepth = 1;
+  private idleScale = 1;
+  private motionScale = 1;
 
   // The same springs the other rigs damp, so the motion reads the same.
   // Softer than the rigged model's springs: a head that snaps to a new target
@@ -363,9 +370,15 @@ export class SpriteAvatar implements ElohimAvatar {
   private readonly tilt = new Spring(0, 18);
 
   private gazeTarget: THREE.Vector3 | null = null;
+  private readonly localGaze = new THREE.Vector3();
+  private eyeLocalY = 0;
   private expression: Expression = 'warm';
   private intensity = 0.7;
+  private intensityTarget = 0.7;
   private visemeWeight = 0;
+  private requestedViseme: Viseme = 'sil';
+  private visemeUpdatedAt = -Infinity;
+  private lastAudibleAt = -Infinity;
   /** The directive's state, kept because THINKING renders differently. */
   private state: CharacterState = 'IDLE';
   /** See `Mood`. Derived in `applyDirective`, read by every idle system. */
@@ -383,6 +396,7 @@ export class SpriteAvatar implements ElohimAvatar {
   private gestureT = 0;
   private gestureLen = 0;
   private gestureSign = 1;
+  private gestureStartedAt = -Infinity;
   /** Damped 0..1 envelope for the lean, so an interrupted lean settles back. */
   private leanEnv = 0;
   /**
@@ -410,6 +424,8 @@ export class SpriteAvatar implements ElohimAvatar {
   onDirectiveRejected: ((info: { reason: string; detail: string }) => void) | null = null;
 
   constructor() {
+    this.figure.name = 'elohim-figure';
+    this.headGroup.name = 'elohim-head-motion';
     this.fsm.onRejected = (info) => this.onDirectiveRejected?.(info);
     this.figure.add(this.headGroup);
     this.root.add(this.figure);
@@ -442,6 +458,9 @@ export class SpriteAvatar implements ElohimAvatar {
     this.baseScale = FIGURE_HEIGHT / (reference.box[3] - reference.box[1]);
 
     const px = (v: number) => v * this.baseScale;
+    // All cropped poses breathe around the same source-frame hip line.
+    this.breathPivotY = px(-frameH / 2);
+    this.eyeLocalY = px(frameH / 2 - (manifest.regions.eyes[1] + manifest.regions.eyes[3]) / 2);
     /** Source-pixel box -> a quad placed in the figure's local space. */
     const place = (mesh: THREE.Mesh, box: [number, number, number, number]) => {
       const w = box[2] - box[0];
@@ -490,6 +509,7 @@ export class SpriteAvatar implements ElohimAvatar {
     for (const [outfit, poses] of Object.entries(manifest.outfits)) {
       for (const [pose, painted] of Object.entries(poses)) {
         const mesh = quad(1, 1, null, 1);
+        mesh.name = `elohim-body-${outfit}-${pose}`;
         place(mesh, painted.box);
         // Remember where `place` put it. Breath is applied as an offset from
         // this every frame; read back off `position.y` and it compounds.
@@ -527,6 +547,7 @@ export class SpriteAvatar implements ElohimAvatar {
     };
 
     this.head = quad(1, 1, await texture(manifest.head.file), 2);
+    this.head.name = 'elohim-head';
     placeOnNeck(this.head, manifest.head.box);
     this.headGroup.add(this.head);
     /*
@@ -541,6 +562,7 @@ export class SpriteAvatar implements ElohimAvatar {
     // Patches start empty; `setExpression` and `setViseme` fill them.
     const eyesBox = manifest.regions.eyes;
     this.eyes = quad(1, 1, await texture(manifest.eyes.warm), 3);
+    this.eyes.name = 'elohim-eyes';
     placeOnNeck(this.eyes, eyesBox);
     (this.eyes.material as THREE.Material).opacity = 0;
     this.headGroup.add(this.eyes);
@@ -574,6 +596,7 @@ export class SpriteAvatar implements ElohimAvatar {
      */
     if (manifest.eyes.closed) {
       this.lid = quad(1, 1, await texture(manifest.eyes.closed), 4);
+      this.lid.name = 'elohim-blink';
       placeOnNeck(this.lid, manifest.regions.eyesClosed ?? eyesBox);
       (this.lid.material as THREE.Material).opacity = 0;
       this.lid.visible = false;
@@ -583,6 +606,7 @@ export class SpriteAvatar implements ElohimAvatar {
     const mouthBox = manifest.regions.mouth;
     for (const key of ['mouthA', 'mouthB'] as const) {
       const mesh = quad(1, 1, await texture(manifest.mouths.AA), 4);
+      mesh.name = `elohim-${key}`;
       placeOnNeck(mesh, mouthBox);
       (mesh.material as THREE.Material).opacity = 0;
       this.headGroup.add(mesh);
@@ -609,12 +633,14 @@ export class SpriteAvatar implements ElohimAvatar {
   }
 
   applyDirective(directive: CharacterDirective): void {
+    const previous = this.fsm.directive;
     this.fsm.apply(directive);
     const resolved = this.fsm.directive;
     const wasThinking = this.state === 'THINKING';
+    const newBeat = resolved.state !== this.state || resolved.expression !== this.expression;
     this.state = resolved.state;
     this.expression = resolved.expression;
-    this.intensity = resolved.intensity;
+    this.intensityTarget = resolved.intensity;
     /*
      * The mood: which family the directive lands in, not which member.
      * CONCERNED as a *state* counts even when the expression does not say so,
@@ -628,15 +654,20 @@ export class SpriteAvatar implements ElohimAvatar {
           ? 'warm'
           : 'neutral';
     // A directive ends any idle look; the turn's expression is the face now.
-    this.idleLookLeft = 0;
+    if (newBeat) this.idleLookLeft = 0;
     // And any queued glance direction: the new beat owns the eyes.
-    this.dartAsk = null;
+    if (newBeat) this.dartAsk = null;
     // A think that has just begun glances away almost immediately - looking
     // up to consider is the entrance of the state, not a lull inside it.
     if (this.state === 'THINKING' && !wasThinking) this.thinkIn = 0.2 + Math.random() * 0.4;
-    this.requestExpression(resolved.expression);
+    if (newBeat) this.requestExpression(resolved.expression);
     this.pose = GESTURE_POSE[resolved.gesture] ?? 'rest';
-    this.startGesture(resolved.gesture);
+    // Repeated delivery must not rewind an in-flight nod. A later phrase may
+    // repeat it once the previous gesture has settled.
+    if (newBeat || resolved.gesture !== previous.gesture ||
+        (!this.gestureKind && this.clockS - this.gestureStartedAt > this.gestureLen + 0.4)) {
+      this.startGesture(resolved.gesture);
+    }
   }
 
   /**
@@ -644,13 +675,13 @@ export class SpriteAvatar implements ElohimAvatar {
    *
    * Only the motion gestures come through here; the body-cut gestures
    * (open_palms, small_wave, point_to_hologram) are poses and already ran
-   * through `GESTURE_POSE` above. A repeated directive restarts the impulse,
-   * which is what a director repeating themselves means.
+   * through `GESTURE_POSE` above. An in-flight gesture finishes its arc.
    */
   private startGesture(gesture: Gesture): void {
+    if (gesture === this.gestureKind) return;
     switch (gesture) {
       case 'nod':
-        this.gestureLen = 0.35;
+        this.gestureLen = 0.65;
         break;
       case 'slow_nod':
         this.gestureLen = 1.4;
@@ -669,10 +700,12 @@ export class SpriteAvatar implements ElohimAvatar {
         this.dartAsk = { key: 'look-down', dwell: 0.5 + Math.random() * 0.25 };
         break;
       default:
+        this.gestureKind = null;
         return;
     }
     this.gestureKind = gesture;
     this.gestureT = 0;
+    this.gestureStartedAt = this.clockS;
     // Tilt toward the side she is already turned to; a coin toss when square.
     this.gestureSign =
       this.gazeX.value > 0.0015 ? 1 : this.gazeX.value < -0.0015 ? -1 : Math.random() < 0.5 ? -1 : 1;
@@ -688,7 +721,7 @@ export class SpriteAvatar implements ElohimAvatar {
    */
   private requestExpression(expression: Expression): void {
     const key = expression === this.expression ? this.baseEyeKey() : this.expressionEyes[expression];
-    if (expression === 'surprised') {
+    if (expression === 'surprised' && this.eyeReady(key)) {
       // A startle never waits for a blink. This is the calm-below-0.5 direct
       // cut, taken on purpose: surprise that arrives politely is not surprise.
       if (this.dartKey) {
@@ -724,7 +757,10 @@ export class SpriteAvatar implements ElohimAvatar {
    * that is how a worried reply once played with her face never turning
    * concerned, because an idle glance had overwritten it in the queue.
    */
-  private requestEyes(key: string | null, priority = false): void {
+  private requestEyes(key: string | null, priority = false): boolean {
+    if (!priority && this.pendingPriority && this.pendingEyes !== undefined) return false;
+    if (!priority && !this.dartKey && key !== this.shownEyes &&
+        this.clockS - this.eyesShownAt < SpriteAvatar.EYES_HOLD_SECONDS) return false;
     // A dart in progress yields to a real eye change.
     if (this.dartKey) {
       this.dartKey = null;
@@ -733,16 +769,21 @@ export class SpriteAvatar implements ElohimAvatar {
     if (key === this.shownEyes) {
       this.pendingEyes = undefined;
       this.pendingPriority = false;
-      return;
+      return true;
     }
-    if (!this.loaded || !this.lid || this.calmNow < 0.5) {
-      this.showEyes(key, true);
-      return;
+    if ((!this.loaded || !this.lid || this.calmNow < 0.5) && this.showEyes(key, true)) {
+      this.pendingEyes = undefined;
+      this.pendingPriority = false;
+      return true;
     }
-    if (!priority && this.pendingPriority && this.pendingEyes !== undefined) return;
     this.pendingEyes = key;
     this.pendingPriority = priority;
-    if (this.blinkPhase < 0) this.blinkIn = Math.min(this.blinkIn, 0.08);
+    if (this.eyeReady(key) && this.blinkPhase < 0) this.blinkIn = Math.min(this.blinkIn, 0.08);
+    return true;
+  }
+
+  private eyeReady(key: string | null): boolean {
+    return key === null || !!(this.manifest?.eyes[key] && this.textures.has(this.manifest.eyes[key]));
   }
 
   /**
@@ -770,17 +811,15 @@ export class SpriteAvatar implements ElohimAvatar {
    * respects the hold, which is what keeps five well-meaning systems from
    * flicking her face like a slideshow.
    */
-  private showEyes(key: string | null, sanctioned = false): void {
-    if (!this.manifest || !this.eyes) return;
+  private showEyes(key: string | null, sanctioned = false): boolean {
+    if (!this.manifest || !this.eyes || !this.eyeReady(key)) return false;
+    if (key === this.shownEyes) return true;
     if (key !== this.shownEyes) {
       if (!sanctioned && key !== null && this.eyesShownAt >= 0 &&
           this.clockS - this.eyesShownAt < SpriteAvatar.EYES_HOLD_SECONDS) {
-        // Waits for the next blink rather than landing now - but never at
-        // the cost of a queued expression: cosmetics do not evict meaning.
-        if (!this.pendingPriority || this.pendingEyes === undefined) {
-          this.pendingEyes = key;
-        }
-        return;
+        // A dart retries later; it must not start a dwell for a frame that
+        // never appeared, nor evict a queued emotional cue.
+        return false;
       }
       this.eyesShownAt = this.clockS;
     }
@@ -791,19 +830,18 @@ export class SpriteAvatar implements ElohimAvatar {
       material.opacity = 0;
       this.eyes.visible = false;
       this.shownEyes = null;
-      return;
+      return true;
     }
     material.map = texture;
     material.needsUpdate = true;
     material.opacity = 1;
     this.eyes.visible = true;
     this.shownEyes = key;
+    return true;
   }
 
   setOutfit(outfit: Outfit): void {
-    // Every outfit's bodies are already loaded, so this is a cross-fade rather
-    // than a fetch — she changes clothes over a third of a second with no
-    // chance of arriving half-dressed on a slow connection.
+    // Preloaded art switches on the next blink; a slow load keeps the old outfit.
     if (this.bodies.has(`${outfit}/${this.pose}`)) this.outfit = outfit;
   }
 
@@ -825,24 +863,25 @@ export class SpriteAvatar implements ElohimAvatar {
    * the loudness of a syllable decides which shape, not how transparent.
    */
   setViseme(viseme: Viseme, weight: number): void {
-    this.visemeWeight = Math.min(1, Math.max(0, weight));
+    this.visemeWeight = Number.isFinite(weight) ? THREE.MathUtils.clamp(weight, 0, 1) : 0;
+    this.requestedViseme = viseme;
+    this.visemeUpdatedAt = this.clockS;
+    // Cancellation and explicit silence close immediately, even mid-hold.
+    // Opening waits for the frame's audio level so a text-only track cannot mime.
+    if (viseme === 'sil' || this.visemeWeight === 0) this.showMouth(null);
+  }
+
+  private showMouth(key: string | null): void {
     if (!this.loaded || !this.manifest || !this.mouthA) return;
-
-    const key = this.visemeWeight < MOUTH_SILENT_BELOW ? null : VISEME_MOUTH[viseme];
     if (key === this.currentMouth) return;
-
-    // The drawing on the face has to have been seen. Closing is allowed a
-    // little sooner than changing to another open shape, so a real pause
-    // still reads as one. Called every frame, so a change refused now lands
-    // the moment the hold is up.
-    const now = performance.now() / 1000;
-    const hold = key === null ? MOUTH_HOLD_SECONDS * 0.7 : MOUTH_HOLD_SECONDS;
-    if (now - this.mouthShownAt < hold) return;
-    this.mouthShownAt = now;
+    if (key && this.currentMouth && this.clockS - this.mouthShownAt < MOUTH_HOLD_SECONDS) return;
 
     const material = this.mouthA.material as THREE.MeshBasicMaterial;
     const file = key ? this.manifest.mouths[key] : null;
     const texture = file ? this.textures.get(file) : null;
+    if (key && !texture) return;
+    this.mouthShownAt = this.clockS;
+    this.restingMouthUp = false;
     if (key && texture) {
       material.map = texture;
       material.needsUpdate = true;
@@ -853,6 +892,16 @@ export class SpriteAvatar implements ElohimAvatar {
       this.mouthA.visible = false;
     }
     this.currentMouth = key && texture ? key : null;
+  }
+
+  private updateSpeech(level: number): void {
+    if (level <= 0 || this.clockS - this.visemeUpdatedAt > 0.25) {
+      this.showMouth(null);
+      return;
+    }
+    this.lastAudibleAt = this.clockS;
+    const key = this.visemeWeight < MOUTH_SILENT_BELOW ? null : VISEME_MOUTH[this.requestedViseme];
+    this.showMouth(key);
   }
 
   /**
@@ -881,7 +930,7 @@ export class SpriteAvatar implements ElohimAvatar {
     if (wanted && texture) {
       // Respect the mouth hold, so a syllable's close is seen as a close
       // before the smile settles in rather than cutting straight through it.
-      if (performance.now() / 1000 - this.mouthShownAt < MOUTH_HOLD_SECONDS * 0.7) return;
+      if (this.clockS - Math.max(this.mouthShownAt, this.lastAudibleAt) < 0.22) return;
       material.map = texture;
       material.needsUpdate = true;
       material.opacity = 1;
@@ -891,7 +940,7 @@ export class SpriteAvatar implements ElohimAvatar {
       this.mouthA.visible = false;
     }
     this.restingMouthUp = wanted;
-    this.mouthShownAt = performance.now() / 1000;
+    this.mouthShownAt = this.clockS;
   }
 
   lookAt(target: THREE.Vector3 | null): void {
@@ -899,10 +948,20 @@ export class SpriteAvatar implements ElohimAvatar {
   }
 
   update(dt: number, ctx: AvatarContext): void {
-    if (!this.loaded) return;
+    if (!this.loaded || !Number.isFinite(dt) || dt <= 0) return;
+    // A resumed tab should settle from its current pose, not skip a blink's
+    // closed frame or consume an entire gesture in one update.
+    dt = Math.min(dt, 0.05);
     this.clockS += dt;
     const calm = ctx.reducedMotion ? 0.15 : 1;
     this.calmNow = calm;
+    this.motionScale = damp(this.motionScale, calm, 6, dt);
+    this.intensity = damp(this.intensity, this.intensityTarget, 4, dt);
+    const presence = PAINTED_PRESENCE[this.state];
+    this.idleScale = damp(this.idleScale, presence.idleScale, 3, dt);
+    const motion = this.motionScale;
+    const audioLevel = Number.isFinite(ctx.speechLevel) ? THREE.MathUtils.clamp(ctx.speechLevel, 0, 1) : 0;
+    this.updateSpeech(audioLevel);
 
     /*
      * Gaze, as head movement rather than eye movement.
@@ -915,13 +974,17 @@ export class SpriteAvatar implements ElohimAvatar {
     let targetX = 0;
     let targetY = 0;
     let targetTilt = 0;
-    if (this.gazeTarget) {
-      const local = this.figure.worldToLocal(this.gazeTarget.clone());
+    const gazeTarget = this.gazeTarget ?? ctx.gazeTarget;
+    if (gazeTarget) {
+      const local = this.figure.worldToLocal(this.localGaze.copy(gazeTarget));
       targetX = THREE.MathUtils.clamp(local.x * 0.01, -HEAD_TRAVEL_X, HEAD_TRAVEL_X);
-      targetY = THREE.MathUtils.clamp(local.y * 0.008, -HEAD_TRAVEL_Y, HEAD_TRAVEL_Y);
+      targetY = THREE.MathUtils.clamp((local.y - this.eyeLocalY) * 0.008, -HEAD_TRAVEL_Y, HEAD_TRAVEL_Y);
       // The look is mostly this: a tilt into the direction, about the neck.
       targetTilt = THREE.MathUtils.clamp(-local.x * 0.022, -HEAD_TILT, HEAD_TILT);
     }
+    targetX *= motion;
+    targetY *= motion;
+    targetTilt *= motion;
 
     /*
      * Saccades, on their own clock.
@@ -938,8 +1001,8 @@ export class SpriteAvatar implements ElohimAvatar {
     this.saccadeIn -= dt;
     if (this.saccadeIn <= 0) {
       this.saccadeIn = 0.9 + Math.random() * 2.4;
-      this.saccadeX = (Math.random() - 0.5) * 0.0025 * calm;
-      this.saccadeY = (Math.random() - 0.35) * 0.0018 * calm;
+      this.saccadeX = (Math.random() - 0.5) * 0.0025;
+      this.saccadeY = (Math.random() - 0.35) * 0.0018;
     }
 
     /*
@@ -951,7 +1014,7 @@ export class SpriteAvatar implements ElohimAvatar {
      * same curve at different sizes - and reduced motion scales it down the
      * same way it scales everything else.
      */
-    const ampScale = (0.7 + 0.6 * this.intensity) * calm;
+    const ampScale = (0.7 + 0.6 * this.intensity) * motion;
     let gestureY = 0;
     let gestureTilt = 0;
     let leanTarget = 0;
@@ -966,9 +1029,8 @@ export class SpriteAvatar implements ElohimAvatar {
             gestureY = -HEAD_TRAVEL_Y * ampScale * Math.sin(Math.PI * u);
             break;
           case 'slow_nod':
-            // Two dips over the longer envelope, slightly smaller than the
-            // single sharp one: agreement, not insistence.
-            gestureY = -HEAD_TRAVEL_Y * 0.85 * ampScale * Math.abs(Math.sin(2 * Math.PI * u));
+            // One considered acknowledgement, with a gentle ease at both ends.
+            gestureY = -HEAD_TRAVEL_Y * 0.85 * ampScale * Math.sin(Math.PI * u) ** 2;
             break;
           case 'head_tilt':
           case 'hand_to_chin': {
@@ -996,26 +1058,26 @@ export class SpriteAvatar implements ElohimAvatar {
      * syllables she leans on; the cooldown keeps it emphasis rather than
      * bobbing.
      */
-    this.levelMean += (ctx.speechLevel - this.levelMean) * Math.min(1, dt / 0.8);
+    this.levelMean = damp(this.levelMean, audioLevel, 1.25, dt);
     this.emphasisCooldown -= dt;
     if (
       this.emphasisLeft <= 0 &&
       this.emphasisCooldown <= 0 &&
-      ctx.speechLevel > 0.12 &&
+      audioLevel > 0.12 &&
       this.levelMean > 0.04 &&
-      ctx.speechLevel > this.levelMean * 1.4
+      audioLevel > this.levelMean * 1.4
     ) {
       this.emphasisLeft = 0.2;
-      this.emphasisCooldown = 0.45;
+      this.emphasisCooldown = 0.9;
     }
     let emphasisY = 0;
     if (this.emphasisLeft > 0) {
-      emphasisY = -0.0025 * Math.sin(Math.PI * (1 - this.emphasisLeft / 0.2)) * calm;
+      emphasisY = -0.0018 * Math.sin(Math.PI * (1 - this.emphasisLeft / 0.2)) * motion;
       this.emphasisLeft -= dt;
     }
 
-    this.gazeX.step(targetX + this.saccadeX, dt);
-    this.gazeY.step(targetY + this.saccadeY + gestureY + emphasisY, dt);
+    this.gazeX.step(targetX + this.saccadeX * motion * this.idleScale, dt);
+    this.gazeY.step(targetY + this.saccadeY * motion * this.idleScale + gestureY + emphasisY, dt);
 
     /*
      * Breath, and the slow weight shift under it.
@@ -1036,13 +1098,15 @@ export class SpriteAvatar implements ElohimAvatar {
      * the same amount, a beat behind. A whole figure sliding up and down by
      * three millimetres was invisible; a chest that lifts is a person.
      */
-    // Speaking quickens the breath, and how *much* it quickens follows the
-    // intensity of the moment: an urgent explanation breathes faster than a
-    // pleasantry, which is something a chest does and a loop does not.
-    const rate = this.currentMouth ? 1.35 * (1 + 0.3 * this.intensity) : 1.0;
-    const breathK = (Math.sin(ctx.elapsed * rate) * 0.5 + 0.5) * 0.011 * calm;
-    const drift = Math.sin(ctx.elapsed * 0.31 + 0.9) * calm;
-    this.tilt.step(targetTilt + gestureTilt + drift * 0.01, dt);
+    // Integrating a damped rate preserves phase across every state and syllable.
+    this.breathRate = damp(this.breathRate, presence.breathRate, 2, dt);
+    this.breathDepth = damp(this.breathDepth, presence.breathDepth, 2, dt);
+    this.breathPhase = (this.breathPhase + dt * this.breathRate) % (Math.PI * 2);
+    const breathK = (Math.sin(this.breathPhase) * 0.5 + 0.5) * 0.007 * this.breathDepth * motion;
+    const drift = Math.sin(this.clockS * 0.31 + 0.9) * motion * this.idleScale;
+    const expressionTilt = THREE.MathUtils.clamp(EXPRESSION_POSES[this.expression].headTilt * 0.2, -0.009, 0.009);
+    const tiltTarget = targetTilt + gestureTilt + (presence.tilt + expressionTilt * this.intensity) * motion + drift * 0.006;
+    this.tilt.step(THREE.MathUtils.clamp(tiltTarget, -HEAD_TILT, HEAD_TILT), dt);
 
     /*
      * The lean, when there is one.
@@ -1053,18 +1117,12 @@ export class SpriteAvatar implements ElohimAvatar {
      * The envelope is damped rather than applied raw so a directive that
      * interrupts a lean settles her back instead of snapping her back.
      */
-    this.leanEnv = damp(this.leanEnv, leanTarget * calm, 10, dt);
+    this.leanEnv = damp(this.leanEnv, (leanTarget + presence.lean) * motion, 4, dt);
     this.figure.position.z = (0.02 + 0.01 * this.intensity) * this.leanEnv;
     this.headGroup.scale.setScalar(HEAD_COVER * (1 + 0.005 * this.leanEnv));
 
     // How far the neck rises with the chest, from the body that is showing.
-    let rise = 0;
-    const shown = this.showing ? this.bodies.get(this.showing) : undefined;
-    if (shown) {
-      const rest = (shown.userData.restY as number) ?? 0;
-      const baseH = (shown.userData.baseScaleY as number) ?? shown.scale.y;
-      rise = breathK * (this.neck.y - (rest - baseH / 2));
-    }
+    const rise = breathK * (this.neck.y - this.breathPivotY);
 
     this.headGroup.position.set(
       this.neck.x + this.gazeX.value + drift * 0.0012,
@@ -1090,7 +1148,17 @@ export class SpriteAvatar implements ElohimAvatar {
       if (file && this.textures.has(file)) this.requestEyes(wanted);
     }
 
-    this.updateThink(dt);
+    if (this.pendingEyes !== undefined && this.eyeReady(this.pendingEyes) && this.blinkPhase < 0) {
+      if (calm < 0.5) {
+        if (this.showEyes(this.pendingEyes, true)) {
+          this.pendingEyes = undefined;
+          this.pendingPriority = false;
+        }
+      } else {
+        this.blinkIn = Math.min(this.blinkIn, 0.08);
+      }
+    }
+    this.updateThink(dt * (calm < 0.5 ? 0.3 : 1));
     this.updateIdleLook(dt, calm);
     this.updateDart(dt, calm);
     this.updateRestingMouth();
@@ -1121,13 +1189,18 @@ export class SpriteAvatar implements ElohimAvatar {
      * is what the viewer is actually watching.
      */
     const wanted = this.key();
+    // A rest directive can arrive before the present pose's blink. Only the
+    // latest request is allowed to land, including while textures are loading.
+    if (this.pendingBody && this.pendingBody !== wanted) this.pendingBody = null;
     const wantedReady = this.bodies.get(wanted)?.userData.ready === true;
     if (wantedReady && wanted !== this.showing && wanted !== this.pendingBody) {
-      if (this.showing === null || !this.lid || calm < 0.5) {
+      if (this.showing === null) {
         // Nothing to hide the cut under: the first body, or reduced motion.
         // Fade, quickly, rather than wait for a blink that is not coming.
         this.outgoing = this.showing;
         this.showing = wanted;
+      } else if (!this.lid || calm < 0.5) {
+        this.cutTo(wanted);
       } else {
         // Park it, and blink at the first opportunity.
         this.pendingBody = wanted;
@@ -1153,7 +1226,7 @@ export class SpriteAvatar implements ElohimAvatar {
       const baseH = (mesh.userData.baseScaleY as number) ?? mesh.scale.y;
       mesh.userData.baseScaleY = baseH;
       mesh.scale.y = baseH * (1 + breathK);
-      mesh.position.y = rest + (breathK * baseH) / 2;
+      mesh.position.y = rest + breathK * (rest - this.breathPivotY);
     }
 
     this.updateBlink(dt, calm);
@@ -1219,9 +1292,10 @@ export class SpriteAvatar implements ElohimAvatar {
       if (this.pendingEyes !== undefined) {
         // The shut frame is the sanctioned moment: the cut is invisible, so
         // the hold does not apply.
-        this.showEyes(this.pendingEyes, true);
-        this.pendingEyes = undefined;
-        this.pendingPriority = false;
+        if (this.showEyes(this.pendingEyes, true)) {
+          this.pendingEyes = undefined;
+          this.pendingPriority = false;
+        }
       }
     }
 
@@ -1232,7 +1306,7 @@ export class SpriteAvatar implements ElohimAvatar {
       this.blinkPhase = -1;
       (this.lid.material as THREE.MeshBasicMaterial).opacity = 0;
       this.lid.visible = false;
-      if (this.pendingBody || this.pendingEyes !== undefined) {
+      if (this.pendingBody || (this.pendingEyes !== undefined && this.eyeReady(this.pendingEyes))) {
         // A swap arrived mid-blink and missed the shut frame. Blink again.
         this.blinkIn = 0.12;
       } else if (this.blinkAgain) {
@@ -1289,7 +1363,7 @@ export class SpriteAvatar implements ElohimAvatar {
    */
   private updateIdleLook(dt: number, calm: number): void {
     // Thought owns the eyes; its own glancing lives in updateThink.
-    if (this.state === 'THINKING') return;
+    if (this.state === 'THINKING' || this.state === 'LISTENING' || this.state === 'CLINICAL_ANALYSIS') return;
     if (this.idleLookLeft > 0) {
       this.idleLookLeft -= dt;
       if (this.idleLookLeft <= 0) {
@@ -1298,7 +1372,7 @@ export class SpriteAvatar implements ElohimAvatar {
       }
       return;
     }
-    if (this.currentMouth) return;
+    if (this.clockS - this.lastAudibleAt < 0.6) return;
     // Deep concern holds its face rather than glancing through it: the
     // expression persists through the idle instead of resetting to variety.
     if (this.mood === 'concerned' && this.intensity >= 0.7) return;
@@ -1322,7 +1396,7 @@ export class SpriteAvatar implements ElohimAvatar {
       this.idleLookIn = this.idleLookInterval();
       return;
     }
-    this.requestEyes(pool[Math.floor(Math.random() * pool.length)]);
+    if (!this.requestEyes(pool[Math.floor(Math.random() * pool.length)])) return;
     // Concern dwells longest; everything dwells longer as intensity rises.
     const base = this.mood === 'concerned' ? 3.0 + Math.random() * 1.5 : 2.2 + Math.random() * 1.6;
     this.idleLookLeft = base * (0.7 + 0.6 * this.intensity);
@@ -1347,11 +1421,11 @@ export class SpriteAvatar implements ElohimAvatar {
     if (this.state !== 'THINKING') return;
     this.thinkIn -= dt;
     if (this.thinkIn > 0) return;
-    this.thinkIn = 3.4 + Math.random() * 1.4;
+    this.thinkIn = 4.4 + Math.random() * 1.8;
     this.dartAsk = {
       // Mostly up - the classic searching-for-it look - down for variety.
       key: Math.random() < 0.65 ? 'look-up' : 'look-down',
-      dwell: 0.8 + Math.random() * 0.7,
+      dwell: 1.0 + Math.random() * 0.6,
     };
   }
 
@@ -1377,9 +1451,9 @@ export class SpriteAvatar implements ElohimAvatar {
       if (this.dartLeft <= 0 && this.dartKey) {
         // Back to whatever the face rests on now, not to a remembered one -
         // a directive may have changed the base while the eyes were away.
-        if (this.shownEyes === this.dartKey) this.showEyes(this.baseEyeKey());
+        if (this.shownEyes === this.dartKey) this.requestEyes(this.baseEyeKey());
         this.dartKey = null;
-        this.dartIn = ((this.currentMouth ? 1.6 : 3.0) + Math.random() * 4.0) / this.liveliness();
+        this.dartIn = ((this.state === 'LISTENING' ? 8 : 4) + Math.random() * 4) / this.liveliness();
       }
       return;
     }
@@ -1391,15 +1465,18 @@ export class SpriteAvatar implements ElohimAvatar {
 
     if (this.dartAsk) {
       const { key, dwell } = this.dartAsk;
-      this.dartAsk = null;
-      if (gazes.includes(key)) {
+      if (gazes.includes(key) && this.showEyes(key)) {
+        this.dartAsk = null;
         this.dartKey = key;
-        this.showEyes(key);
         this.dartLeft = dwell;
         return;
       }
+      return;
     }
 
+    // Listening and examination keep their attention on the supplied target.
+    // Their tiny spring-driven saccades still move, without random mood swaps.
+    if (this.state === 'LISTENING' || this.state === 'CLINICAL_ANALYSIS' || calm < 0.5) return;
     this.dartIn -= dt * (calm < 0.5 ? 0.35 : 1);
     if (this.dartIn > 0) return;
 
@@ -1411,9 +1488,10 @@ export class SpriteAvatar implements ElohimAvatar {
       side && pool.includes(side) && Math.random() < 0.5
         ? side
         : pool[Math.floor(Math.random() * pool.length)];
-    this.dartKey = key;
-    this.showEyes(key);
-    this.dartLeft = 0.22 + Math.random() * 0.3;
+    if (this.showEyes(key)) {
+      this.dartKey = key;
+      this.dartLeft = 0.65 + Math.random() * 0.35;
+    }
   }
 
   /** Replaces the body outright. Only ever called with the eyes closed. */
@@ -1450,16 +1528,15 @@ export class SpriteAvatar implements ElohimAvatar {
   }
 
   stats(): { meshes: number; triangles: number } {
-    // Five quads. The rigged model was 41,166 triangles, and doubled that with
-    // the edge fringe it no longer needs.
-    const meshes = [this.head, this.eyes, this.mouthA, this.mouthB, ...this.bodies.values()]
+    const meshes = [this.head, this.eyes, this.lid, this.mouthA, this.mouthB, ...this.bodies.values()]
       .filter(Boolean);
     return { meshes: meshes.length, triangles: meshes.length * 2 };
   }
 
   dispose(): void {
     for (const item of this.disposables) item.dispose();
-    for (const mesh of [this.head, this.eyes, this.mouthA, this.mouthB, ...this.bodies.values()]) {
+    this.loaded = false;
+    for (const mesh of [this.head, this.eyes, this.lid, this.mouthA, this.mouthB, ...this.bodies.values()]) {
       if (!mesh) continue;
       mesh.geometry.dispose();
       (mesh.material as THREE.Material).dispose();

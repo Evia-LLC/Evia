@@ -231,7 +231,7 @@ select:focus-visible,
   white-space: normal;
 }
 .bubble--elohim::before {
-  content: 'Elohim';
+  content: 'Ese';
 }
 .bubble--user::before {
   content: 'You';

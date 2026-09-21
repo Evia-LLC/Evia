@@ -355,7 +355,7 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
 
   /** Reports the real loudness of the audio being played, 0..1. */
   setLevel(level: number): void {
-    this.measuredLevel = Math.min(1, Math.max(0, level));
+    this.measuredLevel = Number.isFinite(level) ? clamp(level) : 0;
   }
 
   end(): void {
@@ -397,6 +397,10 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
   private step(dt: number): MouthState {
     this.elapsed += dt;
     if (this.ended || this.phones.length === 0) return SILENT;
+    // Once a waveform is available it is the authority. Estimated phoneme
+    // energy must not keep the jaw, emphasis gestures or phrase timer alive
+    // through a real audio pause.
+    if (this.measuredLevel === 0) return SILENT;
 
     const local = this.elapsed - this.wordStartedAt;
     if (local < 0) return SILENT;
@@ -434,7 +438,7 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
       viseme: phone.viseme,
       // The word says which shape; the waveform says how far into it.
       weight: (0.35 + 0.65 * s) * gate,
-      level: this.measuredLevel === null ? shaped : shaped * 0.4 + this.measuredLevel * 0.6,
+      level: this.measuredLevel ?? shaped,
     };
   }
 }

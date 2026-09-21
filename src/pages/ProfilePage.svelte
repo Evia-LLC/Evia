@@ -9,15 +9,13 @@
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { api } from '@/lib/api.ts';
-  import { link } from '@/router/router.svelte.ts';
-  import { listVoiceOptions, previewVoice, refreshVoice, signOut } from '@/state/controller.ts';
-  import { forgetIntro } from '@/lib/intro.ts';
+  import { link, router } from '@/router/router.svelte.ts';
+  import { listVoiceOptions, previewVoice, refreshVoice, setGuestVoice, setVoiceEnabled, signOut } from '@/state/controller.ts';
   import { setSoundEnabled, soundEnabled } from '@/lib/sound.ts';
 
   /** Plays the introduction again: forget that it was seen, go home, it plays. */
   function replayIntro() {
-    forgetIntro();
-    location.assign('/');
+    router.go('/');
   }
   import type { ExplanationStyle, MemoryRecord, SkinType, PregnancyStatus } from '@shared/types.ts';
   import { PREGNANCY_STATUSES, PREGNANCY_STATUS_LABELS } from '@shared/types.ts';
@@ -52,6 +50,21 @@
     saving = true;
     saved = false;
     try {
+      if (session.guest && session.user) {
+        // A guest's choices live only in this session; never send them to an
+        // account endpoint (which could still have a cookie from another tab).
+        session.user = {
+          ...session.user,
+          profile: { ...session.user.profile, skinType, concerns: split(concerns),
+            sensitivities: split(sensitivities), pregnancyStatus },
+          preferences: { ...session.user.preferences, explanationStyle: style,
+            reducedMotion, voiceEnabled, voiceURI: null },
+        };
+        setGuestVoice(voiceEnabled);
+        saved = true;
+        setTimeout(() => (saved = false), 2400);
+        return;
+      }
       await api.updateProfile({
         skinType,
         concerns: split(concerns),
@@ -72,6 +85,12 @@
     } finally {
       saving = false;
     }
+  }
+
+  function changeVoice(event: Event): void {
+    voiceEnabled = (event.currentTarget as HTMLInputElement).checked;
+    if (session.guest) setGuestVoice(voiceEnabled);
+    else void setVoiceEnabled(voiceEnabled);
   }
 
   async function loadMemories() {
@@ -171,19 +190,26 @@
       </label>
 
       <label class="toggle">
-        <input type="checkbox" bind:checked={voiceEnabled} disabled={!session.canSpeak} />
+        <input type="checkbox" checked={voiceEnabled} onchange={changeVoice}
+          disabled={!session.canSpeak || (!session.guest && !session.user?.consents.cloud_reasoning)} />
         <div>
           <strong>Let me speak</strong>
           <small>
-            {#if session.clonedVoice}
-              I read my replies aloud in my own licensed voice, and my mouth follows the real
-              waveform rather than a guess at it.
+            {#if session.guest}
+              Off until you choose it. Enabling sends the text of Ese's replies,
+              which may mention your readings and concerns, to OpenAI for an AI-generated
+              Marin voice. This choice lasts only for this visit.
+            {:else if session.clonedVoice}
+              AI-generated voice · OpenAI Marin. My mouth follows the audio waveform,
+              and returns to rest when playback pauses or stops.
             {:else}
-              I read my replies aloud and my mouth follows the audio — in this device's
-              built-in voice for now, until my own is switched on.
+              Natural voice is available when OpenAI audio is configured on the server
+              and cloud processing is enabled.
             {/if}
-            {#if !session.canSpeak}This browser has no speech synthesis and no licensed
-              voice is configured, so I cannot speak here.{/if}
+            {#if !session.guest && !session.user?.consents.cloud_reasoning}
+              Enable cloud processing in Privacy before choosing voice.
+            {/if}
+            {#if !session.canSpeak}Voice is unavailable right now. You can still read and send messages.{/if}
           </small>
         </div>
       </label>
@@ -208,11 +234,12 @@
           <div class="line__main">
             <span class="line__title line__title--plain">Hear my voice</span>
             <span class="line__sub">
-              {session.voiceStatus || 'A short line in my own voice, so you can check this device plays it.'}
+              {session.voiceStatus || 'An AI-generated voice sample from OpenAI.'}
             </span>
           </div>
           <div class="line__end">
-            <button class="btn btn--mini" type="button" onclick={() => previewVoice(null)}>Play</button>
+            <button class="btn btn--mini" type="button" onclick={() => previewVoice(null)}
+              disabled={session.guest ? !voiceEnabled : !session.user?.consents.cloud_reasoning}>Play</button>
           </div>
         </div>
       {/if}
@@ -237,8 +264,8 @@
 
       <div class="line">
         <div class="line__main">
-          <span class="line__title line__title--plain">The introduction</span>
-          <span class="line__sub">The twenty seconds you saw when you first arrived.</span>
+          <span class="line__title line__title--plain">The welcome film</span>
+          <span class="line__sub">The silent consultation film from the welcome page.</span>
         </div>
         <div class="line__end">
           <button class="btn btn--mini" type="button" onclick={replayIntro}>Play it again</button>

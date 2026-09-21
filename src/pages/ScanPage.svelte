@@ -172,7 +172,7 @@
 
       <div class="reading__words" aria-live="polite">
         {#if session.thinking}
-          <span class="thinking" aria-label="Elohim is thinking">Thinking</span>
+          <span class="thinking" aria-label="Ese is thinking">Thinking</span>
         {:else if lastWord}
           {shownWords}{#if stillTyping}<span class="caret" aria-hidden="true"></span>{/if}
         {:else}
@@ -194,7 +194,7 @@
           Scan again
         </button>
         <span class="reading__sep" aria-hidden="true">·</span>
-        <a class="cta cta--quiet" href="/" use:link>Talk it through</a>
+        <a class="cta cta--quiet" href="/lounge" use:link>Talk it through</a>
         <span class="reading__sep" aria-hidden="true">·</span>
         <a class="cta cta--quiet" href="/progress" use:link>Against the last one</a>
       </div>

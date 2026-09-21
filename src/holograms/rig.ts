@@ -1451,7 +1451,7 @@ export class HologramRig {
     this.beam.setProgress(this.scanProgress);
   }
 
-  update(dt: number, elapsed: number): void {
+  update(dt: number, elapsed: number, reducedMotion = false): void {
     const rate = this.presenceTarget > this.presence ? 1 / 1.35 : 1 / 0.5;
     this.presence +=
       Math.sign(this.presenceTarget - this.presence) *
@@ -1510,7 +1510,7 @@ export class HologramRig {
       : 0;
     if (this.faceMesh) {
       this.faceMesh.setPresence(faceP);
-      this.faceMesh.update(dt, elapsed, this.glitch);
+      this.faceMesh.update(dt, reducedMotion ? 0 : elapsed, reducedMotion ? 0 : this.glitch);
     }
     this.portraitMesh.visible = showPortrait && faceP > 0.01;
     this.face.setReveal(faceP);

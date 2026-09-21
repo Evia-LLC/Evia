@@ -59,9 +59,9 @@ app.use('/api/auth', authRouter);
  *
  * A guest's replies come from the local engine in their own browser and carry
  * their own readings, so sending a line to the voice provider is a transfer
- * to a third party. The guest chooses it: the voice toggle on the entry
- * screen says where the audio comes from, and it is off until they turn it
- * on. The operator can close the door entirely with ELOHIM_GUEST_VOICE=0.
+ * to a third party. The guest chooses it in Profile after seeing the OpenAI
+ * disclosure; voice starts off. The operator can disable it entirely with
+ * ELOHIM_GUEST_VOICE=0.
  */
 app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text : '';
@@ -70,12 +70,12 @@ app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
     return;
   }
   if (!guestVoiceAllowed()) {
-    res.status(503).json({ error: 'The cloned voice is not available to guests here.' });
+    res.status(503).json({ error: 'OpenAI voice is not available to guests here. Replies remain available as text.' });
     return;
   }
   try {
-    // The sentence's neighbours ride along for prosody, clamped, exactly as
-    // on the account route - a guest hears the same delivery.
+    // Keep the historical request contract; OpenAI reads the supplied text
+    // with the same voice configuration for guests and accounts.
     const line = await speakLine(text, {
       previousText:
         typeof req.body?.previous_text === 'string' ? req.body.previous_text.slice(0, 600) : undefined,
@@ -106,8 +106,8 @@ app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
       res.status(503).json({ error: err.message });
       return;
     }
-    log.error('voice', 'guest line failed', { error: (err as Error).message });
-    res.status(502).json({ error: 'Her voice did not come through.' });
+    log.error('voice', 'guest playback generation failed');
+    res.status(502).json({ error: 'OpenAI voice could not be generated. Replies remain available as text.' });
   }
 });
 

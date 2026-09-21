@@ -28,8 +28,8 @@ app.listen(PORT, '127.0.0.1', () => {
   if (!modelAvailable()) {
     log.warn(
       'server',
-      'ANTHROPIC_API_KEY is not set — conversation runs the local Demo Elohim engine. ' +
-        'Scans, storage and trends are fully real either way.',
+      'Neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is set — conversation runs the local Demo Elohim engine. ' +
+        'On-device image appearance estimates remain available; they are not clinical measurements.',
     );
   }
 });

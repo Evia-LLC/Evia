@@ -1,0 +1,42 @@
+{
+  "fileBytes": 12002376,
+  "MiB": 11.446,
+  "joints": 67,
+  "animations": [
+    "ClinicalTransition",
+    "Empathy",
+    "Examining",
+    "Idle",
+    "Listening",
+    "Pointing",
+    "Speaking",
+    "Welcome"
+  ],
+  "allClipsKeyHead": true,
+  "materialPrimitives": 19,
+  "facialTargetsWithNormals": 267,
+  "images": [
+    {
+      "name": "ESE_Blue_Iris",
+      "mimeType": "image/png"
+    },
+    {
+      "name": "young_lightskinned_female_diffuse2",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "name": "teeth",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "name": "tongue01_diffuse",
+      "mimeType": "image/jpeg"
+    }
+  ],
+  "sceneExtras": {
+    "character": "Ese",
+    "portalY": 1.025,
+    "units": "metres",
+    "frontAxis": "+Z"
+  }
+}

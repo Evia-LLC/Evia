@@ -96,9 +96,9 @@ export interface CameraShot {
 
 /** Chest-up portrait — the framing the whole product is composed for. */
 export const SHOT_CONVERSATION: CameraShot = {
-  position: new THREE.Vector3(0.05, 1.525, 1.02),
-  target: new THREE.Vector3(0, 1.475, 0),
-  fov: 34,
+  position: new THREE.Vector3(0.05, 1.53, 2.1),
+  target: new THREE.Vector3(0, 1.4, 0),
+  fov: 42,
 };
 
 /**
@@ -162,7 +162,7 @@ export class Stage {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: false, // costs more than it returns on an iGPU at this stylisation
+      antialias: true, // keeps fine room light rails and face edges stable at capped DPR
       alpha: false,
       powerPreference: 'high-performance',
       stencil: false,

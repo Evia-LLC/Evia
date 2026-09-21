@@ -10,7 +10,7 @@
    * under her.
    *
    * The hero is hers. The eyebrow says which page this is; the title and the
-   * lede are Elohim talking about what is on it, in the first person.
+   * lede are Ese talking about what is on it, in the first person.
    */
   import type { Snippet } from 'svelte';
   import { router } from '@/router/router.svelte.ts';

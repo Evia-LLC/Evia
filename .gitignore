@@ -2,6 +2,8 @@ node_modules/
 dist/
 data/*.db
 data/*.db-journal
+data/*.db-shm
+data/*.db-wal
 data/blobs/
 .env
 .env.local
@@ -34,3 +36,7 @@ data/pglite/
 # replaced the rigged model, nothing imports these, and GitHub is not the
 # archive for them. They stay on this machine.
 art/
+
+# Python development artefacts
+__pycache__/
+*.pyc

@@ -1,365 +1,129 @@
 <script lang="ts">
-  /**
-   * The entry screen.
-   *
-   * This is the only screen a stranger ever sees, and the product it is selling
-   * is standing right behind it: `ElohimStage` mounts before this does, so by
-   * the time the gate paints, she is already in the lounge breathing and
-   * blinking. So the gate does not cover the canvas — it grades it. The type
-   * sits on the part of the frame that is nearly opaque and she keeps the part
-   * that is not, which is the whole pitch in one image: there is a person in
-   * here, and she is looking back.
-   *
-   * Nothing on this screen is decorative. There is no third-party sign-in, no
-   * password reset, no counts and no logos, because none of that exists on the
-   * server — the only two calls that exist are `signIn` and `register` (brief
-   * §33). The demo and local-engine blocks are honesty disclosures and are
-   * placed *above* the form deliberately: below the fold on a phone is the same
-   * thing as hidden.
-   */
-  import { cubicOut, expoOut } from 'svelte/easing';
-  import { fly } from 'svelte/transition';
-  import { register, signIn } from '@/state/controller.ts';
+  import { onDestroy } from 'svelte';
+  import FilmLanding from './FilmLanding.svelte';
+  import ConsultationIntake from './ConsultationIntake.svelte';
+  import { register, signIn, enterGuestMode } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
-  import { enterGuestMode } from '@/state/controller.ts';
+  import { router } from '@/router/router.svelte.ts';
+  import { persistIntake } from '@/lib/intake.ts';
+  import { emptyIntakeDraft, type IntakeDraft, type IntakePresentation } from '@shared/intake.ts';
+  import { WelcomeNarrator } from '@/voice/welcome.ts';
+  import { primeSound } from '@/lib/sound.ts';
 
-  /**
-   * Six of the nine metrics the analysis pipeline actually produces, in its own
-   * vocabulary. It is here in place of a feature list because the specificity is
-   * the proof: a product that says "under-eye" has looked at a face.
-   */
-  const READS = ['hydration', 'texture', 'redness', 'pores', 'evenness', 'under-eye'];
-
-  let mode = $state<'login' | 'register'>('login');
+  let screen = $state<'film' | 'intake' | 'account' | 'login'>('film');
+  let draft = $state<IntakeDraft>(emptyIntakeDraft());
   let email = $state('');
   let password = $state('');
-  let displayName = $state('');
+  let name = $state('');
   let showPassword = $state(false);
   let busy = $state(false);
-  let error = $state<string | null>(null);
-  /**
-   * Set the moment auth succeeds. The gate is about to be removed and its
-   * dissolve takes half a second, during which it is still a full-screen layer
-   * over an interface that is already live underneath it.
-   */
-  let leaving = $state(false);
+  let error = $state('');
+  let created = $state(false);
+  let welcomeVoice = $state(true);
+  let voiceStatus = $state('');
+  const narrator = new WelcomeNarrator();
+  narrator.onStatus = (status) => voiceStatus = status;
 
-  const cta = $derived(busy ? 'One moment' : mode === 'login' ? 'Sign in' : 'Create account');
-
+  $effect(() => { session.entryStage = screen === 'film' ? 'film' : 'intake'; });
+  function enterLounge() {
+    narrator.stop();
+    draft = emptyIntakeDraft();
+    session.onboardingActive = false;
+    session.introPlaying = false;
+    session.entryStage = 'app';
+    router.go('/lounge');
+  }
+  function signup() {
+    if (session.signedIn && !session.guest) { enterLounge(); return; }
+    primeSound();
+    session.onboardingActive = true;
+    session.introPlaying = true;
+    screen = 'intake'; error = '';
+  }
+  function login() {
+    if (session.signedIn && !session.guest) { enterLounge(); return; }
+    screen = 'login'; error = '';
+    // Keep a deep-link's page (especially its camera) behind the gate until
+    // sign-in has finished and enterLounge chooses the destination explicitly.
+    session.onboardingActive = true;
+  }
+  function explore() { if (!session.signedIn) enterGuestMode(); enterLounge(); }
+  function back() {
+    if (busy) return;
+    narrator.stop();
+    session.introPlaying = false;
+    session.onboardingActive = false;
+    screen = 'film'; error = ''; draft = emptyIntakeDraft();
+  }
+  function present(presentation: IntakePresentation) {
+    void narrator.present(presentation.line, presentation.directive);
+  }
+  function done(value: IntakeDraft) {
+    narrator.stop(); draft = value; screen = 'account';
+    name = value.answers.preferredName ?? '';
+  }
+  function toggleVoice() {
+    welcomeVoice = !welcomeVoice;
+    narrator.setEnabled(welcomeVoice);
+    if (welcomeVoice) { primeSound(); narrator.replay(); }
+  }
   async function submit(event: SubmitEvent) {
-    event.preventDefault();
-    busy = true;
-    error = null;
+    event.preventDefault(); if (busy) return;
+    busy = true; error = '';
     try {
-      if (mode === 'login') await signIn(email, password);
-      else await register(email, password, displayName);
-      leaving = true;
+      if (screen === 'login') await signIn(email.trim(), password);
+      else {
+        if (!created) { await register(email.trim(), password, name.trim() || 'friend'); created = true; }
+        await persistIntake({ ...draft, answers: { ...draft.answers, preferredName: name.trim() || null } });
+      }
+      enterLounge();
     } catch (err) {
-      error = err instanceof Error ? err.message : 'That did not work.';
-    } finally {
-      busy = false;
-    }
+      error = created
+        ? 'Your account is ready, but your consultation could not be saved. Try saving again, or continue without saving these answers.'
+        : err instanceof Error ? err.message : 'That did not work. Please try again.';
+    } finally { busy = false; }
   }
-
-  function useDemo() {
-    email = 'demo@elohim.local';
-    password = 'demo1234';
-    mode = 'login';
-  }
-
-  function setMode(next: 'login' | 'register') {
-    if (next === mode) return;
-    mode = next;
-    // A stale "wrong password" hanging over a form you have just retitled reads
-    // as an error about the new form.
-    error = null;
-  }
-
-  function onPassword(event: Event) {
-    password = (event.currentTarget as HTMLInputElement).value;
-  }
-
-  /**
-   * Svelte's transitions are JavaScript animations, so the reduced-motion block
-   * in the stylesheet cannot reach them — the three below have to ask for
-   * themselves. Asked at the moment each one starts rather than read once, so
-   * changing the system setting takes effect without a reload.
-   */
-  function stillness(): boolean {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }
-
-  /**
-   * Height and fade in one pass, for the field the register mode adds.
-   *
-   * The obvious build was Svelte's `slide` wrapped around a `fade`, and it reads
-   * as two events — the box finishes opening a beat before its contents catch
-   * up. Driving both from one clock keeps it feeling like a single object being
-   * made room for. Opacity is deliberately behind the height (it only starts at
-   * t≈0.3) so the field lands rather than smears.
-   */
-  function makeRoom(node: Element, { duration = 400 }: { duration?: number } = {}) {
-    const style = getComputedStyle(node);
-    const height = parseFloat(style.height);
-    const marginBottom = parseFloat(style.marginBottom);
-    return {
-      duration: stillness() ? 0 : duration,
-      easing: expoOut,
-      css: (t: number, u: number) =>
-        `overflow:hidden;` +
-        `height:${(t * height).toFixed(2)}px;` +
-        `margin-bottom:${(t * marginBottom).toFixed(2)}px;` +
-        `opacity:${Math.max(0, t * 1.45 - 0.45).toFixed(3)};` +
-        `transform:translateY(${(u * -10).toFixed(2)}px)`,
-    };
-  }
-
-  /** The gate does not vanish, it lifts off the room it was dimming. */
-  function dissolve(_node: Element) {
-    return {
-      duration: stillness() ? 0 : 520,
-      easing: cubicOut,
-      css: (t: number, u: number) => `opacity:${t};transform:scale(${(1 + u * 0.014).toFixed(4)})`,
-    };
-  }
+  function discardAndContinue() { draft = emptyIntakeDraft(); enterLounge(); }
+  onDestroy(() => { narrator.dispose(); session.introPlaying = false; });
 </script>
 
-<div class="auth auth--gate" class:auth--leaving={leaving} out:dissolve>
-  <div class="auth__light" aria-hidden="true">
-    <span class="auth__key"></span>
-    <span class="auth__fill"></span>
-    <span class="auth__grain"></span>
+{#if screen === 'film'}
+  <FilmLanding signedIn={session.signedIn && !session.guest} onSignup={signup} onSignIn={login} onExplore={explore} />
+{:else if screen === 'intake'}
+  <ConsultationIntake onDone={done} onBack={back} onPresent={present} />
+  <div class="narration" aria-label="Welcome narration controls">
+    <button type="button" onclick={toggleVoice} aria-pressed={welcomeVoice}>{welcomeVoice ? '◖)) Voice on' : '◖ Voice off'}</button>
+    <button type="button" onclick={() => narrator.replay()} disabled={!welcomeVoice}>Replay</button>
+    <span>{voiceStatus || 'AI-generated welcome · your answers stay private'}</span>
   </div>
-
-  <div class="auth__scroll">
-    <!-- Her window. Not empty space: it is the part of the screen the product
-         is happening in, and it yields first when there is nothing to spare. -->
-    <div class="auth__air" aria-hidden="true"></div>
-
-    <div class="auth__col">
-      <!-- The pitch and the form are wrapped separately because on a short wide
-           window they become two columns, and a grid can only move whole
-           children. Wrapping is also why the disclosures travel with the pitch
-           rather than with the fields. -->
-      <div class="auth__pitch">
-        <h1 class="auth__wordmark">Elohim</h1>
-
-        <p class="auth__lede">
-          <span class="auth__lede-a">A beauty consultant</span>
-          <span class="auth__lede-b">who can actually look at your skin.</span>
-        </p>
-
-        <p class="auth__sub">
-          Ask her anything. When it matters she reads your face with your own camera — and
-          remembers what changed since last time.
-        </p>
-
-        <!-- The separating dots are drawn by CSS from an empty `content`, so the
-             real space after each word is what stops a screen reader running the
-             whole strip together as one word. -->
-        <p class="auth__reads">
-          <span class="auth__reads-key">reads</span>
-          {#each READS as read (read)}<b>{read}</b>{' '}{/each}
-        </p>
-
-        <!-- The disclosures, as a hairline band rather than two tinted boxes.
-             They were bordered panels taking about 40% of the first screen on a
-             phone, which pushed the actual purpose of the page under two
-             notices. "Not buried" and "the biggest thing on screen" are far
-             apart: this is one quiet row each, above the form where they are
-             found without being announced, and the credentials are still one
-             tap. -->
-        {#if session.demoMode || !session.modelAvailable}
-          <div class="auth__notes">
-            {#if session.demoMode}
-              <div class="auth__note">
-                <span class="auth__note-tag">Demo mode</span>
-                <span class="auth__note-body">seeded with six scans of history</span>
-                <!-- The credentials and the control that fills them are one
-                     object; the disclosure is not weakened by being legible on
-                     a button. Last in the row so that when the row is too narrow
-                     to hold all three it is the button that drops to its own
-                     line, rather than the sentence breaking around it. -->
-                <button type="button" class="auth__note-btn" onclick={useDemo}>
-                  <code>demo@elohim.local</code>
-                  <code>demo1234</code>
-                </button>
-              </div>
-            {/if}
-
-<!--
-              The disclosure survives; the environment variable does not.
-              Naming ANTHROPIC_API_KEY in the second sentence a visitor reads
-              tells them the page was assembled rather than designed, and it
-              means nothing to the person it is shown to. What it has to say —
-              that the conversation is not the real model, and that the
-              measurements are real regardless — is said here in full. The
-              variable name belongs in the README, where someone can act on it.
-            -->
-            {#if !session.modelAvailable}
-              <div class="auth__note auth__note--engine">
-                <span class="auth__note-tag">Local engine</span>
-                <span class="auth__note-body">
-                  conversation is running the built-in Elohim rather than the full model — your
-                  scans, storage and trends are real either way
-                </span>
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-
-      <form class="auth__form" onsubmit={submit}>
-        <div class="auth__rail" role="group" aria-label="Sign in or create an account">
-          <button
-            type="button"
-            class="auth__tab"
-            data-active={mode === 'login'}
-            aria-pressed={mode === 'login'}
-            onclick={() => setMode('login')}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            class="auth__tab"
-            data-active={mode === 'register'}
-            aria-pressed={mode === 'register'}
-            onclick={() => setMode('register')}
-          >
-            Create account
-          </button>
-        </div>
-
-        <!-- Explicit `for`/`id` rather than a wrapping label. The password field
-             carries a reveal control, and a button inside a label is both
-             invalid content and a real defect: the input's accessible name
-             would come out as "Password Show". Uniform across all three so
-             there is one field shape, not two. -->
-        {#if mode === 'register'}
-          <div class="auth__field auth__field--name" transition:makeRoom>
-            <label class="auth__label" for="auth-name">What should I call you?</label>
-            <input
-              id="auth-name"
-              class="auth__input"
-              bind:value={displayName}
-              autocomplete="given-name"
-              placeholder="Ada"
-            />
-          </div>
-        {/if}
-
-        <div class="auth__field auth__field--email">
-          <label class="auth__label" for="auth-email">Email</label>
-          <input
-            id="auth-email"
-            class="auth__input"
-            type="email"
-            bind:value={email}
-            autocomplete="email"
-            required
-          />
-        </div>
-
-        <div class="auth__field auth__field--password">
-          <label class="auth__label" for="auth-password">Password</label>
-          <!-- Not `bind:value`: a two-way binding forbids a dynamic `type`, and
-               toggling the attribute on the same element is what keeps the
-               caret and the focus where they were. -->
-          <input
-            id="auth-password"
-            class="auth__input"
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            oninput={onPassword}
-            autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
-            minlength="8"
-            required
-          />
-          <button
-            type="button"
-            class="auth__peek"
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-            onclick={() => (showPassword = !showPassword)}
-          >
-            {showPassword ? 'Hide' : 'Show'}
-          </button>
-        </div>
-
-        {#if error}
-          <div class="error auth__error" role="alert" transition:makeRoom={{ duration: 320 }}>
-            {error}
-          </div>
-        {/if}
-
-<!--
-          Offline is its own state, not an error the form should discover.
-          Without this the fields and the button are live against a server that
-          is not there, so the first thing a visitor learns about the product is
-          that its sign-in is broken. Said up front instead, with the form shut.
-        -->
-        {#if !session.serverReachable}
-          <div class="auth__offline" role="status">
-            <span class="auth__note-tag">Offline</span>
-            <span class="auth__note-body">
-              this build has no server attached, so sign-in is off — everything you can see
-              here is running on your device
-            </span>
-          </div>
-        {:else if !session.databaseAvailable}
-          <div class="auth__offline" role="status">
-            <span class="auth__note-tag">No database</span>
-            <span class="auth__note-body">
-              this deployment has nowhere to keep an account yet, so sign-in is off — the
-              room, the camera, the scan and the readouts all run on your device. Look around.
-            </span>
-          </div>
-        {/if}
-
-        <button
-          class="auth__cta"
-          type="submit"
-          disabled={busy || !session.serverReachable || !session.databaseAvailable}
-          data-busy={busy}
-        >
-          <span class="auth__cta-label">
-            <!-- The two labels overlap rather than queue. Holding the incoming
-                 one back 70ms left a window where the outgoing label had faded
-                 and the new one had not arrived, and the primary button on the
-                 screen sat there with nothing written on it. -->
-            {#key cta}
-              <span
-                in:fly={{ y: 6, duration: stillness() ? 0 : 260, easing: expoOut }}
-                out:fly={{ y: -6, duration: stillness() ? 0 : 200, easing: cubicOut }}>{cta}</span
-              >
-            {/key}
-          </span>
-        </button>
-
-<!--
-          The way in without an account.
-          
-          Everything worth looking at on a phone — the room, her, the camera,
-          the analysis, the readouts — runs on the device and needs nothing from
-          a server. Requiring an account to reach any of it was a rule borrowed
-          from the parts that genuinely do. What it costs is stated on the
-          button rather than discovered afterwards.
-        -->
-        <button type="button" class="auth__guest" onclick={enterGuestMode}>
-          Look around without an account
-          <small>
-            {#if session.guestVoice}
-              she talks in her own voice, scans and reads — nothing is saved when you leave
-            {:else}
-              she talks, scans and reads — nothing is saved when you leave
-            {/if}
-          </small>
-        </button>
-
-        <p class="auth__promise">
-          Skin scans are analysed on your device. The photo never leaves it unless you say so.
-        </p>
+{:else}
+  <main class="account-stage">
+    <header><a class="wordmark" href="/" onclick={(event) => { event.preventDefault(); back(); }}>ese</a><button class="back" type="button" onclick={back} disabled={busy || created}>← Back</button></header>
+    <section class="account-board" aria-labelledby="account-title">
+      <p class="eyebrow">{screen === 'login' ? 'YOUR PLACE IS HERE' : 'ONE LAST THING'}</p>
+      <h1 id="account-title">{screen === 'login' ? 'Welcome back.' : 'Let’s make this your space.'}</h1>
+      <p class="subtitle">{screen === 'login' ? 'Ese is waiting for you in the lounge.' : 'Create your account, then take a moment with Ese in the lounge. The clinic comes when you’re ready.'}</p>
+      <form onsubmit={submit}>
+        {#if screen === 'account'}<label>Your name<input autocomplete="given-name" maxlength="60" bind:value={name} disabled={created} required /></label>{/if}
+        <label>Email<input type="email" autocomplete="email" bind:value={email} disabled={created} required /></label>
+        {#if !created}<label>Password<div class="password"><input type={showPassword ? 'text' : 'password'} autocomplete={screen === 'login' ? 'current-password' : 'new-password'} minlength="8" bind:value={password} required /><button type="button" onclick={() => showPassword = !showPassword} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button></div></label>{/if}
+        {#if error}<p class="form-error" role="alert">{error}</p>{/if}
+        {#if !session.serverReachable || !session.databaseAvailable}<p class="form-error">Accounts are temporarily unavailable. You can still look around the rooms.</p>{/if}
+        <button class="submit" type="submit" disabled={busy || !session.serverReachable || !session.databaseAvailable}>{busy ? 'One moment…' : screen === 'login' ? 'Back to my lounge' : created ? 'Save my consultation' : 'Create my account'}<span>↗</span></button>
+        {#if created && error}<button class="text-button" type="button" onclick={discardAndContinue}>Continue without saving my answers</button>{/if}
       </form>
-    </div>
-  </div>
-</div>
+      {#if screen === 'login'}<button class="text-button" onclick={signup}>New here? Meet Ese</button>{:else}<p class="storage-note">Your email and name create your account. Consultation answers are saved only if you chose to save them. Photos and cloud processing have separate controls.</p>{/if}
+      {#if session.demoMode && screen === 'login'}<button class="demo" type="button" onclick={() => { email = 'demo@elohim.local'; password = 'demo1234'; }}>Use the local demo account <span>Synthetic scan history</span></button>{/if}
+    </section>
+    <p class="character-note">{session.characterStatus === 'loading' ? 'Ese is arriving…' : session.characterStatus === 'error' ? 'Ese’s 3D model could not load. You can still continue.' : 'A little care. At your pace.'}</p>
+  </main>
+{/if}
+
+<style>
+  .account-stage{position:fixed;inset:0;z-index:15;pointer-events:none;overflow:auto;background:linear-gradient(90deg,transparent 30%,#11111745);color:#f1e9df;}
+  header{display:flex;justify-content:space-between;align-items:center;margin:24px 4vw;pointer-events:auto;}.wordmark{font-family:Georgia,serif;letter-spacing:-.065em;font-size:46px;color:#f8ece3;text-decoration:none;}.back{border:1px solid #dacbd034;padding:10px 17px;border-radius:30px;color:#e8ddd6;background:#17151fa1;font-size:11px;cursor:pointer;}
+  .account-board{pointer-events:auto;position:relative;margin:4vh 6vw 40px auto;width:min(450px,43vw);padding:35px;border:1px solid #b5947460;border-radius:5px;background:repeating-linear-gradient(2deg,#7b5b4014 0 1px,transparent 1px 7px),linear-gradient(115deg,#392a21f7,#221c1bf7);box-shadow:inset 0 0 0 6px #d4b59005,0 35px 80px #0007;}.account-board::before{content:'';position:absolute;inset:9px;pointer-events:none;border:1px solid #d2b0821f;}.eyebrow{font-size:9px;letter-spacing:.22em;color:#bfa789;margin:0 0 18px;}h1{font:400 clamp(27px,3vw,38px)/1.15 Georgia,serif;letter-spacing:-.035em;margin:0 0 16px;}.subtitle{font-size:12px;line-height:1.7;color:#c6b9aa;margin-bottom:23px;}
+  form{display:grid;gap:17px;}label{display:grid;gap:8px;font-size:11px;color:#cabbac;}input{font:inherit;font-size:13px;border:1px solid #ceb9a12f;background:#090b114d;border-radius:4px;padding:13px;color:#f5ebe4;min-width:0;width:100%;outline:none;}input:focus{border-color:#c6a0bd;}input:disabled{opacity:.65;}.password{display:flex;position:relative;}.password input{padding-right:55px;}.password button{position:absolute;right:8px;top:0;height:100%;border:0;background:none;color:#c8b5c3;font-size:10px;padding:7px;cursor:pointer;}.submit{display:flex;justify-content:space-between;align-items:center;background:#e9d7d8;border:0;border-radius:4px;color:#36282d;padding:15px 17px;font-size:12px;margin-top:3px;cursor:pointer;}.submit:disabled{opacity:.5;cursor:wait;}.text-button{border:0;background:none;color:#d7c2d6;font-size:11px;padding:16px 0 0;text-align:left;cursor:pointer;}.storage-note{font-size:9px;line-height:1.7;color:#b39e8f;margin:19px 0 0;}.form-error{font-size:11px;line-height:1.6;color:#f6c1b3;}.demo{margin-top:23px;border:1px solid #9278635c;background:none;padding:10px;color:#cdbdaa;width:100%;font-size:10px;cursor:pointer;}.demo span{display:block;font-size:8px;color:#978e83;margin-top:5px;}.character-note{position:fixed;bottom:6vh;left:10vw;font-size:10px;color:#d1c2c2;}.narration{position:fixed;left:4vw;bottom:22px;z-index:45;display:flex;gap:7px;align-items:center;color:#d1c3cf;max-width:48vw;flex-wrap:wrap;}.narration button{padding:8px 12px;border:1px solid #c8b3c939;border-radius:30px;background:#181622cc;color:#e5d8df;font-size:10px;cursor:pointer;}.narration span{font-size:8px;line-height:1.5;max-width:200px;}.narration button:disabled{opacity:.4;}
+  @media(max-width:760px){header{margin:16px 22px;}.wordmark{font-size:36px;}.account-board{margin:44vh 18px 28px;width:calc(100% - 36px);padding:26px;}.character-note{display:none;}.narration{left:20px;right:20px;top:20px;bottom:auto;max-width:none;}.narration span{max-width:150px;font-size:7px;}.narration button{font-size:9px;padding:7px 10px;}}
+  @media(max-height:640px) and (min-width:761px){.account-board{margin-top:0;padding:25px;}header{margin-top:12px;margin-bottom:8px;}}
+</style>

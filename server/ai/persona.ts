@@ -1,5 +1,5 @@
 /**
- * Who Elohim is.
+ * Who Ese is.
  *
  * PERSONA is a frozen string. It is the first system block on every request and
  * carries the cache breakpoint, so it must not interpolate anything — no dates,
@@ -27,7 +27,7 @@ export const URGENT_DISCLAIMER =
   'Please get seen today — urgent care or your doctor, and A&E if your breathing, ' +
   'throat or tongue is involved.';
 
-export const PERSONA = `You are Elohim — a personal AI beauty and skincare consultant with a
+export const PERSONA = `You are Ese — a personal AI beauty and skincare consultant with a
 digital physical presence. You are not a chatbot with a camera bolted on, and you are not a
 medical dashboard. You are the person the user talks to about their skin.
 
@@ -103,7 +103,7 @@ during the period they were using it — never that the product caused it.
 
 You can explain at three levels:
 
-- simple — "your skin's a little dehydrated"
+- simple — "there is some dry-looking surface texture"
 - detailed — which regions, which indicators, what it likely means
 - genz — "girl, your skin is thirsty 😭 we need to fix that"
 
@@ -148,7 +148,7 @@ export const TURN_SCHEMA = {
   properties: {
     text: {
       type: 'string',
-      description: 'What Elohim says. Conversational prose only — no markdown headings, no bullet lists unless the user asked for a list.',
+      description: 'What Ese says. Conversational prose only — no markdown headings, no bullet lists unless the user asked for a list.',
     },
     directive: {
       type: 'object',

@@ -9,10 +9,22 @@
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { deleteEverything, setConsent } from '@/state/controller.ts';
+  import { exportIntake } from '@/lib/intake.ts';
 
   let confirming = $state(false);
   let busy = $state(false);
   let result = $state<string | null>(null);
+  let exportStatus = $state('');
+
+  async function downloadIntake() {
+    try {
+      const record = await exportIntake();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'ese-consultation.json'; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      exportStatus = record.intake ? 'Your consultation export is ready.' : 'No consultation answers are saved on this account.';
+    } catch { exportStatus = 'The export could not be prepared. Please try again.'; }
+  }
 
   const consents = $derived(session.user?.consents);
 
@@ -52,7 +64,7 @@
       <div class="card">
         <p class="card__title">On my server</p>
         <p class="card__text">
-          The numbers, your profile, our conversation, and what I remember. Photos only with
+          The numbers, your profile, our conversation, any consultation answers you chose to save, and what I remember. Photos only with
           the first switch below — and encrypted if so.
         </p>
       </div>
@@ -94,15 +106,22 @@
         <div>
           <strong>Let me think in the cloud</strong>
           <small>
-            Off by default, and nothing below happens while it is off. Turning it on lets me
+            For accounts, this is off by default. While it is off, your content is not sent
+            to a model or voice provider. Turning it on lets me
             send what you type, your name, skin type, stated concerns and sensitivities,
             anything I have remembered about you, and your scan history to the model I think
-            with (Anthropic). It also lets me look at a capture for qualitative observations,
-            and lets my own voice speak my replies — which means the words I say are sent to
-            the voice provider to be synthesised.
+            with (OpenAI, or Anthropic when that server fallback is configured). It also lets me
+            send a capture for optional observations about visible appearance. The text of
+            spoken replies is sent to OpenAI to create an AI-generated voice.
+            Camera-based estimates are not diagnoses or measurements of skin hydration.
             <br /><br />
-            With it off I still talk, still scan, still track your history — I answer from my
-            own server instead, and say so. The measured numbers never depend on this either way.
+            With it off, replies remain available as text, with local appearance estimates
+            and history. I answer from my own server and say so. The image estimates never depend on this either way.
+            {#if session.guest}
+              As a guest, cloud reasoning is unavailable. Separately, you can opt into
+              AI-generated speech on the You page; that sends reply text to OpenAI.
+              Guest speech starts off and can be muted at any time.
+            {/if}
             {#if !session.modelAvailable}
               Unavailable while no API key is configured.
             {/if}
@@ -112,12 +131,20 @@
     </div>
   </section>
 
+  {#if !session.guest}
+    <section class="sec" aria-labelledby="intake-data">
+      <div class="sec__head"><h2 class="sec__title" id="intake-data">Your consultation answers</h2></div>
+      <p class="sec__lede">Saved only when you chose to save them. Detailed medications, allergies, procedures and free-text answers stay in your private account record. The welcome voice reads fixed prompts; it does not send your answers to a voice provider.</p>
+      <button class="btn" type="button" onclick={downloadIntake}>Download my consultation</button>
+      {#if exportStatus}<p role="status">{exportStatus}</p>{/if}
+    </section>
+  {/if}
   <section class="sec" aria-labelledby="delete">
     <div class="sec__head">
       <h2 class="sec__title" id="delete">Delete everything</h2>
     </div>
     <p class="sec__lede">
-      Removes your account, every scan, every message, every remembered fact, and shreds any
+      Removes your account, consultation answers, every scan, every message, every remembered fact, and shreds any
       stored images. There is no soft delete behind it and I cannot undo it.
     </p>
     {#if result}

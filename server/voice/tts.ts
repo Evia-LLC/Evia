@@ -1,101 +1,58 @@
 /**
- * Elohim's voice (brief §21).
- *
- * She has always spoken through the browser's own speech synthesis: free,
- * offline, no key — and unmistakably a robot reading a script. A licensed human
- * voice, cloned, is the difference between an app that talks and a person who
- * does.
- *
- * The problem it solves is that you cannot pre-record her. She says whatever
- * the conversation needs, so every line has to be synthesised on demand from a
- * model trained once on the licensed recording.
- *
- * Three rules this module exists to enforce:
- *
- *  1. The key stays on the server. A voice API key in the browser is a key
- *    anyone can lift and spend, exactly like `ANTHROPIC_API_KEY`.
- *  2. Absence is reported, never faked. With no key configured the app says so
- *    and falls back to the browser voice, the same way it already says so when
- *    there is no model and no blob key. It never silently substitutes.
- *  3. A line is paid for once. The audio and its word timings are cached in
- *    the database by (voice, model, sentence) — the sentence, not the reply,
- *    because openers and short acknowledgements repeat across conversations
- *    where whole replies never do. The greeting, the choreography and every
- *    repeated phrase cost nothing after the first time.
- *
- * Timing is the part that makes her mouth hers. The provider returns a
- * character-level alignment with the audio, which is reduced here to one start
- * time per word. The client fires its word boundaries from those, so the lips
- * follow the recording rather than an estimate spread over its length.
+ * One server-generated OpenAI voice for every line, including greetings.
+ * Public scripted audio is cached by provider/model/voice/style/speed/text.
+ * Personal replies are never read from or written to the durable global cache.
+ * The API retains its
+ * audio/words/duration/chunks contract. OpenAI supplies no word alignment, so
+ * words stays empty and the browser estimates it against the decoded audio.
  */
 import { createHash } from 'node:crypto';
 import { row, run } from '../db/index.ts';
 import { log } from '../lib/log.ts';
+import { allShippedLines } from '../../src/lib/lines.ts';
 
-/** ElevenLabs. Overridable for a different provider with the same contract. */
-const DEFAULT_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech';
+const ENDPOINT = 'https://api.openai.com/v1/audio/speech';
+const SAMPLE_RATE = 24_000;
+const MAX_CHARS = 1200;
+const MAX_AUDIO_BYTES = 16 * 1024 * 1024;
+const DEFAULT_INSTRUCTIONS = 'Speak as a warm, reassuring beauty consultant. Use natural conversational English, gentle confidence, a relaxed pace, and brief pauses. Avoid exaggerated enthusiasm, whispering, or a sales-pitch delivery. Read only the provided text.';
 
 export interface VoiceConfig {
   apiKey: string;
   voiceId: string;
   endpoint: string;
   modelId: string;
+  instructions: string;
+  speed: number;
 }
 
 export function voiceConfig(): VoiceConfig | null {
-  const apiKey = process.env.ELOHIM_VOICE_API_KEY;
-  const voiceId = process.env.ELOHIM_VOICE_ID;
-  if (!apiKey || !voiceId) return null;
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+  const parsedSpeed = Number(process.env.OPENAI_TTS_SPEED ?? '1');
   return {
     apiKey,
-    voiceId,
-    endpoint: process.env.ELOHIM_VOICE_ENDPOINT ?? DEFAULT_ENDPOINT,
-    // Turbo for the live path: she answers in conversation, and the seconds
-    // a richer model spends on a nicer render are seconds she stands silent.
-    // The offline batch (scripts/voice-lines-synth.mjs) keeps multilingual/v3
-    // for the shipped lines, where render quality wins and latency is free.
-    // The env override still decides, when set.
-    modelId: process.env.ELOHIM_VOICE_MODEL ?? 'eleven_turbo_v2_5',
+    voiceId: process.env.OPENAI_TTS_VOICE?.trim() || 'marin',
+    endpoint: ENDPOINT,
+    modelId: process.env.OPENAI_TTS_MODEL?.trim() || 'gpt-4o-mini-tts-2025-12-15',
+    instructions: (process.env.OPENAI_TTS_INSTRUCTIONS?.trim() || DEFAULT_INSTRUCTIONS).slice(0, 4096),
+    speed: Number.isFinite(parsedSpeed) && parsedSpeed >= 0.25 && parsedSpeed <= 4 ? parsedSpeed : 1,
   };
 }
 
-export function clonedVoiceAvailable(): boolean {
-  return voiceConfig() !== null;
-}
-
-/** Whether someone without an account may hear the cloned voice. */
+// Historical names remain for the health/route contract; this is a built-in
+// AI-generated voice, not a claim of a cloned human speaker.
+export function clonedVoiceAvailable(): boolean { return voiceConfig() !== null; }
 export function guestVoiceAllowed(): boolean {
   return clonedVoiceAvailable() && process.env.ELOHIM_GUEST_VOICE !== '0';
 }
-
 export class VoiceUnavailable extends Error {
   constructor() {
-    super('No cloned voice is configured (ELOHIM_VOICE_API_KEY / ELOHIM_VOICE_ID unset).');
+    super('OpenAI voice is not configured (OPENAI_API_KEY unset). Replies remain available as text.');
     this.name = 'VoiceUnavailable';
   }
 }
 
-/**
- * The longest line she will ever be asked to say.
- *
- * A cap rather than a trust: text length is the billing unit, and an unbounded
- * one is an unbounded bill. Her replies are conversational; anything past this
- * is a bug upstream, not a long sentence.
- */
-const MAX_CHARS = 1200;
-
-/**
- * What she actually says, from what the model wrote.
- *
- * The model decorates - an emoji here, a stray asterisk of markdown there -
- * and a voice reads decoration out loud ("sparkles") or stumbles over it.
- * Cleaning happens here, at the entry, because the cache keys on the cleaned
- * text: two replies that differ only in decoration are the same spoken line
- * and must land on the same row.
- *
- * Mirrored in src/voice/cloned.ts, which cleans before its own cache lookup.
- * The two copies must stay in lockstep or every client lookup misses.
- */
 export function speakableOf(text: string): string {
   return text
     .replace(/\p{Extended_Pictographic}|[\u{FE0F}\u{200D}]/gu, '')
@@ -150,7 +107,6 @@ export function splitSentences(text: string): string[] {
   return merged;
 }
 
-/** One spoken word and when it starts, in seconds from the start of the audio. */
 export interface SpokenWord {
   word: string;
   charIndex: number;
@@ -158,55 +114,28 @@ export interface SpokenWord {
   start: number;
   end: number;
 }
-
-/** One synthesised sentence of a line. Indices and times are chunk-local. */
 export interface SpokenChunk {
-  /** The sentence as sent to the provider (already cleaned). */
   text: string;
   audio: Buffer;
   contentType: string;
+  /** Empty for OpenAI: no measured word alignment was returned. */
   words: SpokenWord[];
   duration: number;
-  /** Seconds from the start of the concatenated line to this chunk's audio. */
   start: number;
-  /** Where this chunk's text begins in the cleaned line. */
   charOffset: number;
   cached: boolean;
 }
-
-/**
- * Text around the line, for prosody. A sentence read with its neighbours in
- * mind lands differently from one read cold; within a line the neighbours
- * are known here, and a caller speaking sentence-by-sentence can supply the
- * edges once the route forwards them.
- */
-export interface SpeakContext {
-  previousText?: string;
-  nextText?: string;
-}
-
+export interface SpeakContext { previousText?: string; nextText?: string; }
 export interface SpokenLine {
-  /**
-   * All chunks butt-joined. MPEG audio is a frame stream, so the
-   * concatenation decodes as one continuous recording, and `words` below
-   * carries line-global indices and times to match - which keeps this shape
-   * byte-compatible with what the routes have always serialised.
-   */
   audio: Buffer;
   contentType: string;
   words: SpokenWord[];
   duration: number;
-  /** True only when every sentence came from the cache. */
   cached: boolean;
-  /**
-   * The per-sentence pieces, for a route that wants to stream them with
-   * their own timings. The current routes serialise the flat fields above
-   * and drop this - existing consumers see exactly what they always did.
-   */
   chunks: SpokenChunk[];
 }
 
-/** What ElevenLabs returns from the with-timestamps endpoint. */
+/** Historical alignment shape retained for offline conversion helpers. OpenAI TTS does not supply this. */
 interface AlignedResponse {
   audio_base64: string;
   alignment?: {
@@ -267,193 +196,125 @@ export function wordsFromAlignment(
   return words;
 }
 
-/** Evenly spread timings, for a provider that returned audio and nothing else. */
-function estimatedWords(text: string, duration: number): SpokenWord[] {
-  const matches = [...text.matchAll(/\S+/g)];
-  const weights = matches.map((m) => m[0].length + 2.6);
-  const total = weights.reduce((a, b) => a + b, 0) || 1;
-  let t = 0;
-  return matches.map((m, k) => {
-    const span = (weights[k] / total) * duration;
-    const word = { word: m[0], charIndex: m.index ?? 0, charLength: m[0].length, start: t, end: t + span };
-    t += span;
-    return word;
-  });
+/** Wrap raw mono 24 kHz signed 16-bit PCM in a browser-decodable WAV file. */
+export function wavFromPCM(pcm: Buffer): Buffer {
+  if (!pcm.length || pcm.length % 2) throw new Error('Voice returned invalid PCM audio.');
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8);
+  header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22); header.writeUInt32LE(SAMPLE_RATE, 24);
+  header.writeUInt32LE(SAMPLE_RATE * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36); header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
 }
 
-/** MP3 frame walk is overkill; the alignment's last end time is the duration we need. */
-function durationOf(words: SpokenWord[], bytes: number): number {
-  if (words.length) return words[words.length - 1].end;
-  // ~128 kbps as a rough floor when nothing better is known.
-  return bytes / 16_000;
+function pcmOfWav(audio: Buffer): Buffer {
+  if (audio.length < 46 || audio.toString('ascii', 0, 4) !== 'RIFF' ||
+      audio.toString('ascii', 8, 12) !== 'WAVE' || audio.toString('ascii', 36, 40) !== 'data' ||
+      audio.readUInt32LE(24) !== SAMPLE_RATE || audio.readUInt16LE(22) !== 1 ||
+      audio.readUInt16LE(34) !== 16 || audio.readUInt32LE(40) !== audio.length - 44 ||
+      (audio.length - 44) % 2) throw new Error('Voice cache contains invalid audio.');
+  return audio.subarray(44);
 }
 
-function cacheKey(config: VoiceConfig, text: string): string {
-  return createHash('sha256')
-    .update(`${config.voiceId}\n${config.modelId}\n${text}`)
-    .digest('hex');
+export function voiceCacheKey(config: VoiceConfig, text: string): string {
+  return createHash('sha256').update(JSON.stringify([
+    'openai-pcm24-wav-v1', config.modelId, config.voiceId, config.instructions, config.speed, text,
+  ])).digest('hex');
+}
+interface CachedRow { audio: Buffer; content_type: string; words_json: string; duration: number; }
+type SentenceAudio = Pick<SpokenChunk, 'audio' | 'contentType' | 'words' | 'duration' | 'cached'>;
+const PUBLIC_SENTENCES = new Set(allShippedLines().flatMap((line) => splitSentences(speakableOf(line))));
+const inFlight = new Map<string, Promise<SentenceAudio>>();
+
+async function readAudio(response: Response): Promise<Buffer> {
+  if (!response.body) throw new Error('Voice returned no audio.');
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_AUDIO_BYTES) throw new Error('Voice audio exceeded its size limit.');
+      chunks.push(Buffer.from(value));
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally { reader.releaseLock(); }
+  return Buffer.concat(chunks);
 }
 
-interface CachedRow {
-  audio: Buffer;
-  content_type: string;
-  words_json: string;
-  duration: number;
-}
-
-/**
- * Synthesises one sentence — or serves it from the cache.
- *
- * The cache keys on the cleaned sentence, not the full reply: her openers
- * repeat across conversations where whole replies almost never do, so this
- * is where the hits actually are. (Rows keyed on full replies by the old
- * scheme are orphaned, not wrong — they simply stop being found.)
- */
-async function synthesiseSentence(
-  config: VoiceConfig,
-  sentence: string,
-  context: SpeakContext,
-): Promise<{ audio: Buffer; contentType: string; words: SpokenWord[]; duration: number; cached: boolean }> {
-  const key = cacheKey(config, sentence);
-
-  const hit = await row<CachedRow>(
-    'SELECT audio, content_type, words_json, duration FROM voice_lines WHERE key = ?',
-    key,
-  ).catch(() => undefined);
-  if (hit) {
-    void run('UPDATE voice_lines SET hits = hits + 1 WHERE key = ?', key).catch(() => {});
-    return {
-      audio: Buffer.isBuffer(hit.audio) ? hit.audio : Buffer.from(hit.audio),
-      contentType: hit.content_type,
-      words: JSON.parse(hit.words_json) as SpokenWord[],
-      duration: hit.duration,
-      cached: true,
-    };
-  }
-
-  const response = await fetch(
-    `${config.endpoint}/${config.voiceId}/with-timestamps?output_format=mp3_44100_128`,
-    {
+async function synthesiseSentence(config: VoiceConfig, sentence: string): Promise<SentenceAudio> {
+  const key = voiceCacheKey(config, sentence);
+  // Exact, source-owned lines only. Do not use prefixes, caller flags, or a
+  // "guest" marker: any dynamic reply may contain personal observations.
+  const persist = PUBLIC_SENTENCES.has(sentence);
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+  const request = (async (): Promise<SentenceAudio> => {
+    const hit = persist
+      ? await row<CachedRow>('SELECT audio, content_type, words_json, duration FROM voice_lines WHERE key = ?', key)
+        .catch(() => undefined)
+      : undefined;
+    if (hit) {
+      try {
+        const audio = Buffer.isBuffer(hit.audio) ? hit.audio : Buffer.from(hit.audio);
+        const duration = pcmOfWav(audio).length / (SAMPLE_RATE * 2);
+        void run('UPDATE voice_lines SET hits = hits + 1 WHERE key = ?', key).catch(() => {});
+        return { audio, contentType: 'audio/wav', words: [], duration, cached: true };
+      } catch { /* Invalid legacy/corrupt audio must be generated again. */ }
+    }
+    const response = await fetch(config.endpoint, {
       method: 'POST',
-      headers: {
-        'xi-api-key': config.apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: sentence,
-        model_id: config.modelId,
-        // The neighbouring sentences, so each chunk is read as part of the
-        // line rather than cold: intonation falls where the thought actually
-        // ends, not at every chunk boundary.
-        ...(context.previousText ? { previous_text: context.previousText } : {}),
-        ...(context.nextText ? { next_text: context.nextText } : {}),
-        voice_settings: {
-          // Directed rather than flat. Lower stability and more style than
-          // the launch settings, because a consultant who never varies her
-          // delivery reads as a kiosk; the sentence-level pauses and context
-          // above keep the expressiveness from tipping into performance.
-          stability: 0.45,
-          similarity_boost: 0.8,
-          style: 0.35,
-          use_speaker_boost: true,
-        },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    log.error('voice', 'synthesis failed', {
-      status: response.status,
-      detail: detail.slice(0, 300),
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: config.modelId, voice: config.voiceId, input: sentence,
+        instructions: config.instructions, speed: config.speed, response_format: 'pcm', stream_format: 'audio' }),
+      signal: AbortSignal.timeout(30_000),
     });
-    throw new Error(`Voice synthesis failed (${response.status}).`);
-  }
-
-  const payload = (await response.json()) as AlignedResponse;
-  const audio = Buffer.from(payload.audio_base64, 'base64');
-  const alignment = payload.alignment ?? payload.normalized_alignment ?? null;
-  let words = alignment ? wordsFromAlignment(sentence, alignment) : [];
-  const duration = durationOf(words, audio.length);
-  if (!words.length) words = estimatedWords(sentence, duration);
-
-  await run(
-    `INSERT INTO voice_lines (key, voice_id, model_id, text, audio, content_type, words_json, duration, hits, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-     ON CONFLICT (key) DO NOTHING`,
-    key,
-    config.voiceId,
-    config.modelId,
-    sentence,
-    audio,
-    'audio/mpeg',
-    JSON.stringify(words),
-    duration,
-    new Date().toISOString(),
-  ).catch((err: Error) => log.warn('voice', 'could not cache line', { error: err.message }));
-
-  log.info('voice', 'line synthesised', { chars: sentence.length, words: words.length, duration });
-  return { audio, contentType: 'audio/mpeg', words, duration, cached: false };
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      log.warn('voice', 'OpenAI synthesis failed', { status: response.status });
+      throw new Error(`Voice synthesis failed (${response.status}).`);
+    }
+    const pcm = await readAudio(response);
+    const audio = wavFromPCM(pcm);
+    const duration = pcm.length / (SAMPLE_RATE * 2);
+    if (persist) await run(
+      `INSERT INTO voice_lines (key, voice_id, model_id, text, audio, content_type, words_json, duration, hits, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?) ON CONFLICT (key) DO NOTHING`,
+      key, config.voiceId, config.modelId, sentence, audio, 'audio/wav', '[]', duration, new Date().toISOString(),
+    ).catch((err: Error) => log.warn('voice', 'could not cache line', { error: err.message }));
+    return { audio, contentType: 'audio/wav', words: [], duration, cached: false };
+  })();
+  inFlight.set(key, request);
+  try { return await request; }
+  finally { if (inFlight.get(key) === request) inFlight.delete(key); }
 }
 
-/**
- * Synthesises `text` — or serves it from the cache — with word timings.
- *
- * The line is cleaned, split into sentences, and synthesised (and cached)
- * per sentence, each with its neighbours as prosody context. The flat fields
- * of the result are the concatenation, indistinguishable from the old
- * single-request shape; `chunks` carries the per-sentence pieces for a route
- * that wants to hand them out one at a time.
- *
- * Throws `VoiceUnavailable` when unconfigured so the caller can degrade
- * honestly rather than returning silence that looks like a failed download.
- */
-export async function speakLine(text: string, context: SpeakContext = {}): Promise<SpokenLine> {
+/** Neighbour text is accepted for compatibility but never changes the cached voice instruction. */
+export async function speakLine(text: string, _context: SpeakContext = {}): Promise<SpokenLine> {
   const config = voiceConfig();
   if (!config) throw new VoiceUnavailable();
-
   const cleaned = speakableOf(text).slice(0, MAX_CHARS);
   if (!cleaned) throw new Error('Nothing speakable in that line.');
   const sentences = splitSentences(cleaned);
-
   const chunks: SpokenChunk[] = [];
-  let clock = 0;
-  let cursor = 0;
-  for (let i = 0; i < sentences.length; i++) {
-    const sentence = sentences[i];
-    const piece = await synthesiseSentence(config, sentence, {
-      previousText: i > 0 ? sentences[i - 1] : context.previousText,
-      nextText: i < sentences.length - 1 ? sentences[i + 1] : context.nextText,
-    });
-    // Sentences are verbatim slices of the cleaned text, so indexOf finds
-    // each one; the cursor keeps a repeated sentence from matching twice.
+  let clock = 0, cursor = 0;
+  for (const sentence of sentences) {
+    const piece = await synthesiseSentence(config, sentence);
     const found = cleaned.indexOf(sentence, cursor);
     const charOffset = found >= 0 ? found : cursor;
     chunks.push({ ...piece, text: sentence, start: clock, charOffset });
-    clock += piece.duration;
-    cursor = charOffset + sentence.length;
+    clock += piece.duration; cursor = charOffset + sentence.length;
   }
-
-  const words = chunks.flatMap((chunk) =>
-    chunk.words.map((w) => ({
-      ...w,
-      charIndex: w.charIndex + chunk.charOffset,
-      start: w.start + chunk.start,
-      end: w.end + chunk.start,
-    })),
-  );
-
-  return {
-    audio: Buffer.concat(chunks.map((c) => c.audio)),
-    contentType: chunks[0]?.contentType ?? 'audio/mpeg',
-    words,
-    duration: clock,
-    cached: chunks.every((c) => c.cached),
-    chunks,
-  };
+  // WAV headers cannot be concatenated. Join PCM and produce one valid header.
+  const audio = chunks.length === 1 ? chunks[0].audio : wavFromPCM(Buffer.concat(chunks.map((c) => pcmOfWav(c.audio))));
+  return { audio, contentType: 'audio/wav', words: [], duration: clock,
+    cached: chunks.every((c) => c.cached), chunks };
 }
-
-/** Kept for callers that only want bytes. */
 export async function synthesise(text: string): Promise<{ audio: Buffer; contentType: string }> {
   const line = await speakLine(text);
   return { audio: line.audio, contentType: line.contentType };

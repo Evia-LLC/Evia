@@ -23,7 +23,7 @@ import { guestEvent, guestTurn } from '@/lib/local-engine.ts';
 import * as sound from '@/lib/sound.ts';
 import { narrationFor, scanSentiment } from '@/scan/choreography.ts';
 import { POKE_LINES, CONNECTION_LOST_LINE, LONG_THINK_LINE } from '@/lib/lines.ts';
-import { introSeen, introWasSkipped } from '@/lib/intro.ts';
+import type { SpeechTrackLike } from '@/character/speech.ts';
 import { BODY_HIGHER_IS_BETTER } from '@/body-analysis/metrics.ts';
 import { PROFILE_HIGHER_IS_BETTER } from '@/body-analysis/profile.ts';
 import { router } from '@/router/router.svelte.ts';
@@ -37,6 +37,12 @@ import {
 } from '@shared/types.ts';
 
 let director: SessionDirector | null = null;
+
+/** An explicit account/guest choice invalidates older restoration and hydration. */
+let authEpoch = 0;
+function currentIdentity(epoch: number, userId: string | undefined, guest: boolean): boolean {
+  return epoch === authEpoch && session.user?.id === userId && session.guest === guest;
+}
 
 /*
  * Poke pacing. The lines themselves live in lib/lines.ts with everything else
@@ -131,6 +137,12 @@ export function introDirective(directive: CharacterDirective): void {
   director?.applyDirective(directive);
 }
 
+/** Fixed onboarding narration owns the mouth without adding a fabricated chat turn. */
+export function presentationSpeech(track: SpeechTrackLike | null): void {
+  if (track) director?.useSpeechTrack(track);
+  else director?.stopMouth();
+}
+
 /*
  * Typing makes her attend - and nothing else.
  *
@@ -165,11 +177,13 @@ export function notifyTyping(): void {
  * was used.
  */
 export async function initVoice(): Promise<void> {
+  const epoch = authEpoch, identity = session.user?.id, guest = session.guest;
   const caps = await voice.prepare(
     session.user?.preferences.locale ?? 'en',
     session.user?.preferences.voiceURI ?? null,
     session.guest,
   );
+  if (!currentIdentity(epoch, identity, guest)) return;
   session.canListen = caps.canListen;
   session.canSpeak = caps.canSpeak;
   session.voiceName = caps.voiceName;
@@ -193,11 +207,13 @@ export async function initVoice(): Promise<void> {
  * the capability check that ran at boot.
  */
 export async function refreshVoice(): Promise<void> {
+  const epoch = authEpoch, identity = session.user?.id, guest = session.guest;
   const caps = await voice.prepare(
     session.user?.preferences.locale ?? 'en',
     session.user?.preferences.voiceURI ?? null,
     session.guest,
   );
+  if (!currentIdentity(epoch, identity, guest)) return;
   session.canListen = caps.canListen;
   session.canSpeak = caps.canSpeak;
   session.voiceName = caps.voiceName;
@@ -236,13 +252,31 @@ export function stopSpeaking(): void {
  * optimistically while the real answer lands in the background.
  */
 function within<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timeout: ReturnType<typeof setTimeout>;
   return Promise.race([
     promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
+    new Promise<null>((resolve) => { timeout = setTimeout(() => resolve(null), ms); }),
+  ]).finally(() => clearTimeout(timeout));
 }
 
 export async function bootstrap(): Promise<void> {
+  const epoch = authEpoch;
+  const mayRestore = () => epoch === authEpoch && !session.user && !session.guest && !session.onboardingActive;
+  const restore = async (me: Awaited<ReturnType<typeof api.me>> | null) => {
+    if (!me || !mayRestore()) return;
+    session.user = me.user;
+    session.modelAvailable = me.modelAvailable;
+    await hydrateAccount(epoch, me.user.id);
+  };
+  const restoreFailed = (err: unknown) => {
+    if (!mayRestore()) return;
+    if (err instanceof ApiError) {
+      if (err.status !== 401) session.databaseAvailable = false;
+    } else {
+      session.serverReachable = false;
+      session.chatError = 'I cannot reach my server right now.';
+    }
+  };
   try {
     const quick = await within(api.health(), 3500);
     if (quick === null) {
@@ -251,6 +285,7 @@ export async function bootstrap(): Promise<void> {
       void api
         .health()
         .then((late) => {
+          // These capabilities are public, so a guest choice may still use them.
           session.modelAvailable = late.modelAvailable;
           session.demoMode = late.demoMode;
           session.imageStorage = late.imageStorage;
@@ -258,15 +293,9 @@ export async function bootstrap(): Promise<void> {
           session.databaseAvailable = late.database !== false;
         })
         .catch(() => {
-          session.serverReachable = false;
+          if (epoch === authEpoch) session.serverReachable = false;
         });
-      void within(api.me(), 8000).then((me) => {
-        if (me) {
-          session.user = me.user;
-          session.modelAvailable = me.modelAvailable;
-          void loadUserData();
-        }
-      });
+      if (mayRestore()) void within(api.me(), 8000).then(restore).catch(restoreFailed);
       return;
     }
     const health = quick;
@@ -280,30 +309,32 @@ export async function bootstrap(): Promise<void> {
     if (!session.databaseAvailable) return;
   } catch {
     // The API being unreachable is a real state, not an exception to swallow.
-    session.serverReachable = false;
-    session.chatError = 'I cannot reach my server right now.';
+    if (epoch === authEpoch) {
+      session.serverReachable = false;
+      session.chatError = 'I cannot reach my server right now.';
+    }
     return;
   }
 
+  if (!mayRestore()) return;
   try {
-    const me = await api.me();
-    session.user = me.user;
-    session.modelAvailable = me.modelAvailable;
-    await loadUserData();
+    await restore(await api.me());
   } catch (err) {
     // 401 is the server working and saying no. Anything else — the store
     // being down mid-session, say — must also land on the gate rather than
     // leave the boot screen up forever.
-    if (!(err instanceof ApiError)) throw err;
-    if (err.status !== 401) session.databaseAvailable = false;
+    restoreFailed(err);
   }
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
+  const epoch = ++authEpoch;
   const { token, user } = await api.login(email, password);
+  if (epoch !== authEpoch) throw new Error('This sign-in was cancelled by a newer account choice.');
   setToken(token);
-  session.user = user;
-  await loadUserData();
+  acceptAccount(user);
+  await hydrateAccount(epoch, user.id);
+  if (!currentIdentity(epoch, user.id, false)) throw new Error('This sign-in was cancelled by a newer account choice.');
 }
 
 export async function register(
@@ -311,19 +342,62 @@ export async function register(
   password: string,
   displayName: string,
 ): Promise<void> {
+  const epoch = ++authEpoch;
   const { token, user } = await api.register(email, password, displayName);
+  if (epoch !== authEpoch) throw new Error('This signup was cancelled by a newer account choice.');
   setToken(token);
+  acceptAccount(user);
+  // Account creation is complete. Optional history/voice failures must not
+  // turn a successful signup into an unrecoverable "email already used" retry.
+  void hydrateAccount(epoch, user.id);
+}
+
+function acceptAccount(user: NonNullable<typeof session.user>): void {
+  voice.dispose();
+  // Keep the in-memory intake presentation while discarding the prior identity's
+  // private history, images and scan results before any new requests finish.
+  const { onboardingActive, introPlaying, entryStage } = session;
+  session.reset();
+  session.onboardingActive = onboardingActive;
+  session.introPlaying = introPlaying;
+  session.entryStage = entryStage;
+  session.guest = false;
   session.user = user;
-  await loadUserData();
+  session.chatError = null;
+  session.voiceDraft = '';
+  session.thinking = false;
+  userSpokeFirst = false;
+  longThinkSaid = false;
+}
+
+async function hydrateAccount(epoch: number, userId: string): Promise<void> {
+  if (!currentIdentity(epoch, userId, false)) return;
+  const results = await Promise.allSettled([refreshVoice(), loadUserData(epoch, userId)]);
+  if (!currentIdentity(epoch, userId, false)) return;
+  if (results[0].status === 'rejected') session.voiceStatus = 'Voice is unavailable. You can continue with text.';
+  if (results[1].status === 'rejected') session.chatError = 'Your account is ready, but your saved history could not be loaded. Please try again later.';
 }
 
 export async function signOut(): Promise<void> {
+  const epoch = ++authEpoch;
   voice.dispose();
   // A guest was never signed in, so there is no session to end and no server
   // to tell. Asking would only produce an error about a thing that never was.
-  if (!session.guest) await api.logout();
-  setToken(null);
-  session.reset();
+  try {
+    if (!session.guest) await api.logout();
+  } finally {
+    if (epoch === authEpoch) {
+      setToken(null);
+      session.reset();
+      session.guest = false;
+      session.introPlaying = false;
+      session.voiceDraft = '';
+      session.thinking = false;
+      userSpokeFirst = false;
+      longThinkSaid = false;
+      router.go('/');
+    }
+  }
 }
 
 /**
@@ -342,8 +416,16 @@ export async function signOut(): Promise<void> {
  * either.
  */
 export function enterGuestMode(): void {
+  ++authEpoch;
+  voice.dispose();
+  setToken(null);
+  session.reset();
+  userSpokeFirst = false;
+  longThinkSaid = false;
   session.guest = true;
   session.chatError = null;
+  session.voiceDraft = '';
+  session.thinking = false;
   session.user = {
     id: 'guest',
     email: '',
@@ -357,25 +439,19 @@ export function enterGuestMode(): void {
       pregnancyStatus: 'unknown',
       updatedAt: new Date().toISOString(),
     },
-    /*
-     * Her voice, on, when the server offers it to guests.
-     *
-     * A guest's line is sent to the voice provider to be spoken, and that is
-     * said on the entry screen next to the switch that turns it off. The
-     * button that brought them here is the gesture the browser needs to let
-     * audio start, so the first thing they hear is her.
-     */
-    preferences: { ...DEFAULT_GUEST_PREFERENCES, voiceEnabled: session.guestVoice },
+    // Availability is not consent. Profile offers the disclosed OpenAI opt-in.
+    preferences: { ...DEFAULT_GUEST_PREFERENCES, voiceEnabled: false },
     consents: { image_storage: false, cloud_reasoning: false },
     scanCount: 0,
   };
+  void refreshVoice().catch(() => {});
 
   /*
    * She speaks first here too. The local engine answers `opened` the same
    * way the server's fallback does, and on a first visit the greeting waits
    * for the introduction so it answers her narration instead of racing it.
    */
-  void openConversation();
+  // HomePage greets after the visitor actually enters the lounge.
 }
 
 /** Turns her voice on or off for an account, and remembers it. */
@@ -385,7 +461,7 @@ export async function setVoiceEnabled(enabled: boolean): Promise<void> {
     ...session.user,
     preferences: { ...session.user.preferences, voiceEnabled: enabled },
   };
-  if (!enabled) voice.stopSpeaking();
+  if (!enabled) voice.clearSpeechData();
   try {
     await api.updatePreferences({ voiceEnabled: enabled });
   } catch {
@@ -400,7 +476,7 @@ export function setGuestVoice(enabled: boolean): void {
     ...session.user,
     preferences: { ...session.user.preferences, voiceEnabled: enabled },
   };
-  if (!enabled) voice.stopSpeaking();
+  if (!enabled) voice.clearSpeechData();
 }
 
 /** A guest has nothing stored, so these are the defaults and stay them. */
@@ -413,7 +489,10 @@ const DEFAULT_GUEST_PREFERENCES = {
   locale: 'en',
 };
 
-async function loadUserData(): Promise<void> {
+async function loadUserData(epoch: number, userId: string): Promise<void> {
+  if (!currentIdentity(epoch, userId, false)) return;
+  const initial = { messages: session.messages, scans: session.scans,
+    summary: session.summary, bodyScans: session.bodyScans };
   const [history, scans, summary, body] = await Promise.all([
     api.chatHistory(),
     api.scans(),
@@ -428,23 +507,19 @@ async function loadUserData(): Promise<void> {
      */
     api.bodyScans().catch(() => ({ scans: [] })),
   ]);
-  session.messages = history.messages;
-  session.scans = scans.scans;
-  session.latestScan = scans.scans[0] ?? null;
-  session.summary = summary.summary;
-  session.bodyScans = body.scans;
-  session.latestBody = body.scans[0] ?? null;
-
-  /*
-   * She speaks first: into an empty transcript, and into one that has gone
-   * quiet for hours - reopening the app onto yesterday's last exchange with
-   * nothing said reads as her ignoring you. Fire-and-forget on purpose: a
-   * first-run account waits for the introduction to end, and `bootstrap`
-   * (which awaits this function) is what lets the introduction mount at all.
-   */
-  const newest = session.messages[session.messages.length - 1];
-  const age = newest ? Date.now() - Date.parse(newest.createdAt) : Infinity;
-  if (!newest || !Number.isFinite(age) || age > OPENED_AFTER_MS) void openConversation();
+  if (!currentIdentity(epoch, userId, false)) return;
+  // Signup can enter the lounge before this optional fetch ends. A newer
+  // conversation or scan made in that time must not be replaced by its snapshot.
+  if (session.messages === initial.messages) session.messages = history.messages;
+  if (session.scans === initial.scans) {
+    session.scans = scans.scans;
+    session.latestScan = scans.scans[0] ?? null;
+  }
+  if (session.summary === initial.summary) session.summary = summary.summary;
+  if (session.bodyScans === initial.bodyScans) {
+    session.bodyScans = body.scans;
+    session.latestBody = body.scans[0] ?? null;
+  }
 }
 
 /** How long the transcript may sit quiet before a return earns a fresh hello. */
@@ -459,27 +534,20 @@ const OPENED_AFTER_MS = 4 * 60 * 60 * 1000;
  * one self-introducing greeting for exactly that, and `introSkipped` asks
  * for it.
  */
-async function openConversation(): Promise<void> {
-  if (!introSeen()) await introFinished();
+let greetingPending = false;
+export async function openConversation(): Promise<void> {
+  if (greetingPending || !session.signedIn || session.onboardingActive || !router.is('home')) return;
+  const newest = session.messages[session.messages.length - 1];
+  const age = newest ? Date.now() - Date.parse(newest.createdAt) : Infinity;
+  if (newest && Number.isFinite(age) && age <= OPENED_AFTER_MS) return;
   // If they spoke first while the intro was winding down, the conversation
   // is already open and the greeting stands down. A hello that arrives after
   // your worried question is not a greeting, it is a non sequitur - and it
   // was overwriting the reply's whole emotional direction when it landed.
   if (userSpokeFirst) return;
-  const skipped = introWasSkipped() || !introSeen();
-  await raiseEvent('opened', undefined, skipped ? { introSkipped: true } : undefined);
-}
-
-/**
- * Resolves once the introduction has run its course - marked seen and off
- * screen - or after a generous cap, so a broken intro cannot mute her forever.
- */
-async function introFinished(capMs = 90_000): Promise<void> {
-  const deadline = Date.now() + capMs;
-  while (Date.now() < deadline) {
-    if (introSeen() && !session.introPlaying) return;
-    await pause(200);
-  }
+  greetingPending = true;
+  try { await raiseEvent('opened', undefined, { introSkipped: false }); }
+  finally { greetingPending = false; }
 }
 
 /**
@@ -716,6 +784,9 @@ function handleActions(actions: ElohimAction[]): void {
 
 /** Opens the clinical room. The capture itself is driven by the scan overlay. */
 export async function startScanFlow(kind: ScanKind = 'face'): Promise<void> {
+  session.scanResultVisible = false;
+  director?.clearScanPresentation();
+  session.lastMesh = null;
   session.pendingOffer = null;
   session.scanActive = true;
   session.scanKind = kind;
@@ -726,6 +797,7 @@ export async function startScanFlow(kind: ScanKind = 'face'): Promise<void> {
 }
 
 export function cancelScanFlow(): void {
+  session.scanResultVisible = false;
   session.scanActive = false;
   session.scanProgress = 0;
   director?.showScan();
@@ -759,7 +831,7 @@ export function leaveScanPage(): void {
  * tapping a hologram in the clinic: she explains, the page does not.
  */
 export async function askElohim(text: string): Promise<void> {
-  router.go('/');
+  router.go('/lounge');
   await sendMessage(text);
 }
 
@@ -1157,12 +1229,21 @@ export async function setConsent(
   kind: 'image_storage' | 'cloud_reasoning',
   granted: boolean,
 ): Promise<void> {
+  if (kind === 'cloud_reasoning' && !granted) {
+    // Stop and forget audio immediately, including requests waiting on decode.
+    // Keep the local choice off even if saving it fails; no new speech egress.
+    if (session.user) session.user = {
+      ...session.user, consents: { ...session.user.consents, cloud_reasoning: false },
+    };
+    voice.clearSpeechData();
+  }
   await api.setConsent(kind, granted);
   const me = await api.me();
   session.user = me.user;
 }
 
 export async function deleteEverything(): Promise<number> {
+  voice.dispose();
   const { blobsShredded } = await api.deleteEverything();
   setToken(null);
   session.reset();

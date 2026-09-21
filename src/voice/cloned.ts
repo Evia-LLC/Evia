@@ -1,67 +1,18 @@
 /**
- * Elohim in a real voice.
+ * OpenAI audio playback. Historical class/module names remain for callers.
+ * Every line, including fixed greetings, uses the server voice. Old shipped
+ * ElevenLabs recordings and device synthesis are never substituted.
  *
- * Same shape as `Speaker` in synthesis.ts, so the character engine cannot tell
- * which one is talking — it asks for `speak(text, handlers)` and gets word
- * boundaries back either way.
- *
- * Producing those boundaries is the whole problem. The browser's synthesiser
- * fires `onboundary` as it voices each word. A cloned voice arrives as a
- * finished audio file, and the server sends the word timings the provider
- * measured alongside it — where each word actually starts in the recording.
- * The boundaries fire from those, so the lips follow the voice, not a guess.
- *
- * A line is spoken sentence by sentence. Waiting for a whole reply to
- * synthesise before the first word is the single longest silence in the app,
- * so the first sentence is requested alone and plays the moment it arrives
- * while the rest are still being made; between sentences she leaves a short
- * deliberate pause, which is where her sentence rhythm comes from. The
- * splitting mirrors the server's exactly — the server caches per sentence,
- * and matching chunks is what makes those cache rows hit.
- *
- * Two things are still read off the audio itself:
- *
- *   loudness — a WebAudio analyser samples the real envelope forty times a
- *   second, so the mouth opens when there is sound and closes in the gaps,
- *   including pauses the text gives no hint of;
- *
- *   a fallback — if a line ever arrives without timings, the words are spread
- *   across the measured duration weighted by their length, which is the old
- *   behaviour and still better than a frozen face.
+ * OpenAI returns no word alignment. Approximate word/viseme timing follows
+ * decoded audio duration; the actual waveform gates mouth movement in silence.
  */
 import type { SpeakHandle, SpeechBoundary } from './synthesis.ts';
 import { audioContext, audioRunning } from '@/lib/sound.ts';
 
-/** How often the envelope is sampled, in Hz. Fast enough for syllables. */
 const ENVELOPE_HZ = 40;
-
-/**
- * Weighting for how long a word takes to say, for the fallback schedule.
- *
- * Characters are a decent proxy, but every word carries a fixed cost too — the
- * gap between them — so a line of short words takes longer than its letter
- * count suggests.
- */
 const WORD_OVERHEAD = 2.6;
+const SENTENCE_GAP_MS = 180;
 
-/**
- * The pause she leaves between sentences, in milliseconds.
- *
- * Deliberate silence, not a buffering artefact: 250–350 ms is the band where
- * a gap reads as a breath rather than a stall, and the mouth settles closed
- * in it because the envelope really is silent. Kept in the middle of the
- * band; the next chunk is usually decoded and waiting well before it ends.
- */
-const SENTENCE_GAP_MS = 300;
-
-/**
- * What she actually says, from what the model wrote — emoji, markdown
- * residue and ragged whitespace stripped before anything is cached or sent.
- *
- * Mirrors `speakableOf` in server/voice/tts.ts, and must stay in lockstep
- * with it: both sides key their caches on this text, and a divergence means
- * every lookup misses and every line is paid for twice.
- */
 export function speakableOf(text: string): string {
   return text
     .replace(/\p{Extended_Pictographic}|[\u{FE0F}\u{200D}]/gu, '')
@@ -112,49 +63,24 @@ export interface ClonedVoiceHandlers {
   onBoundary?: (b: SpeechBoundary) => void;
   onStart?: () => void;
   onEnd?: () => void;
-  /** 0..1 loudness, sampled from the real audio. Drives how open the mouth is. */
   onLevel?: (level: number) => void;
-  /**
-   * The licensed voice could not be reached or played.
-   *
-   * Separate from `onEnd` because the two mean opposite things: `onEnd` is
-   * "she finished speaking", this is "she never started". Without it a network
-   * blip or a spent quota would make her silently mute mid-conversation, which
-   * looks like the app breaking rather than like a voice service failing.
-   *
-   * Fires only before any audio has played. If a later sentence of a line
-   * fails, the line ends early with `onEnd` instead — she trails off rather
-   * than restarting in a stranger's voice halfway through a thought.
-   */
+  /** Provider/playback failure. The caller reveals text instead of changing voice. */
   onFailed?: (reason: string) => void;
 }
-
 export interface Word {
   charIndex: number;
   charLength: number;
   word: string;
-  /** Seconds from the start of the chunk's audio. */
   at: number;
-  /** Seconds this word takes in the recording, when the provider measured it. */
+  /** Estimated from audio duration; not provider phoneme alignment. */
   duration?: number;
 }
-
-/** What the server returns for one line. */
 interface SpokenLinePayload {
   audio: string;
   contentType: string;
   words: Array<{ word: string; charIndex: number; charLength: number; start: number; end: number }>;
   duration: number;
 }
-
-/** A manifest entry for a line shipped as a file. Timings arrived later; older manifests lack them. */
-interface ShippedEntry {
-  file: string;
-  text: string;
-  words?: Array<{ word: string; charIndex: number; charLength: number; start: number; end?: number; duration?: number }>;
-  duration?: number;
-}
-
 /** Splits a line into words with their positions, for boundary reporting. */
 export function scanWords(text: string): Word[] {
   const words: Word[] = [];
@@ -178,521 +104,224 @@ export function scheduleWords(words: Word[], duration: number): void {
   let elapsed = 0;
   words.forEach((word, i) => {
     word.at = elapsed;
-    elapsed += (weights[i] / total) * duration;
+    word.duration = (weights[i] / total) * Math.max(0, duration);
+    elapsed += word.duration;
   });
 }
 
-/** Decodes base64 without going through a data URL. */
 function bytesOf(base64: string): ArrayBuffer {
   const binary = atob(base64);
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out.buffer;
 }
+interface FetchedChunk { buffer: AudioBuffer; words: Word[]; }
 
-/** One fetched, decoded piece of a line, ready to play. */
-interface FetchedChunk {
-  buffer: AudioBuffer;
-  words: Word[];
-}
-
-/** One planned piece of a line: its text, where it sits, and how to get it. */
-interface ChunkPlan {
-  text: string;
-  /** Where this chunk's text begins in the line, for line-global boundaries. */
-  charOffset: number;
-  fetch: () => Promise<FetchedChunk>;
+/** Tiny quantization noise must not open the mouth during silent audio. */
+export function envelopeLevel(samples: Uint8Array): number {
+  if (!samples.length) return 0;
+  let sum = 0;
+  for (const sample of samples) sum += ((sample - 128) / 128) ** 2;
+  const rms = Math.sqrt(sum / samples.length);
+  return rms < 0.008 ? 0 : Math.min(1, Math.pow(rms * 3.2, 0.75));
 }
 
 export class ClonedSpeaker {
   private context: AudioContext | null = null;
   private current: { stop: () => void } | null = null;
-  /** Null until checked; false means the server has no voice configured. */
-  private available: boolean | null = null;
-  /** Which route to ask. Guests use the public one. */
+  private available = false;
   private route = '/api/voice/speak';
-  /** Chunks already fetched this session, by text, so a repeat is instant and free. */
-  /**
-   * Decoded audio is PCM and a minute of her is tens of megabytes, so the
-   * cache is bounded: past the cap the oldest entry goes. The shipped lines
-   * re-decode in a blink from the HTTP cache if they come round again.
-   */
   private static readonly CACHE_CAP = 24;
+  private lines = new Map<string, FetchedChunk>();
+  private generation = 0;
+  private preparation = 0;
+  private preloads = new Set<AbortController>();
 
-  private remember(key: string, chunk: FetchedChunk): void {
+  /** Re-probe on prepare, so an unavailable service can recover without a reload. */
+  async prepare(guest = false): Promise<boolean> {
+    const mine = ++this.preparation;
+    const route = guest ? '/api/public/voice/speak' : '/api/voice/speak';
+    if (route !== this.route) {
+      this.cancel(); this.lines.clear(); this.available = false; this.route = route;
+    }
+    try {
+      const response = await fetch('/api/health', { signal: AbortSignal.timeout(8_000), cache: 'no-store' });
+      if (!response.ok) throw new Error('Voice status unavailable.');
+      const body = await response.json() as { clonedVoice?: boolean; guestVoice?: boolean };
+      if (mine === this.preparation) this.available = guest ? body.guestVoice === true : body.clonedVoice === true;
+    } catch { if (mine === this.preparation) this.available = false; }
+    return this.available;
+  }
+  canSay(text: string): boolean { return this.available && Boolean(speakableOf(text)); }
+  get ready(): boolean { return this.available; }
+
+  private remember(text: string, chunk: FetchedChunk): void {
     if (this.lines.size >= ClonedSpeaker.CACHE_CAP) {
       const oldest = this.lines.keys().next().value;
       if (oldest !== undefined) this.lines.delete(oldest);
     }
-    this.lines.set(key, chunk);
+    this.lines.set(text, chunk);
   }
-
-  private lines = new Map<string, FetchedChunk>();
-  /**
-   * Lines that shipped with the app as files - the introduction, the
-   * greetings, what she says when touched - synthesised once in her voice
-   * and served from `/voice/`. They play whether or not the server has a
-   * key, so the scripted moments sound like her on any deployment.
-   */
-  private shipped: Record<string, ShippedEntry> | null = null;
-  /** Whether the server can synthesise new lines. */
-  private serverVoice = false;
-
-  /**
-   * Asks the server whether a cloned voice exists, and whether this visitor
-   * may use it.
-   *
-   * Checked once and remembered. A 503 here is not an error — it is the
-   * documented "no key configured" state, and the caller uses it to fall back
-   * to the browser voice and say so.
-   */
-  async prepare(guest = false): Promise<boolean> {
-    this.route = guest ? '/api/public/voice/speak' : '/api/voice/speak';
-    // A yes is remembered; a no is asked again. The first probe runs while
-    // the server may still be waking, and a cold answer must not cost her
-    // the voice for the whole session. That goes for the halves separately,
-    // too: the shipped files answering does not excuse a dead health probe -
-    // with `serverVoice` stuck false every composed reply is silent, and
-    // there is no browser fallback to hide it once her own voice exists. So
-    // a cached yes still re-asks the server, in the background, until it
-    // says yes.
-    if (this.available === true) {
-      if (!this.serverVoice) this.reprobeServer(guest);
-      return true;
-    }
-    const [server, shipped] = await Promise.all([
-      fetch('/api/health')
-        .then((r) => r.json() as Promise<{ clonedVoice?: boolean; guestVoice?: boolean }>)
-        .then((body) => (guest ? body.guestVoice === true : body.clonedVoice === true))
-        .catch(() => false),
-      fetch('/voice/manifest.json')
-        .then((r) => (r.ok ? (r.json() as Promise<Record<string, ShippedEntry>>) : null))
-        .catch(() => null),
-    ]);
-    this.serverVoice = server;
-    this.shipped = shipped && Object.keys(shipped).length ? shipped : null;
-    // Ready when either source can speak. A line the files do not cover
-    // falls through to the server, and from there to the browser voice.
-    this.available = server || this.shipped !== null;
-    return this.available;
-  }
-
-  /** When the server was last asked whether it can synthesise, for the re-probe. */
-  private lastServerProbe = 0;
-
-  /**
-   * Asks the health route again whether the server can speak, without making
-   * anyone wait. Throttled to one ask every ten seconds; flips `serverVoice`
-   * the moment the answer is yes, and the next line simply works.
-   */
-  private reprobeServer(guest: boolean): void {
-    const now = Date.now();
-    if (now - this.lastServerProbe < 10_000) return;
-    this.lastServerProbe = now;
-    void fetch('/api/health')
-      .then((r) => r.json() as Promise<{ clonedVoice?: boolean; guestVoice?: boolean }>)
-      .then((body) => {
-        if (guest ? body.guestVoice === true : body.clonedVoice === true) this.serverVoice = true;
-      })
-      .catch(() => undefined);
-  }
-
-  /** Whether a given line can be spoken in her voice right now. */
-  canSay(text: string): boolean {
-    return this.serverVoice || (this.shipped !== null && this.shippedKey(text) in this.shipped);
-  }
-
-  /**
-   * The manifest key for a line, found by its text.
-   *
-   * The files are named by a hash of the text, but the manifest carries the
-   * text itself, so the lookup here is by exact text and the browser never
-   * has to hash anything. Cached per line; the manifest is a dozen entries.
-   */
-  private hashCache = new Map<string, string>();
-  private shippedKey(text: string): string {
-    const trimmed = text.trim();
-    const known = this.hashCache.get(trimmed);
-    if (known) return known;
-    for (const [key, entry] of Object.entries(this.shipped ?? {})) {
-      if (entry.text.trim() === trimmed) {
-        this.hashCache.set(trimmed, key);
-        return key;
-      }
-    }
-    return '';
-  }
-
-  get ready(): boolean {
-    return this.available === true;
-  }
-
-  /**
-   * Which `speak` is the live one.
-   *
-   * A line spends its first moments fetching and decoding, before there is a
-   * source to stop. Cancelling during that window - the intro skipped, the
-   * voice switched off, a newer line - has to reach it too, so every await
-   * in the run checks that its generation is still the current one and
-   * otherwise stops quietly, without starting audio or reporting failure.
-   * A cancel partway through a multi-sentence line stops the playing chunk
-   * and abandons the rest the same way.
-   */
-  private generation = 0;
-
-  cancel(): void {
-    this.generation++;
-    this.current?.stop();
-    this.current = null;
-  }
-
-  /**
-   * Fetches and decodes a line ahead of time, so a scripted moment — the
-   * choreography narrating each region as it lights — has no network gap
-   * between the beat and the word. Multi-sentence lines are warmed chunk by
-   * chunk, into the same cache `speak` reads.
-   */
-  async preload(text: string): Promise<boolean> {
-    try {
-      if (this.shipped && this.shippedKey(text)) {
-        await this.fetchShipped(text);
-        return true;
-      }
-      if (!this.serverVoice) return false;
-      const sentences = splitSentences(speakableOf(text));
-      for (let i = 0; i < sentences.length; i++) {
-        await this.fetchChunk(sentences[i], sentences[i - 1], sentences[i + 1]);
-      }
-      return sentences.length > 0;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * The page's one audio context, shared with the cues in lib/sound.ts.
-   *
-   * Shared on purpose: it is unlocked by the first gesture, and on iOS a
-   * context made later - here, inside a fetch - would start suspended and
-   * never run. Decoding works on a suspended context; playing does not.
-   */
   private ctx(): AudioContext {
     this.context ??= audioContext();
-    if (!this.context) throw new Error('no audio output in this browser');
+    if (!this.context) throw new Error('No audio output is available in this browser.');
     return this.context;
   }
-
-  /**
-   * A line that shipped as a file, whole. It was recorded as one take, so it
-   * plays as one chunk; the manifest's measured word timings drive the mouth
-   * when they exist, and the letter-count estimate covers older manifests.
-   */
-  private async fetchShipped(text: string): Promise<FetchedChunk> {
-    const key = this.shippedKey(text);
-    const entry = key ? this.shipped?.[key] : undefined;
-    if (!entry) throw new Error('no shipped audio for this line');
-    const known = this.lines.get(entry.text);
-    if (known) return known;
-
-    const file = await fetch(`/voice/${entry.file}`);
-    if (!file.ok) throw new Error(`shipped voice ${file.status}`);
-    const buffer = await this.ctx().decodeAudioData(await file.arrayBuffer());
-
-    let words: Word[];
-    if (entry.words?.length) {
-      // Measured at synthesis time, exactly as the server path measures its
-      // lines — `start` maps to `at`. Her most-played lines stop guessing.
-      words = entry.words.map((w) => ({
-        word: w.word,
-        charIndex: w.charIndex,
-        charLength: w.charLength,
-        at: w.start,
-        duration:
-          w.end !== undefined && w.end > w.start ? w.end - w.start : w.duration,
-      }));
-    } else {
-      words = scanWords(entry.text);
-      scheduleWords(words, buffer.duration);
-    }
-
-    const chunk = { buffer, words };
-    this.remember(entry.text, chunk);
-    return chunk;
-  }
-
-  /**
-   * One sentence from the server, decoded, with its measured timings.
-   *
-   * `previous_text` / `next_text` are the sentence's neighbours in the line,
-   * for prosody. Today's route reads only `text` and ignores the rest, so
-   * sending them costs nothing — and they start working the moment the route
-   * forwards them to the synthesiser.
-   */
-  private async fetchChunk(sentence: string, previous?: string, next?: string): Promise<FetchedChunk> {
+  private async fetchChunk(sentence: string, signal: AbortSignal): Promise<FetchedChunk> {
+    signal.throwIfAborted();
     const known = this.lines.get(sentence);
     if (known) return known;
-    if (!this.serverVoice) throw new Error('no voice for this line');
-
+    if (!this.available) throw new Error('OpenAI voice is unavailable.');
     const response = await fetch(this.route, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: sentence, previous_text: previous, next_text: next }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: sentence }), signal,
     });
-    if (!response.ok) throw new Error(`voice ${response.status}`);
-    const payload = (await response.json()) as SpokenLinePayload;
-
+    if (!response.ok) throw new Error(`Voice service is unavailable (${response.status}).`);
+    const payload = await response.json() as SpokenLinePayload;
+    signal.throwIfAborted();
+    if (typeof payload.audio !== 'string' || !payload.audio) throw new Error('Voice returned no audio.');
     const buffer = await this.ctx().decodeAudioData(bytesOf(payload.audio));
-
-    let words: Word[];
-    if (payload.words?.length) {
-      // The server measures where each word starts and ends; keep both. The
-      // duration is what lets a viseme hold for the length of the word
-      // instead of an estimate of it.
-      words = payload.words.map((w) => ({
-        word: w.word,
-        charIndex: w.charIndex,
-        charLength: w.charLength,
-        at: w.start,
-        duration: w.end > w.start ? w.end - w.start : undefined,
-      }));
-    } else {
-      words = scanWords(sentence);
-      scheduleWords(words, buffer.duration);
-    }
-
+    signal.throwIfAborted();
+    if (!(buffer.duration > 0) || !Number.isFinite(buffer.duration)) throw new Error('Voice audio could not be decoded.');
+    // The waveform duration is measured. Word placement is an explicit estimate;
+    // do not treat legacy payload timings as OpenAI alignment.
+    const words = scanWords(sentence);
+    scheduleWords(words, buffer.duration);
     const chunk = { buffer, words };
     this.remember(sentence, chunk);
     return chunk;
   }
+  async preload(text: string): Promise<boolean> {
+    if (!this.available) return false;
+    const generation = this.generation;
+    const controller = new AbortController();
+    this.preloads.add(controller);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(35_000)]);
+    const sentences = splitSentences(speakableOf(text));
+    try {
+      for (const sentence of sentences) {
+        if (generation !== this.generation) return false;
+        await this.fetchChunk(sentence, signal);
+      }
+      return sentences.length > 0;
+    } catch { return false; }
+    finally { this.preloads.delete(controller); }
+  }
+  cancel(): void {
+    this.generation++;
+    for (const controller of this.preloads) controller.abort();
+    this.preloads.clear();
+    this.current?.stop();
+    this.current = null;
+  }
+  clearCache(): void { this.cancel(); this.lines.clear(); }
 
-  /**
-   * Speaks a line, sentence by sentence.
-   *
-   * The first sentence plays the moment it arrives; later ones are fetched
-   * while she talks, staying one seam ahead. Word boundaries carry
-   * line-global character indices but chunk-local elapsed times, matching
-   * the chunk-local `at` timings — the lip sync never learns the line was
-   * ever in pieces. If a sentence after the first cannot be fetched, the
-   * line ends early rather than switching voices mid-thought.
-   */
   speak(text: string, handlers: ClonedVoiceHandlers = {}): SpeakHandle {
     this.cancel();
     const mine = this.generation;
-
-    let cancelled = false;
-    let resolveFinished: () => void;
-    const finished = new Promise<void>((resolve) => {
-      resolveFinished = resolve;
-    });
-    const abandoned = () => cancelled || mine !== this.generation;
-
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]);
+    let resolveFinished!: () => void;
+    const finished = new Promise<void>((resolve) => { resolveFinished = resolve; });
+    let done = false, started = false;
+    let source: AudioBufferSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let tick = 0, gap = 0;
+    const live = () => !done && mine === this.generation && !controller.signal.aborted;
+    const finish = (failure?: string) => {
+      if (done) return;
+      done = true;
+      controller.abort();
+      window.clearInterval(tick); window.clearTimeout(gap);
+      if (source) {
+        source.onended = null;
+        try { source.stop(); } catch { /* Already ended. */ }
+        source.disconnect(); source = null;
+      }
+      analyser?.disconnect(); analyser = null;
+      handlers.onLevel?.(0);
+      if (this.current === handle) this.current = null;
+      if (failure) handlers.onFailed?.(failure);
+      else handlers.onEnd?.();
+      resolveFinished();
+    };
+    const handle = { stop: () => finish() };
+    // Installed before fetch/decode, so cancelling settles finished immediately.
+    this.current = handle;
     const run = async () => {
-      // Plan the chunks before any network. A shipped file plays whole — it
-      // was recorded as one take, pauses included; anything else is split
-      // exactly the way the server splits it.
-      let plans: ChunkPlan[];
-      if (this.shipped && this.shippedKey(text)) {
-        plans = [{ text: text.trim(), charOffset: 0, fetch: () => this.fetchShipped(text) }];
-      } else {
-        const cleaned = speakableOf(text);
-        const sentences = splitSentences(cleaned);
-        if (!sentences.length) {
-          // Nothing speakable — an emoji-only line, say. Nothing to voice is
-          // not a failure; the line simply has no sound.
-          handlers.onEnd?.();
-          resolveFinished();
-          return;
+      const cleaned = speakableOf(text);
+      const sentences = splitSentences(cleaned);
+      if (!sentences.length) { finish(); return; }
+      let cursor = 0;
+      const offsets = sentences.map((sentence) => {
+        const offset = cleaned.indexOf(sentence, cursor);
+        cursor = offset + sentence.length;
+        return offset;
+      });
+      const pending = new Map<number, Promise<FetchedChunk>>();
+      const get = (index: number) => {
+        let promise = pending.get(index);
+        if (!promise) {
+          promise = this.fetchChunk(sentences[index], signal);
+          pending.set(index, promise);
+          void promise.catch(() => {});
         }
-        let cursor = 0;
-        plans = sentences.map((sentence, i) => {
-          const found = cleaned.indexOf(sentence, cursor);
-          const charOffset = found >= 0 ? found : cursor;
-          cursor = charOffset + sentence.length;
-          return {
-            text: sentence,
-            charOffset,
-            fetch: () => this.fetchChunk(sentence, sentences[i - 1], sentences[i + 1]),
-          };
-        });
-      }
-
-      // Fetches, started at most once each. The first two go out now: the
-      // first for the shortest possible silence before she speaks, the
-      // second so the first seam has its audio ready; from there each chunk
-      // that starts playing sends for the one two ahead.
-      const inFlight: Array<Promise<FetchedChunk> | null> = plans.map(() => null);
-      const chunkAt = (i: number): Promise<FetchedChunk> => (inFlight[i] ??= plans[i].fetch());
-      void chunkAt(0);
-      if (plans.length > 1) void chunkAt(1).catch(() => {});
-
-      let first: FetchedChunk;
-      try {
-        first = await chunkAt(0);
-        if (abandoned()) {
-          resolveFinished();
-          return;
-        }
-        // The context has to be running, not merely resumed: a suspended one
-        // plays silence while its clock stands still, which is no sound, no
-        // word boundaries, and a mouth moving over nothing. Better to fail
-        // here and let the caller fall back or keep the mouth closed.
-        if (!(await audioRunning())) {
-          throw new Error('audio output is locked until the page is touched');
-        }
-      } catch (err) {
-        // Hand it back so the caller can fall back to the browser voice. Going
-        // quiet is not an acceptable outcome for a character who talks - but a
-        // line nobody wants any more fails silently.
-        if (!abandoned()) handlers.onFailed?.((err as Error).message);
-        resolveFinished();
-        return;
-      }
-      if (abandoned() || !this.context) {
-        resolveFinished();
-        return;
-      }
-
-      const context = this.context;
-      // One analyser for the whole line, so the envelope smoothing carries
-      // across sentence seams instead of resetting to a closed mouth and
-      // snapping open again.
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
-      // Short window: the mouth should follow syllables, not paragraphs.
-      analyser.smoothingTimeConstant = 0.35;
-      analyser.connect(context.destination);
-
-      const samples = new Uint8Array(analyser.frequencyBinCount);
-      let level = 0;
-      /** The chunk being voiced right now; null in the pauses between them. */
-      let playing: { words: Word[]; startedAt: number; charOffset: number; next: number } | null = null;
-      let activeSource: AudioBufferSourceNode | null = null;
-      let gapTimer = 0;
-      let done = false;
-
-      const finish = () => {
-        if (done) return;
-        done = true;
-        window.clearInterval(tick);
-        window.clearTimeout(gapTimer);
-        try {
-          analyser.disconnect();
-        } catch {
-          // Already disconnected; the context may even be closing.
-        }
-        handlers.onLevel?.(0);
-        if (this.current === handle) this.current = null;
-        handlers.onEnd?.();
-        resolveFinished();
+        return promise;
       };
-
-      // Timed off the audio clock, not the wall clock: the two drift apart
-      // under load, and the boundaries have to land on the recording.
-      const tick = window.setInterval(() => {
-        // Envelope: RMS over the current window, lightly curved so quiet
-        // speech still opens the mouth a little.
+      const firstRequest = get(0);
+      if (sentences.length > 1) void get(1);
+      const first = await firstRequest;
+      if (!live()) return;
+      if (!(await audioRunning())) throw new Error('Tap the page to enable audio playback.');
+      if (!live()) return;
+      const context = this.ctx();
+      analyser = context.createAnalyser(); analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.35; analyser.connect(context.destination);
+      const samples = new Uint8Array(analyser.fftSize);
+      let playing: { chunk: FetchedChunk; at: number; next: number; offset: number } | null = null;
+      let level = 0;
+      tick = window.setInterval(() => {
+        if (!live() || !analyser) return;
         analyser.getByteTimeDomainData(samples);
-        let sum = 0;
-        for (let i = 0; i < samples.length; i++) {
-          const v = (samples[i] - 128) / 128;
-          sum += v * v;
-        }
-        const rms = Math.sqrt(sum / samples.length);
-        const raw = Math.min(1, Math.pow(rms * 3.2, 0.75));
-        // Fast to open, slow to close: the mouth answers the syllable, not
-        // every ripple inside it. Per 25 ms sample, roughly 40 ms attack and
-        // 120 ms release.
-        level += (raw - level) * (raw > level ? 0.55 : 0.2);
+        const raw = playing ? envelopeLevel(samples) : 0;
+        // Silence closes immediately; smoothing applies only to voiced energy.
+        level = raw === 0 ? 0 : level + (raw - level) * (raw > level ? 0.55 : 0.2);
         handlers.onLevel?.(level);
-
-        // Between sentences the pause is real: no words fire, and the
-        // envelope above closes the mouth on actual silence.
         if (!playing) return;
-        const elapsed = context.currentTime - playing.startedAt;
-        while (playing.next < playing.words.length && playing.words[playing.next].at <= elapsed) {
-          const word = playing.words[playing.next++];
-          handlers.onBoundary?.({
-            charIndex: playing.charOffset + word.charIndex,
-            charLength: word.charLength,
-            word: word.word,
-            elapsed,
-            duration: word.duration,
-          });
+        const elapsed = context.currentTime - playing.at;
+        while (playing.next < playing.chunk.words.length && playing.chunk.words[playing.next].at <= elapsed) {
+          const word = playing.chunk.words[playing.next++];
+          handlers.onBoundary?.({ word: word.word, charIndex: playing.offset + word.charIndex,
+            charLength: word.charLength, elapsed, duration: word.duration });
         }
       }, 1000 / ENVELOPE_HZ);
-
-      const startChunk = (index: number, chunk: FetchedChunk) => {
-        if (abandoned()) {
-          finish();
-          return;
-        }
-        const source = context.createBufferSource();
-        source.buffer = chunk.buffer;
-        source.connect(analyser);
-        activeSource = source;
-        playing = {
-          words: chunk.words,
-          startedAt: context.currentTime,
-          charOffset: plans[index].charOffset,
-          next: 0,
-        };
-        // Stay one seam ahead: the chunk after next starts fetching now, so
-        // by the time its turn comes it is usually decoded and waiting.
-        if (index + 2 < plans.length) void chunkAt(index + 2).catch(() => {});
-
-        source.onended = () => {
-          if (activeSource === source) activeSource = null;
-          playing = null;
-          if (abandoned() || index + 1 >= plans.length) {
-            finish();
-            return;
-          }
-          gapTimer = window.setTimeout(() => {
-            chunkAt(index + 1)
-              .then((next) => {
-                if (abandoned()) finish();
-                else startChunk(index + 1, next);
-              })
-              // A later chunk failing ends the line early; see `speak` doc.
-              .catch(() => finish());
+      const play = (index: number, chunk: FetchedChunk) => {
+        if (!live() || !analyser) return;
+        source = context.createBufferSource(); source.buffer = chunk.buffer; source.connect(analyser);
+        const currentSource = source;
+        playing = { chunk, at: context.currentTime, next: 0, offset: offsets[index] };
+        currentSource.onended = () => {
+          currentSource.disconnect();
+          if (source === currentSource) source = null;
+          playing = null; level = 0; handlers.onLevel?.(0);
+          if (!live()) return;
+          if (index + 1 === sentences.length) { finish(); return; }
+          gap = window.setTimeout(() => {
+            void get(index + 1).then((next) => { if (live()) play(index + 1, next); })
+              .catch((error: Error) => { if (live()) finish(error.message); });
           }, SENTENCE_GAP_MS);
         };
-
-        source.start();
+        currentSource.start();
+        if (!started) { started = true; handlers.onStart?.(); }
+        if (index + 2 < sentences.length && live()) void get(index + 2);
       };
-
-      const handle = {
-        stop: () => {
-          cancelled = true;
-          try {
-            activeSource?.stop();
-          } catch {
-            // Already stopped; `onended` has run or is about to.
-          }
-          finish();
-        },
-      };
-      this.current = handle;
-
-      handlers.onStart?.();
-      startChunk(0, first);
+      play(0, first);
     };
-
-    void run();
-
-    return {
-      cancel: () => {
-        cancelled = true;
-        this.cancel();
-      },
-      finished,
-    };
+    void run().catch((error: Error) => { if (live()) finish(error.message); });
+    return { cancel: () => finish(), finished };
   }
-
   dispose(): void {
-    this.cancel();
-    // The context is the page's, not this speaker's; it stays open for the cues.
-    this.context = null;
-    this.lines.clear();
+    this.preparation++; this.cancel(); this.available = false;
+    this.context = null; this.lines.clear();
   }
 }

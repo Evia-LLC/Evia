@@ -30,6 +30,7 @@
     type MeshFrame,
   } from './face-mesh.ts';
   import { CaptureGuide, type GuideVerdict } from './capture-guide.ts';
+  import { CameraSession } from './camera-session.ts';
 
   let video = $state<HTMLVideoElement | null>(null);
   let stream = $state<MediaStream | null>(null);
@@ -39,6 +40,9 @@
   let running = $state(false);
   /** Guards against two overlapping getUserMedia calls from tap plus effect. */
   let starting = $state(false);
+  const camera = new CameraSession();
+  let cameraAttempt = 0;
+  let destroyed = false;
   /** Secure contexts only — every browser refuses the camera otherwise. */
   const isSecure = typeof window !== 'undefined' && window.isSecureContext;
 
@@ -179,9 +183,13 @@
   }
 
   async function startMesh() {
-    if (isBody) return;
+    if (destroyed || isBody) return;
     if (meshAvailable === null) meshAvailable = await mesh.load();
-    if (!meshAvailable) return;
+    if (destroyed) {
+      mesh.dispose();
+      return;
+    }
+    if (!meshAvailable || isBody || (!stream && !uploaded)) return;
     if (!raf) raf = requestAnimationFrame(meshLoop);
   }
 
@@ -233,7 +241,8 @@
    * about capture beginning inside the gesture that asked for it.
    */
   async function startCamera() {
-    if (starting) return;
+    if (starting || destroyed) return;
+    const attempt = ++cameraAttempt;
     starting = true;
     cameraError = null;
 
@@ -243,29 +252,30 @@
       return;
     }
 
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
+    const result = await camera.start(
+      () => navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user' },
         audio: false,
-      });
-    } catch (err) {
-      cameraError = describeCameraError(err);
-      starting = false;
-      return;
-    }
-
-    if (!video) {
-      starting = false;
-      return;
-    }
-
-    video.srcObject = stream;
-    try {
-      await video.play();
-    } catch {
-      cameraError = 'The camera opened but the preview would not start. Try again.';
-    }
+      }),
+      // Read after permission resolves: an uploaded image may just have been
+      // cleared, and Svelte needs a render to mount the video again.
+      () => video,
+    );
+    if (destroyed || attempt !== cameraAttempt) return;
     starting = false;
+    if (result.kind === 'cancelled') return;
+    if (result.kind === 'timeout') {
+      cameraError = 'The camera has not responded yet. Check your browser’s camera permission ' +
+        'prompt, then try again, or upload a photo.';
+      return;
+    }
+    if (result.kind === 'error') {
+      cameraError = result.phase === 'preview'
+        ? 'The camera opened but the preview would not start. Try again, or upload a photo.'
+        : describeCameraError(result.error);
+      return;
+    }
+    stream = result.stream;
     lastFrame = null;
     void startMesh();
   }
@@ -277,8 +287,12 @@
   }
 
   function stopCamera() {
-    stream?.getTracks().forEach((t) => t.stop());
+    cameraAttempt++;
+    camera.stop();
+    starting = false;
     stream = null;
+    stopMeshLoop();
+    lastFrame = null;
     faceFound = false;
     framed = false;
     framedFrames = 0;
@@ -422,7 +436,7 @@
     stopCamera();
     frontFrame = null;
     // Leaving the page is what ends the scan; the shell exits the clinic.
-    router.go('/');
+    router.go('/lounge');
   }
 
   function chooseKind(kind: 'face' | 'body') {
@@ -436,6 +450,7 @@
   }
 
   onDestroy(() => {
+    destroyed = true;
     stopMeshLoop();
     mesh.dispose();
     stopCamera();
@@ -446,6 +461,7 @@
   let attempted = false;
   $effect(() => {
     if (!session.scanActive) {
+      stopCamera();
       attempted = false;
       return;
     }
@@ -536,6 +552,10 @@
         <div class="capture__stage capture__stage--rejected">{session.chatError}</div>
       {:else if cameraError && !uploaded}
         <div class="capture__stage">{cameraError}</div>
+      {:else if starting}
+        <div class="capture__stage">
+          Check your browser’s camera permission request. You can also upload a photo or choose not now.
+        </div>
       {:else if onSideStep}
         <div class="capture__stage">
           Now turn side on, one shoulder toward the camera, and rest both hands on your head.

@@ -5,6 +5,7 @@
  */
 import { asyncRouter } from '../lib/async-router.ts';
 import { requireAuth } from './auth.ts';
+import { intakeRouter } from './intake.ts';
 import { handleTurn, handleEvent, type ConversationEvent } from '../ai/orchestrator.ts';
 import * as users from '../db/users.ts';
 import * as scansRepo from '../db/scans.ts';
@@ -47,6 +48,7 @@ import {
 } from '../../shared/types.ts';
 
 export const apiRouter = asyncRouter();
+apiRouter.use('/me/intake', intakeRouter);
 apiRouter.use(requireAuth);
 
 // --- me ---------------------------------------------------------------------
@@ -88,7 +90,11 @@ apiRouter.put('/me/consent', async (req, res) => {
     res.status(400).json({ error: 'Unknown consent kind.' });
     return;
   }
-  await users.setConsent(req.userId!, kind as ConsentKind, Boolean(granted));
+  if (typeof granted !== 'boolean') {
+    res.status(400).json({ error: 'Consent must be explicitly true or false.' });
+    return;
+  }
+  await users.setConsent(req.userId!, kind as ConsentKind, granted);
   res.json({ consents: await users.getConsents(req.userId!) });
 });
 
@@ -334,11 +340,8 @@ apiRouter.get('/routine/picks', async (req, res) => {
 /**
  * Elohim's voice, synthesised.
  *
- * The key lives here and never reaches the browser. A 503 means no cloned voice
- * is configured, and the client falls back to the browser's own synthesis and
- * says which one it is using — it never quietly substitutes one voice for the
- * other, because a user who was told she has a human voice should be able to
- * tell when she does not.
+ * The OpenAI key stays on the server. Unavailable speech leaves a text reply;
+ * the client never substitutes a recording or browser voice.
  */
 apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text : '';
@@ -348,28 +351,21 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
   }
 
   /*
-   * The cloned voice is a third party, and what gets sent to it is Elohim's
+   * OpenAI is a third party, and what gets sent to it is Elohim's
    * reply — which routinely quotes the user's readings and concerns back to
    * them. That is the user's data leaving this server, so it sits behind the
    * same consent as the model.
    *
-   * A refusal here is not a dead end: the client treats any non-OK response as
-   * a signal to use the browser's own speech synthesis, and says which voice it
-   * is using. She still talks; she talks locally.
+   * Without that consent the reply remains available as text.
    */
   const consents = await users.getConsents(req.userId!);
   if (!consents.cloud_reasoning) {
-    res.status(403).json({ error: 'Cloud reasoning is off, so the cloned voice is unavailable.' });
+    res.status(403).json({ error: 'Cloud processing is off, so OpenAI voice is unavailable. Replies remain available as text.' });
     return;
   }
 
   try {
-    /*
-     * The neighbours ride along for prosody: the client speaks sentence by
-     * sentence and sends each one with the text either side of it, so a
-     * sentence is read as part of its line rather than cold. Clamped - they
-     * only steer delivery, and an unbounded string is an unbounded bill.
-     */
+    // Accept bounded legacy context fields for request compatibility.
     const line = await speakLine(text, {
       previousText:
         typeof req.body?.previous_text === 'string' ? req.body.previous_text.slice(0, 600) : undefined,
@@ -406,7 +402,8 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
       res.status(503).json({ error: err.message });
       return;
     }
-    res.status(502).json({ error: (err as Error).message });
+    log.error('voice', 'account playback generation failed');
+    res.status(502).json({ error: 'OpenAI voice could not be generated. Replies remain available as text.' });
   }
 });
 

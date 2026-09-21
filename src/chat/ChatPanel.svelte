@@ -4,7 +4,7 @@
    *
    * On a phone this is a sheet rather than a column. It rests at a peek height
    * that shows the tail of what she just said plus the composer, which leaves
-   * Elohim roughly 70% of the screen; dragging or tapping the grip expands it to
+   * Ese roughly 70% of the screen; dragging or tapping the grip expands it to
    * about 68% for reading back through the history. She is the interface, so
    * the transcript is the thing that yields space, not her.
    */
@@ -275,7 +275,7 @@
     id="elohim-transcript"
     bind:this={transcript}
     role="log"
-    aria-label="Conversation with Elohim"
+    aria-label="Conversation with Ese"
     style:height={dragHeight === null ? null : `${dragHeight}px`}
     onscroll={onTranscriptScroll}
   >
@@ -294,12 +294,12 @@
     {/each}
 
     {#if session.thinking}
-      <div class="typing" role="status" aria-label="Elohim is thinking"></div>
+      <div class="typing" role="status" aria-label="Ese is thinking"></div>
     {/if}
   </div>
 
   {#if unseen}
-    <button class="new-pill" type="button" onclick={jumpToNew}>New from Elohim</button>
+    <button class="new-pill" type="button" onclick={jumpToNew}>New from Ese</button>
   {/if}
 
   {#if session.pendingOffer?.type === 'offer_scan'}
@@ -322,8 +322,8 @@
       onfocus={onComposerFocus}
       rows="1"
       readonly={session.listening}
-      placeholder={session.listening ? 'Listening…' : 'Talk to Elohim…'}
-      aria-label="Message Elohim"
+      placeholder={session.listening ? 'Listening…' : 'Talk to Ese…'}
+      aria-label="Message Ese"
     ></textarea>
 
     {#if session.canListen}
@@ -331,7 +331,7 @@
         class="mic"
         class:mic--on={session.listening}
         onclick={() => toggleListening()}
-        aria-label={session.listening ? 'Stop listening' : 'Speak to Elohim'}
+        aria-label={session.listening ? 'Stop listening' : 'Speak to Ese'}
         aria-pressed={session.listening}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">

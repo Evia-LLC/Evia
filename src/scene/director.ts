@@ -26,8 +26,7 @@ const AURA_COOL = new THREE.Color(0x9fb8ff);
 const AURA_TALKING = new THREE.Color(0xffe4c4);
 
 import type { ElohimEnvironment } from './environment.ts';
-import { ProceduralAvatar } from '@/character/procedural-avatar.ts';
-import { SpriteAvatar } from '@/character/sprite-avatar.ts';
+import { EseAvatar } from '@/character/ese-avatar.ts';
 import type { BodyAnalysis } from '@/body-analysis/pipeline.ts';
 import type { ScanMesh } from '@/holograms/face-mesh-3d.ts';
 import type { ElohimAvatar } from '@/character/types.ts';
@@ -49,18 +48,7 @@ import type { CharacterDirective, SkinAnalysis, SkinMetricKey } from '@shared/ty
  */
 export type ScanSentiment = 'improving' | 'declining' | 'steady';
 
-/**
- * The two ends of the room's answer to her: daylight-cool while she is reading
- * your skin, a shade warmer while she is talking to you.
- *
- * Two pairs because two channels render. Every surface in the clinic is unlit
- * — the plate carries its own photographed light — so the mood rides the plate
- * material's tint, the one thing on screen big enough to read as "the room
- * changed". The key-light pair stays for the procedural fallback avatar, which
- * is Lambert-shaded and is the only thing the rig actually illuminates.
- */
-const PLATE_READING = new THREE.Color(0xcfd9e8);
-const PLATE_TALKING = new THREE.Color(0xf0e2cf);
+/** The clinic's real key light warms slightly when she turns to the viewer. */
 const KEY_READING = new THREE.Color(0xdfefff);
 const KEY_TALKING = new THREE.Color(0xffe4c4);
 
@@ -79,7 +67,6 @@ const FACE_GAZE = new THREE.Vector3(0.62, 1.5, -0.18);
  * to WebP — 7.0 MB down to 1.98 MB, which on a phone is the difference between
  * a wait and a load. See `scripts/shrink-glb.mjs`.
  */
-const ELOHIM_SPRITE = '/character/elohim/manifest.json';
 
 /** Lazily loaded so the lounge boots without paying for the clinical room. */
 type ClinicalModule = typeof import('./clinical.ts');
@@ -91,11 +78,6 @@ export class SessionDirector {
   private lounge: LoungeEnvironment;
 
   private clinical: ElohimEnvironment | null = null;
-  /**
-   * The clinic backdrop's material, found once when the room loads. The mood
-   * grade tints it directly — see `gradeRoom`.
-   */
-  private plateMaterial: THREE.MeshBasicMaterial | null = null;
   /** The whole-frame pass that makes her and the backdrop share a lens. */
   private grade: Grade;
   /** The glow behind her. See the constructor. */
@@ -137,6 +119,8 @@ export class SessionDirector {
   /** 0 = lounge, 1 = clinical. Everything in the transition reads from this. */
   private clinicalPresence = 0;
   private transitionTarget = 0;
+  private clinicalEntryEpoch = 0;
+  private clinicalLoading: Promise<void> | null = null;
   private transitionRate = 1 / 2.6;
   private beatCallbacks: Array<{ at: number; fired: boolean; run: () => void }> = [];
 
@@ -185,6 +169,8 @@ export class SessionDirector {
   /** Where the presenter should stand, per the layout. Damped towards. */
   private presenterTarget = new THREE.Vector3(0, 0, 0);
   private presenterYawTarget = 0;
+  private presentation: 'film' | 'intake' | 'app' = 'app';
+  private disposed = false;
 
 
 
@@ -193,48 +179,34 @@ export class SessionDirector {
 
   constructor(canvas: HTMLCanvasElement, forcedTier: 'auto' | 'low' | 'medium' | 'high' = 'auto') {
     this.stage = new Stage(canvas, forcedTier);
-    /*
-     * No floor, no contact shadow.
-     *
-     * Both exist to sit a standing figure on a surface. Elohim is painted and
-     * cropped at the hips, so a lit patch of floor below her is a floor nobody
-     * is standing on — and the backdrop plate has a photographed one of its own
-     * that covers the frame without help. The clinic's contact ellipse went
-     * the same way: a shadow cast by nobody, under feet that are not in frame.
-     */
+    // The room contains its own floor; the cropped avatar needs no foot shadow.
     this.lounge = new LoungeEnvironment({
       particles: this.stage.settings.particles,
       ground: false,
     });
     this.stage.scene.add(this.lounge.group);
 
-    /*
-     * Elohim is painted.
-     *
-     * The rooms have been photographic plates since the backdrop rewrite, and
-     * the rigged glTF model was the only thing left in frame being lit and
-     * shaded in real time — which is what every compositing fix in this file
-     * was working around. Matching a live PBR character to a photograph is a
-     * problem that stops existing when both are painted by the same hand.
-     *
-     * The model and its loader are gone rather than kept behind a flag: 2MB of
-     * asset and 588 lines of rig that nothing loads is not a fallback, it is
-     * weight. The procedural rig stays as the genuine last resort, so a failed
-     * fetch degrades to a character rather than to an empty room.
-     */
-    const avatar = new SpriteAvatar();
+    const avatar = new EseAvatar();
     avatar.onDirectiveRejected = (info) =>
       console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
     avatar.mount(this.stage.scene);
     this.avatar = avatar;
 
-    void avatar.load(ELOHIM_SPRITE).catch((error: unknown) => {
+    session.characterStatus = 'loading';
+    void avatar.load().then(async () => {
+      if (this.disposed) return;
+      avatar.root.visible = true;
+      await this.stage.renderer.compileAsync(this.stage.scene, this.stage.camera);
+      if (!this.disposed) {
+        avatar.root.visible = this.presentation !== 'film';
+        session.characterStatus = 'ready';
+      }
+    }).catch((error: unknown) => {
+      if (this.disposed) return;
+      session.characterStatus = 'error';
       console.error('[elohim/character] could not load Elohim', error);
-      avatar.dispose();
-      const fallback = new ProceduralAvatar();
-      fallback.mount(this.stage.scene);
-      fallback.applyDirective(this.currentDirective);
-      this.avatar = fallback;
+      // Keep the portal and a truthful loading error; never replace Ese with
+      // a different character when her model cannot be downloaded.
     });
 
 
@@ -406,7 +378,7 @@ export class SessionDirector {
     // Directed only on the way in and while there: the exit is a walk home,
     // not a scene, and letting the cinematographer keep recutting it was what
     // stranded the camera on a clinic framing after the room had gone.
-    const directed = session.sceneMode !== 'lounge' && this.transitionTarget === 1;
+    const directed = this.presentation === 'app' && session.sceneMode !== 'lounge' && this.transitionTarget === 1;
     if (directed) this.direct(dt);
     // In the lounge she is talking with you, which is what mood = 1 means.
     else this.mood = damp(this.mood, 1, 1.5, dt);
@@ -416,6 +388,7 @@ export class SessionDirector {
     const root = this.avatar.root;
     root.position.x = damp(root.position.x, this.presenterTarget.x, 2.6, dt);
     root.position.z = damp(root.position.z, this.presenterTarget.z, 2.6, dt);
+    root.position.y = damp(root.position.y, this.presenterTarget.y, 2.6, dt);
     root.rotation.y = damp(root.rotation.y, this.presenterYawTarget + this.blockingYaw, 2.6, dt);
 
     this.resolveAttention(dt);
@@ -427,7 +400,7 @@ export class SessionDirector {
       // what makes her feel present rather than aimed at the lens forever.
       gazeTarget: directed ? this.blockingGaze : this.gazeTarget,
       speechLevel: this.speechLevel,
-      reducedMotion: session.user?.preferences.reducedMotion ?? false,
+      reducedMotion: session.user?.preferences.reducedMotion ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
 
     // The light behind her follows her, and answers to what she is doing:
@@ -464,7 +437,7 @@ export class SessionDirector {
       // Placed before updating, so the assembly is already around her on the
       // frame it is drawn rather than a frame behind her.
       this.stageHolograms();
-      this.holograms.update(dt, elapsed);
+      this.holograms.update(dt, elapsed, session.user?.preferences.reducedMotion ?? false);
     }
 
     this.statsTimer += dt;
@@ -506,16 +479,11 @@ export class SessionDirector {
    * acknowledged that anything was happening. This is small on purpose: a
    * slide towards amber that should be felt rather than noticed.
    *
-   * It used to drive the key light's intensity and colour, which drove
-   * nothing: every surface in this room is unlit MeshBasicMaterial, so for a
-   * whole release the mood was graded onto a light that illuminated only the
-   * fallback avatar — and the intensity multiply compounded per frame on top.
-   * The mood now tints the plate, the channel that actually renders; the key
-   * keeps its colour shift alone, for the Lambert-shaded fallback's sake.
+   * Real room surfaces now respond to this key light. Only colour changes;
+   * transition intensity remains owned by the environment.
    */
   private gradeRoom(dt: number, facing: Facing): void {
     this.mood = damp(this.mood, facing === 'viewer' ? 1 : 0, 1.5, dt);
-    this.plateMaterial?.color.lerpColors(PLATE_READING, PLATE_TALKING, this.mood);
     this.clinical?.lights.key.color.lerpColors(KEY_READING, KEY_TALKING, this.mood);
   }
 
@@ -878,14 +846,25 @@ export class SessionDirector {
   // -------------------------------------------------------------------------
 
   async enterClinical(): Promise<void> {
-    if (session.sceneMode !== 'lounge') return;
+    if (this.disposed || this.presentation !== 'app' || session.sceneMode !== 'lounge') return;
+    const epoch = ++this.clinicalEntryEpoch;
     session.sceneMode = 'transitioning';
     // Arrive on the room itself. It is the one moment the place is the subject.
     this.cine.reset('establish');
 
     // Beat 3 needs the room to exist; load it before the lights start moving so
     // the transition never stalls waiting on a network round trip.
-    await this.ensureClinicalLoaded();
+    try {
+      await this.ensureClinicalLoaded();
+    } catch {
+      if (epoch === this.clinicalEntryEpoch && !this.disposed) {
+        session.sceneMode = 'lounge';
+        session.scanActive = false;
+        session.chatError = 'The clinic could not load. Please try opening it again.';
+      }
+      return;
+    }
+    if (epoch !== this.clinicalEntryEpoch || this.disposed || this.presentation !== 'app') return;
     // The clinic has a floor under its silence. Fades in over the transition.
     sound.startRoom();
 
@@ -904,11 +883,6 @@ export class SessionDirector {
         at: 0.32,
         fired: false,
         run: () => this.avatar.setOutfit('clinical', { transitionSeconds: 0.8 }),
-      },
-      {
-        at: 0.55,
-        fired: false,
-        run: () => this.holograms?.boot(),
       },
       {
         at: 0.99,
@@ -938,6 +912,7 @@ export class SessionDirector {
   }
 
   exitClinical(): void {
+    ++this.clinicalEntryEpoch;
     if (session.sceneMode === 'lounge') return;
     session.sceneMode = 'transitioning';
     sound.stopRoom();
@@ -1046,50 +1021,27 @@ export class SessionDirector {
   }
 
   private async ensureClinicalLoaded(): Promise<void> {
-    if (this.clinical) return;
-    const [clinicalMod, holoMod]: [ClinicalModule, HologramModule] = await Promise.all([
-      import('./clinical.ts'),
-      import('@/holograms/rig.ts'),
-    ]);
+    if (this.disposed || this.clinical) return;
+    this.clinicalLoading ??= (async () => {
+      const [clinicalMod, holoMod]: [ClinicalModule, HologramModule] = await Promise.all([
+        import('./clinical.ts'),
+        import('@/holograms/rig.ts'),
+      ]);
+      // Imports cannot be aborted; do not mount new GPU resources after disposal.
+      if (this.disposed) return;
+      this.clinical = new clinicalMod.ClinicalEnvironment({
+        particles: this.stage.settings.particles,
+      });
+      this.clinical.setPresence(0);
+      this.stage.scene.add(this.clinical.group);
 
-    this.clinical = new clinicalMod.ClinicalEnvironment({
-      particles: this.stage.settings.particles,
-    });
-    this.clinical.setPresence(0);
-    this.stage.scene.add(this.clinical.group);
-
-    /*
-     * The backdrop plate, for the mood grade to tint.
-     *
-     * The environment does not export it, and the environment seam should not
-     * grow a member for one consumer. Render order is the plate's contract —
-     * it is the only thing in the room drawn at -10, the very back of the
-     * world — so it is picked out by that. `setPresence` only ever touches
-     * opacity, so the colour channel is the director's alone.
-     */
-    this.plateMaterial = null;
-    this.clinical.group.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh && mesh.renderOrder === -10) {
-        this.plateMaterial = mesh.material as THREE.MeshBasicMaterial;
-      }
-    });
-
-    // No furniture.
-    //
-    // The chair, lamp, trolley and plant were built for the previous clinic —
-    // a wide, evenly lit room where a bare floor read as unfinished. This room
-    // is a dark corridor whose whole character is receding light, and objects
-    // standing about in it read as clutter that happens to be in the way. The
-    // only furniture here is the backlit shelving, which the room draws itself.
-    // The modelled props are gone with it: 890KB of chair, lamp and trolley
-    // that nothing constructed and nothing drew.
-
-    this.holograms = new holoMod.HologramRig({
-      rich: this.stage.settings.richEffects,
-    });
-    this.holograms.mount(this.stage.scene);
-    this.holograms.setLayout(this.viewFrustum());
+      this.holograms = new holoMod.HologramRig({
+        rich: this.stage.settings.richEffects,
+      });
+      this.holograms.mount(this.stage.scene);
+      this.holograms.setLayout(this.viewFrustum());
+    })().finally(() => { this.clinicalLoading = null; });
+    await this.clinicalLoading;
   }
 
   private advanceTransition(dt: number): void {
@@ -1244,7 +1196,9 @@ export class SessionDirector {
     previous: SkinAnalysis | null,
     sentiment?: ScanSentiment,
   ): void {
-    // The head lifting into the hologram is heard as well as seen.
+    session.scanResultVisible = true;
+    this.holograms?.boot();
+    // A successful scan is the only event that reveals personal face geometry.
     sound.lift(1.6);
     this.holograms?.present(analysis, previous);
     // The reading is done; now she is telling *you* about it.
@@ -1318,6 +1272,8 @@ export class SessionDirector {
     previous: BodyAnalysis | null,
     sentiment?: ScanSentiment,
   ): void {
+    session.scanResultVisible = true;
+    this.holograms?.boot();
     this.holograms?.presentBody(analysis, previous);
     this.cine.request('present', true);
     this.presentWithSentiment(sentiment);
@@ -1352,6 +1308,7 @@ export class SessionDirector {
 
   resize(): void {
     this.stage.resize();
+    if (this.presentation !== 'app') { this.composePresentation(); return; }
     // Order matters: the shot depends on the new aspect, and the layout depends
     // on the shot. Gated on the transition *target*, not just the mode: a
     // resize during the walk home used to re-aim the camera at the clinic and
@@ -1366,7 +1323,80 @@ export class SessionDirector {
     return this.avatar.stats();
   }
 
+  /** The homepage film owns first paint; the same 3D Ese then joins the intake and rooms. */
+  setPresentation(mode: 'film' | 'intake' | 'app'): void {
+    if (mode !== 'app' && this.presentation === 'app') this.exitClinical();
+    this.presentation = mode;
+    this.avatar.root.visible = mode !== 'film';
+    if (mode === 'film') { this.stage.stop(); return; }
+    this.composePresentation();
+    this.stage.start();
+  }
+
+  private composePresentation(): void {
+    if (this.presentation === 'intake') {
+      const narrow = this.stage.aspect < 1.05;
+      this.presenterTarget.set(narrow ? -.025 : -.48, narrow ? .91 : 0, 0);
+      this.presenterYawTarget = narrow ? 0 : .09;
+      this.blockingYaw = 0;
+      this.avatar.root.scale.setScalar(narrow ? .6 : 1);
+      this.stage.setShot({
+        position: new THREE.Vector3(0, 1.42, narrow ? 2.7 : 2.25),
+        target: new THREE.Vector3(0, narrow ? 1.2 : 1.4, 0),
+        fov: narrow ? 44 : 41,
+      }, .8);
+    } else if (this.presentation === 'app') {
+      this.avatar.root.scale.setScalar(1);
+      if (session.sceneMode === 'lounge') {
+        this.presenterTarget.set(0, 0, 0);
+        this.presenterYawTarget = 0;
+        this.stage.setShot(SHOT_CONVERSATION, .9);
+      }
+    }
+  }
+
+  clearScanPresentation(): void {
+    session.scanResultVisible = false;
+    this.holograms?.shutdown();
+    this.holograms?.setFaceMesh(null);
+  }
+
+  retryCharacter(): void {
+    if (!(this.avatar instanceof EseAvatar) || this.disposed) return;
+    session.characterStatus = 'loading';
+    void this.avatar.load().then(async () => {
+      if (this.disposed) return;
+      this.avatar.root.visible = true;
+      await this.stage.renderer.compileAsync(this.stage.scene, this.stage.camera);
+      if (!this.disposed) {
+        this.avatar.root.visible = this.presentation !== 'film';
+        session.characterStatus = 'ready';
+      }
+    }).catch(() => { if (!this.disposed) session.characterStatus = 'error'; });
+  }
+
+  canDragCharacter(ndcX: number, ndcY: number): boolean {
+    if (this.presentation === 'film') return false;
+    this.pokeRay.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.stage.camera);
+    return this.avatar instanceof EseAvatar && this.avatar.hitZone(this.pokeRay) !== null;
+  }
+
+  moveCharacter(ndcX: number): void {
+    if (this.presentation === 'film' || session.scanActive) return;
+    const camera = this.stage.camera;
+    const point = new THREE.Vector3(ndcX, 0, .5).unproject(camera);
+    const direction = point.sub(camera.position).normalize();
+    const distance = (this.avatar.root.position.z - camera.position.z) / (direction.z || -1);
+    const worldX = camera.position.x + direction.x * distance;
+    const halfWidth = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.abs(camera.position.z) * camera.aspect;
+    const limit = Math.max(.1, halfWidth - .38);
+    this.presenterTarget.x = THREE.MathUtils.clamp(worldX, -limit, this.presentation === 'intake' && this.stage.aspect > 1.05 ? -.25 : limit);
+    this.presenterYawTarget = THREE.MathUtils.clamp((worldX - this.avatar.root.position.x) * .4, -.15, .15);
+  }
+
   dispose(): void {
+    ++this.clinicalEntryEpoch;
+    this.disposed = true;
     this.holograms?.dispose();
     this.clinical?.dispose();
     this.lounge.dispose();

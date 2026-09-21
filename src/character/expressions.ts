@@ -363,6 +363,36 @@ export const STATE_POSES: Record<CharacterState, BodyPose> = {
   GOODBYE: { ...REST, headPitch: -0.032, headTilt: 0.03, breathDepth: 1.1, idleScale: 0.9 },
 };
 
+/** Small targets for the painted rig, whose head must keep covering the base art. */
+export interface PaintedPresence {
+  /** Radians per second; integrated, never multiplied by elapsed wall time. */
+  breathRate: number;
+  breathDepth: number;
+  idleScale: number;
+  /** Head roll in radians and forward lean as a fraction of the gesture range. */
+  tilt: number;
+  lean: number;
+}
+
+const PAINTED_REST: PaintedPresence = {
+  breathRate: 1.15, breathDepth: 1, idleScale: 1, tilt: 0, lean: 0,
+};
+
+export const PAINTED_PRESENCE: Record<CharacterState, PaintedPresence> = {
+  IDLE: { ...PAINTED_REST },
+  LISTENING: { ...PAINTED_REST, breathRate: 1.05, breathDepth: 0.8, idleScale: 0.4, tilt: 0.004, lean: 0.16 },
+  THINKING: { ...PAINTED_REST, breathRate: 0.95, breathDepth: 0.8, idleScale: 0.45, tilt: -0.006 },
+  SPEAKING: { ...PAINTED_REST, breathRate: 1.35, breathDepth: 0.85, idleScale: 0.7, lean: 0.06 },
+  HAPPY: { ...PAINTED_REST, tilt: 0.003, lean: 0.08 },
+  CONCERNED: { ...PAINTED_REST, breathRate: 0.95, idleScale: 0.4, tilt: 0.006, lean: 0.12 },
+  EXCITED: { ...PAINTED_REST, breathRate: 1.4, breathDepth: 1.05, idleScale: 1.1, lean: 0.1 },
+  CONFUSED: { ...PAINTED_REST, idleScale: 0.6, tilt: -0.009 },
+  CLINICAL_ANALYSIS: { ...PAINTED_REST, breathRate: 1, breathDepth: 0.7, idleScale: 0.3 },
+  ANALYSIS_COMPLETE: { ...PAINTED_REST, idleScale: 0.65, tilt: 0.002 },
+  EXPLAINING: { ...PAINTED_REST, breathRate: 1.25, breathDepth: 0.9, idleScale: 0.7, lean: 0.06 },
+  GOODBYE: { ...PAINTED_REST, idleScale: 0.75, tilt: 0.004 },
+};
+
 /**
  * Mouth shape per viseme: [widthMultiplier, openness, roundness, protrusion].
  *

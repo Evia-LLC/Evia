@@ -7,10 +7,8 @@
   import AuthGate from '@/components/AuthGate.svelte';
   import HoloPanel from '@/components/HoloPanel.svelte';
   import Nav from '@/components/Nav.svelte';
-  import Intro from '@/components/Intro.svelte';
   import { primeSound } from '@/lib/sound.ts';
   import { primeSynthesis } from '@/voice/synthesis.ts';
-  import { introSeen } from '@/lib/intro.ts';
   import HomePage from '@/pages/HomePage.svelte';
   import ScanPage from '@/pages/ScanPage.svelte';
   import ProgressPage from '@/pages/ProgressPage.svelte';
@@ -26,12 +24,10 @@
    * rather than derived, so signing out and back in mid-session does not
    * replay it, and so it cannot flicker on while the gate is still up.
    */
-  let intro = $state(false);
-  let introDecided = false;
   $effect(() => {
-    if (booting || !session.signedIn || introDecided) return;
-    introDecided = true;
-    intro = !introSeen();
+    if (!booting && session.signedIn && !session.onboardingActive && !router.is('landing')) {
+      session.entryStage = 'app';
+    }
   });
 
   /**
@@ -87,7 +83,7 @@
    * the back button, a typed URL and a tap on the tab all do the same thing.
    */
   $effect(() => {
-    if (booting || !session.signedIn) return;
+    if (booting || !session.signedIn || session.onboardingActive) return;
     if (router.is('scan')) enterScanPage();
     else leaveScanPage();
   });
@@ -148,14 +144,11 @@
        wake. The room needs nothing from the network to exist. -->
   <ElohimStage />
 
-  {#if booting}
-    <div class="auth"><div class="auth__mark">Elohim</div></div>
-  {:else if !session.signedIn}
+  {#if router.is('landing') || session.onboardingActive || (!booting && !session.signedIn)}
     <AuthGate />
+  {:else if booting}
+    <div class="auth"><div class="auth__mark">Ese</div></div>
   {:else}
-    {#if intro}
-      <Intro onDone={() => (intro = false)} />
-    {/if}
     <Nav />
 
     <!-- Keyed on the address so a page leaves as the next one arrives. -->
@@ -177,7 +170,7 @@
 
     <!-- The reading, for assistive technology. Only in the clinic, because
          that is the only place there is a reading to describe. -->
-    {#if session.sceneMode !== 'lounge'}
+    {#if session.sceneMode !== 'lounge' && session.scanResultVisible}
       <HoloPanel />
     {/if}
 
