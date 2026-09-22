@@ -107,7 +107,7 @@ const init = unwrap(
   await rpc('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
-    clientInfo: { name: 'elohim-bridge', version: '1.0.0' },
+    clientInfo: { name: 'evia-bridge', version: '1.0.0' },
   }),
   'initialize',
 );

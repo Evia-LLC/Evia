@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { LIGHTING, PALETTE } from '@/character/palette.ts';
 import { radialTexture } from './textures.ts';
-import type { EnvironmentLights, ElohimEnvironment } from './environment.ts';
+import type { EnvironmentLights, EviaEnvironment } from './environment.ts';
 import { clamp } from '@/lib/math.ts';
 
 /**
@@ -71,7 +71,7 @@ const PLATE_EYE_LEVEL = 1.42;
 
 const PARTICLE_COUNT = 150;
 
-export class ClinicalEnvironment implements ElohimEnvironment {
+export class ClinicalEnvironment implements EviaEnvironment {
   readonly group = new THREE.Group();
   readonly lights: EnvironmentLights;
   readonly background = new THREE.Color(0x04050a);

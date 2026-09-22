@@ -1,7 +1,7 @@
 /**
  * The voice pipeline (brief §21).
  *
- *   user speaks -> recognition -> conversation engine -> Elohim's reply
+ *   user speaks -> recognition -> conversation engine -> Evia's reply
  *                                                          |
  *                          synthesis -> word boundaries -> lip-sync + expression
  *
@@ -79,7 +79,7 @@ export class VoiceController {
       // `willSpeak` still refuses to mime before iOS has honoured one.
       canSpeak: hasSynthesis() || hasCloned,
       cloned: hasCloned,
-      voiceName: hasCloned ? 'Elohim' : this.speaker.voiceName,
+      voiceName: hasCloned ? 'Evia' : this.speaker.voiceName,
     };
   }
 
@@ -347,7 +347,7 @@ export class VoiceController {
           onLevel: (level) => track.setLevel(level),
           onFailed: (reason) => {
             if (!live()) return;
-            console.warn(`[elohim/voice] licensed voice unavailable: ${reason}`);
+            console.warn(`[evia/voice] licensed voice unavailable: ${reason}`);
             session.voiceStatus = `Her voice could not play: ${reason} (audio ${audioStateLabel()}).`;
             if (attempts < 2) window.setTimeout(() => live() && attempt(), 700);
             else handlers.onEnd();

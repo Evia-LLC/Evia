@@ -12,7 +12,7 @@
  * synthesised live, and the client lip-syncs both from measurement.
  *
  * Usage:
- *   ELOHIM_VOICE_API_KEY=… node scripts/voice-lines-synth.mjs --voice <voice_id> [--force]
+ *   EVIA_VOICE_API_KEY=… node scripts/voice-lines-synth.mjs --voice <voice_id> [--force]
  *
  * The key is read from the environment only — it never appears on a command
  * line or in this file. `--force` regenerates every line.
@@ -29,13 +29,13 @@ const outDir = path.join(root, 'public', 'voice');
 
 const argv = process.argv.slice(2);
 const voiceArg = argv.indexOf('--voice');
-const voiceId = voiceArg >= 0 ? argv[voiceArg + 1] : process.env.ELOHIM_VOICE_ID;
+const voiceId = voiceArg >= 0 ? argv[voiceArg + 1] : process.env.EVIA_VOICE_ID;
 const force = argv.includes('--force');
-const apiKey = process.env.ELOHIM_VOICE_API_KEY;
+const apiKey = process.env.EVIA_VOICE_API_KEY;
 // The offline batch stays on the multilingual family (or v3, via the env
 // override) while the live server defaults to turbo: these lines are made
 // once and shipped, so render quality wins and latency is free.
-const model = process.env.ELOHIM_VOICE_MODEL || 'eleven_multilingual_v2';
+const model = process.env.EVIA_VOICE_MODEL || 'eleven_multilingual_v2';
 
 /**
  * Fixed seed, so a rerun of one changed line comes back in the same take as
@@ -44,11 +44,11 @@ const model = process.env.ELOHIM_VOICE_MODEL || 'eleven_multilingual_v2';
 const SEED = 4144;
 
 if (!apiKey) {
-  console.error('ELOHIM_VOICE_API_KEY is not set in the environment.');
+  console.error('EVIA_VOICE_API_KEY is not set in the environment.');
   process.exit(2);
 }
 if (!voiceId) {
-  console.error('Pass --voice <voice_id> or set ELOHIM_VOICE_ID.');
+  console.error('Pass --voice <voice_id> or set EVIA_VOICE_ID.');
   process.exit(2);
 }
 

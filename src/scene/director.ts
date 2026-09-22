@@ -2,7 +2,7 @@
  * The SessionDirector — the client-side orchestrator.
  *
  * Owns the stage, the avatar and the environments, and translates application
- * events ("Elohim is thinking", "the scan reached 40%", "enter clinical mode") into
+ * events ("Evia is thinking", "the scan reached 40%", "enter clinical mode") into
  * scene behaviour. It is the only client module that touches both the store and
  * three.js; the character engine never reads the store, and the store never
  * imports three.
@@ -25,12 +25,12 @@ const AURA_COOL = new THREE.Color(0x9fb8ff);
 /** What the glow warms toward while she is talking to you, in either room. */
 const AURA_TALKING = new THREE.Color(0xffe4c4);
 
-import type { ElohimEnvironment } from './environment.ts';
+import type { EviaEnvironment } from './environment.ts';
 import { ProceduralAvatar } from '@/character/procedural-avatar.ts';
 import { SpriteAvatar } from '@/character/sprite-avatar.ts';
 import type { BodyAnalysis } from '@/body-analysis/pipeline.ts';
 import type { ScanMesh } from '@/holograms/face-mesh-3d.ts';
-import type { ElohimAvatar } from '@/character/types.ts';
+import type { EviaAvatar } from '@/character/types.ts';
 import { MutedSpeechTrack, SpeechTrack, type SpeechTrackLike } from '@/character/speech.ts';
 import { session } from '@/state/session.svelte.ts';
 import * as sound from '@/lib/sound.ts';
@@ -79,7 +79,7 @@ const FACE_GAZE = new THREE.Vector3(0.62, 1.5, -0.18);
  * to WebP — 7.0 MB down to 1.98 MB, which on a phone is the difference between
  * a wait and a load. See `scripts/shrink-glb.mjs`.
  */
-const ELOHIM_SPRITE = '/character/elohim/manifest.json';
+const EVIA_SPRITE = '/character/evia/manifest.json';
 
 /** Lazily loaded so the lounge boots without paying for the clinical room. */
 type ClinicalModule = typeof import('./clinical.ts');
@@ -87,10 +87,10 @@ type HologramModule = typeof import('@/holograms/rig.ts');
 
 export class SessionDirector {
   private stage: Stage;
-  private avatar: ElohimAvatar;
+  private avatar: EviaAvatar;
   private lounge: LoungeEnvironment;
 
-  private clinical: ElohimEnvironment | null = null;
+  private clinical: EviaEnvironment | null = null;
   /**
    * The clinic backdrop's material, found once when the room loads. The mood
    * grade tints it directly — see `gradeRoom`.
@@ -196,7 +196,7 @@ export class SessionDirector {
     /*
      * No floor, no contact shadow.
      *
-     * Both exist to sit a standing figure on a surface. Elohim is painted and
+     * Both exist to sit a standing figure on a surface. Evia is painted and
      * cropped at the hips, so a lit patch of floor below her is a floor nobody
      * is standing on — and the backdrop plate has a photographed one of its own
      * that covers the frame without help. The clinic's contact ellipse went
@@ -209,7 +209,7 @@ export class SessionDirector {
     this.stage.scene.add(this.lounge.group);
 
     /*
-     * Elohim is painted.
+     * Evia is painted.
      *
      * The rooms have been photographic plates since the backdrop rewrite, and
      * the rigged glTF model was the only thing left in frame being lit and
@@ -224,12 +224,12 @@ export class SessionDirector {
      */
     const avatar = new SpriteAvatar();
     avatar.onDirectiveRejected = (info) =>
-      console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
+      console.warn(`[evia/character] rejected ${info.reason}: ${info.detail}`);
     avatar.mount(this.stage.scene);
     this.avatar = avatar;
 
-    void avatar.load(ELOHIM_SPRITE).catch((error: unknown) => {
-      console.error('[elohim/character] could not load Elohim', error);
+    void avatar.load(EVIA_SPRITE).catch((error: unknown) => {
+      console.error('[evia/character] could not load Evia', error);
       avatar.dispose();
       const fallback = new ProceduralAvatar();
       fallback.mount(this.stage.scene);
@@ -275,7 +275,7 @@ export class SessionDirector {
       // Kept as a hook: the painted rig has no hull to dilate, so this is a
       // no-op today and the seam stays honest for whatever implements it next.
       this.avatar.setFringe?.(tier !== 'low');
-      console.info(`[elohim/stage] quality tier resolved to "${tier}"`);
+      console.info(`[evia/stage] quality tier resolved to "${tier}"`);
     };
     this.stage.onFrame = (dt, elapsed) => this.frame(dt, elapsed);
     this.stage.start();
@@ -284,7 +284,7 @@ export class SessionDirector {
     // be stepped without requestAnimationFrame, which never fires in a tab that
     // is not compositing. Dev builds only.
     if (import.meta.env.DEV) {
-      (window as unknown as { __elohim?: SessionDirector }).__elohim = this;
+      (window as unknown as { __evia?: SessionDirector }).__evia = this;
     }
   }
 
@@ -602,7 +602,7 @@ export class SessionDirector {
       d.expression === 'grin' ||
       d.expression === 'reassuring';
     if (!happyFamily) {
-      // The turn's mood is fixed at `elohimSpoke`; decide once and stop polling.
+      // The turn's mood is fixed at `eviaSpoke`; decide once and stop polling.
       this.closeFired = true;
       return;
     }
@@ -667,7 +667,7 @@ export class SessionDirector {
   onLongThink: (() => void) | null = null;
 
   /**
-   * Elohim responds: adopt her directive and start the line's timing.
+   * Evia responds: adopt her directive and start the line's timing.
    *
    * The timing runs from here - beat gestures land on it and she settles back
    * when it ends - but the lips stay shut. A mouth moving over silence is the
@@ -677,7 +677,7 @@ export class SessionDirector {
    * muted timing simply runs its course. 'keep' leaves whatever track is
    * running alone, for a turn that lands while the introduction narrates.
    */
-  elohimSpoke(directive: CharacterDirective, text: string, mouth: 'wait' | 'keep' = 'wait'): void {
+  eviaSpoke(directive: CharacterDirective, text: string, mouth: 'wait' | 'keep' = 'wait'): void {
     this.applyDirective(directive);
     // The line's estimated timeline is built either way: it is the mouth when
     // nothing speaks, and the progress yardstick for the turn's closing
@@ -842,7 +842,7 @@ export class SessionDirector {
       // Applied to the avatar directly, not adopted as the turn's directive:
       // the reaction is a borrowed face, and the frame loop hands it back
       // when this expires. If the app answers the poke with a spoken line,
-      // that line arrives through `elohimSpoke` carrying the reaction as its
+      // that line arrives through `eviaSpoke` carrying the reaction as its
       // own directive, so the speech path cannot clobber it either.
       this.reactionUntil = now + 2200;
       this.avatar.applyDirective({

@@ -1,7 +1,7 @@
 /**
  * A demonstration, projected.
  *
- * When Elohim recommends something — a chin tuck for a forward head, working a
+ * When Evia recommends something — a chin tuck for a forward head, working a
  * ceramide cream along the orbital bone — telling someone is a fraction of the
  * job. The reason people do an exercise wrong is almost never that they were
  * not told; it is that "draw your chin straight back" describes a movement they
@@ -14,7 +14,7 @@
  *    room. A procedural mannequin would be the one 3D thing left again.
  *  - Frame-swapping costs one texture offset per frame and no geometry at all,
  *    which is the whole reason this can run beside the readouts on a phone.
- *  - The drift that made generated animation unusable for Elohim's own face —
+ *  - The drift that made generated animation unusable for Evia's own face —
  *    16% frame to frame — does not matter for a demonstration figure. There is
  *    no mouth patch to register against it. It just plays.
  *
@@ -30,7 +30,7 @@ export interface DemoClip {
   fps: number;
   /** What is being demonstrated, for the label. */
   title: string;
-  /** Why it is being shown — spoken by Elohim, shown under the figure. */
+  /** Why it is being shown — spoken by Evia, shown under the figure. */
   because: string;
 }
 

@@ -42,7 +42,7 @@ export interface RoiProvider {
  *
  * Deliberately simple and deliberately honest about it — `confidence` reflects
  * how face-like the component actually is, and a low confidence flows all the
- * way through to what Elohim says about the numbers.
+ * way through to what Evia says about the numbers.
  */
 export class SkinToneRegionProvider implements RoiProvider {
   readonly name = 'skin-tone-v1';

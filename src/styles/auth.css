@@ -4,7 +4,7 @@
  * Imported from app.css rather than written into it, because this is one
  * self-contained composition and the rest of that file is in flight.
  *
- * The screen renders over the live stage: by the time it mounts, Elohim is
+ * The screen renders over the live stage: by the time it mounts, Evia is
  * already standing in the lounge, breathing and blinking. That is the single
  * most persuasive thing the product owns, so the backdrop here is a *grade*,
  * not a cover — it ramps to near-opaque under the type and thins out over her.
@@ -187,7 +187,7 @@
  *
  * This is the fix for the ghost. When the ramp was a percentage of screen
  * height, a phone with two disclosures pushed the headline up into the part of
- * the frame that was still half transparent, and Elohim's dimmed face ended up
+ * the frame that was still half transparent, and Evia's dimmed face ended up
  * reading through the words — visible enough to distract, dim enough to haunt.
  * Anchored here, the 132px fade always ends exactly where the first line
  * begins, whatever the column's height or where it sits, so she is either

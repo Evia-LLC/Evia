@@ -4,7 +4,7 @@
  * The readouts used to live in a DOM panel pinned to the right of the screen.
  * That solved a real problem (projected labels landing on top of the chat) and
  * created a worse one: the analysis became a television on the wall. Nothing
- * about it said the room was doing the analysing, and Elohim was standing next
+ * about it said the room was doing the analysing, and Evia was standing next
  * to a screen rather than inside her own instrument.
  *
  * These are the middle path. Each card is a single quad carrying a canvas

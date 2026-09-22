@@ -16,7 +16,7 @@
   import BodyHistory from '@/history/BodyHistory.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { api } from '@/lib/api.ts';
-  import { askElohim, refreshScans } from '@/state/controller.ts';
+  import { askEvia, refreshScans } from '@/state/controller.ts';
   import { link } from '@/router/router.svelte.ts';
   import { METRIC_LABELS, SKIN_METRIC_KEYS, type SkinMetricKey } from '@shared/types.ts';
 
@@ -94,7 +94,7 @@
       </div>
       {#if latest}
         <div class="ask">
-          <button class="cta cta--quiet" type="button" onclick={() => askElohim(`Tell me about my ${METRIC_LABELS[plotted].toLowerCase()}.`)}>
+          <button class="cta cta--quiet" type="button" onclick={() => askEvia(`Tell me about my ${METRIC_LABELS[plotted].toLowerCase()}.`)}>
             Ask me about {METRIC_LABELS[plotted].toLowerCase()}
           </button>
           <span class="ask__note">

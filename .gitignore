@@ -36,3 +36,6 @@ data/pglite/
 # replaced the rigged model, nothing imports these, and GitHub is not the
 # archive for them. They stay on this machine.
 art/
+
+# Python bytecode cache
+__pycache__/

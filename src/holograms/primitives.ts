@@ -268,7 +268,7 @@ export class MetricRingBank {
     this.positionsDirty = true;
   }
 
-  /** The ring Elohim is currently talking about, or -1. */
+  /** The ring Evia is currently talking about, or -1. */
   setFocus(index: number | null): void {
     this.focus = index ?? -1;
   }
@@ -385,7 +385,7 @@ export class MetricRingBank {
 
 /**
  * The nine anatomical regions the ROI stage actually produces (§3). Naming them
- * the same thing in the hologram is the point: when Elohim says "around your
+ * the same thing in the hologram is the point: when Evia says "around your
  * cheeks", the patch that lights up is the region the number came from.
  */
 export type FaceRegion =

@@ -3,7 +3,7 @@
    * The entry screen.
    *
    * This is the only screen a stranger ever sees, and the product it is selling
-   * is standing right behind it: `ElohimStage` mounts before this does, so by
+   * is standing right behind it: `EviaStage` mounts before this does, so by
    * the time the gate paints, she is already in the lounge breathing and
    * blinking. So the gate does not cover the canvas — it grades it. The type
    * sits on the part of the frame that is nearly opaque and she keeps the part
@@ -62,7 +62,7 @@
   }
 
   function useDemo() {
-    email = 'demo@elohim.local';
+    email = 'demo@evia.local';
     password = 'demo1234';
     mode = 'login';
   }
@@ -142,7 +142,7 @@
            children. Wrapping is also why the disclosures travel with the pitch
            rather than with the fields. -->
       <div class="auth__pitch">
-        <h1 class="auth__wordmark">Elohim</h1>
+        <h1 class="auth__wordmark">Evia</h1>
 
         <p class="auth__lede">
           <span class="auth__lede-a">A beauty consultant</span>
@@ -181,7 +181,7 @@
                      to hold all three it is the button that drops to its own
                      line, rather than the sentence breaking around it. -->
                 <button type="button" class="auth__note-btn" onclick={useDemo}>
-                  <code>demo@elohim.local</code>
+                  <code>demo@evia.local</code>
                   <code>demo1234</code>
                 </button>
               </div>
@@ -200,7 +200,7 @@
               <div class="auth__note auth__note--engine">
                 <span class="auth__note-tag">Local engine</span>
                 <span class="auth__note-body">
-                  conversation is running the built-in Elohim rather than the full model — your
+                  conversation is running the built-in Evia rather than the full model — your
                   scans, storage and trends are real either way
                 </span>
               </div>

@@ -61,7 +61,7 @@ app.use('/api/auth', authRouter);
  * their own readings, so sending a line to the voice provider is a transfer
  * to a third party. The guest chooses it: the voice toggle on the entry
  * screen says where the audio comes from, and it is off until they turn it
- * on. The operator can close the door entirely with ELOHIM_GUEST_VOICE=0.
+ * on. The operator can close the door entirely with EVIA_GUEST_VOICE=0.
  */
 app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text : '';

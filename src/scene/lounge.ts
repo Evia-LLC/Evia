@@ -1,5 +1,5 @@
 /**
- * The lounge — Elohim's conversational environment.
+ * The lounge — Evia's conversational environment.
  *
  * This is where the user actually spends their time, so it has to feel like a
  * *place* rather than a backdrop, while staying quiet enough that she remains
@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { LIGHTING, PALETTE } from '@/character/palette.ts';
 import { radialTexture } from './textures.ts';
-import type { EnvironmentLights, ElohimEnvironment } from './environment.ts';
+import type { EnvironmentLights, EviaEnvironment } from './environment.ts';
 import { clamp } from '@/lib/math.ts';
 
 /** The rendered interior, served from `public/`. */
@@ -25,7 +25,7 @@ const PLATE_Z = -3.4;
 const PLATE_HORIZON = 0.56;
 const PLATE_EYE_LEVEL = 1.5;
 
-export class LoungeEnvironment implements ElohimEnvironment {
+export class LoungeEnvironment implements EviaEnvironment {
   readonly group = new THREE.Group();
   readonly lights: EnvironmentLights;
   readonly background = new THREE.Color(0x0b0d15);
@@ -73,7 +73,7 @@ export class LoungeEnvironment implements ElohimEnvironment {
    *
    * `ground` covers the floor disc, its reflection smear and the contact
    * shadow — everything that exists to sit a standing figure on a surface.
-   * With the painted Elohim, who is cropped at the hips and has no feet, all
+   * With the painted Evia, who is cropped at the hips and has no feet, all
    * three describe a floor nobody is standing on: an empty lit patch below a
    * character who visibly never reaches it. The backdrop plate has a
    * photographed floor of its own and covers the frame without them.

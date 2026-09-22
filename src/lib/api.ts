@@ -9,7 +9,7 @@ import type {
   BodyAnalysisRecord,
   BodySnapshot,
   ChatMessage,
-  ElohimTurn,
+  EviaTurn,
   LongitudinalSummary,
   MemoryRecord,
   Preferences,
@@ -112,11 +112,11 @@ export const api = {
   chatHistory: () => request<{ messages: ChatMessage[] }>('/chat/history'),
 
   chat: (message: string) =>
-    request<{ turn: ElohimTurn }>('/chat', { method: 'POST', body: JSON.stringify({ message }) }),
+    request<{ turn: EviaTurn }>('/chat', { method: 'POST', body: JSON.stringify({ message }) }),
 
   /** Turns produced by app events — no fabricated user message in the transcript. */
   chatEvent: (event: 'opened' | 'scan_complete' | 'body_scan_complete', body?: BodySnapshot) =>
-    request<{ turn: ElohimTurn }>('/chat/event', {
+    request<{ turn: EviaTurn }>('/chat/event', {
       method: 'POST',
       body: JSON.stringify({ event, body }),
     }),

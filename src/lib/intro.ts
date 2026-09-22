@@ -18,7 +18,7 @@
 import type { CharacterDirective } from '@shared/types.ts';
 import { INTRO_LINES } from './lines.ts';
 
-const STORAGE_KEY = 'elohim.intro.seen';
+const STORAGE_KEY = 'evia.intro.seen';
 
 export interface IntroBeat {
   /** The words on screen. Captions, not a transcript - they may differ from the voice. */
@@ -42,7 +42,7 @@ export interface IntroBeat {
 
 export const INTRO_BEATS: IntroBeat[] = [
   {
-    title: 'Elohim',
+    title: 'Evia',
     sub: 'A beauty consultant who can actually look at your skin.',
     narration: INTRO_LINES[0],
     seconds: 3.2,

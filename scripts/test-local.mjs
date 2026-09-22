@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const host = '127.0.0.1';
-const configuredPort = process.env.ELOHIM_TEST_DB_PORT ?? '5434';
+const configuredPort = process.env.EVIA_TEST_DB_PORT ?? '5434';
 const port = Number(configuredPort);
 let db, server, child, childDone, killTimer;
 let stopping = false;
@@ -49,7 +49,7 @@ async function checkPort() {
 
 try {
   if (!/^\d+$/.test(configuredPort) || !Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('ELOHIM_TEST_DB_PORT must be an integer between 1 and 65535.');
+    throw new Error('EVIA_TEST_DB_PORT must be an integer between 1 and 65535.');
   }
   // Fail before starting the database or tests when another process owns it.
   // server.start() also checks the port, covering a race after this probe.
@@ -71,7 +71,7 @@ try {
         // database configuration may select the database used by this command.
         NETLIFY_DATABASE_URL: databaseUrl,
         DATABASE_URL: databaseUrl,
-        ELOHIM_DB_POOL: '1',
+        EVIA_DB_POOL: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -90,7 +90,7 @@ try {
   process.exitCode = stopping ? process.exitCode : 1;
   const code = error?.code;
   const message = code === 'EADDRINUSE'
-    ? `Port ${port} is already in use. Stop its listener or set ELOHIM_TEST_DB_PORT to another free port; tests were not started.`
+    ? `Port ${port} is already in use. Stop its listener or set EVIA_TEST_DB_PORT to another free port; tests were not started.`
     : code === 'EPERM' || code === 'EACCES'
       ? `Cannot bind ${host}:${port} (${code}). Allow a local listener and retry; tests were not started.`
       : redact(error instanceof Error ? error.message : error);

@@ -4,7 +4,7 @@
  *   Can any user data reach the model API when cloud reasoning is OFF?
  *
  * If yes, this suite fails. PrivacyPanel tells users cloud reasoning is off by
- * default, and the context block Elohim would send carries their name, stated
+ * default, and the context block Evia would send carries their name, stated
  * concerns, sensitivities, every remembered fact and their whole scan history.
  * A promise like that has to be enforced by the code that transmits, not by the
  * copy that describes it.
@@ -141,14 +141,14 @@ describe('cloud reasoning OFF', () => {
   it('does not reach the model classifier either, even when that is switched on', async () => {
     // The classifier prompt carries the message and the recent turns - the
     // same data the consent is about - so it is not a separate, smaller yes.
-    process.env.ELOHIM_MODEL_CLASSIFIER = '1';
+    process.env.EVIA_MODEL_CLASSIFIER = '1';
     try {
       getConsents.mockResolvedValue(OFF);
       await handleTurn('user-1', 'my skin is dry');
       expect(classifyTurn).not.toHaveBeenCalled();
       expect(structuredTurn).not.toHaveBeenCalled();
     } finally {
-      delete process.env.ELOHIM_MODEL_CLASSIFIER;
+      delete process.env.EVIA_MODEL_CLASSIFIER;
     }
   });
 

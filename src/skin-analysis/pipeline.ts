@@ -88,7 +88,7 @@ export async function analyseFace(
   } catch (err) {
     if (cachedProvider instanceof SkinToneRegionProvider) throw err;
     console.warn(
-      `[elohim/skin] ${cachedProvider.name} failed, falling back to skin-tone regions:`,
+      `[evia/skin] ${cachedProvider.name} failed, falling back to skin-tone regions:`,
       (err as Error).message,
     );
     cachedProvider = new SkinToneRegionProvider();
@@ -133,7 +133,7 @@ export async function analyseFace(
   const metrics = computeMetrics(channels, regions, rects);
 
   // Confidence is the product of how good the capture was and how sure the ROI
-  // finder is. It flows through to what Elohim is willing to claim.
+  // finder is. It flows through to what Evia is willing to claim.
   const confidence = clamp(quality.score * roi.confidence);
 
   onProgress(1, 'done');

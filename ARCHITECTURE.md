@@ -1,10 +1,10 @@
-# Elohim — Technical Architecture
+# Evia — Technical Architecture
 
-> Elohim is a persistent AI beauty companion who happens to have a physical digital
+> Evia is a persistent AI beauty companion who happens to have a physical digital
 > presence. Every decision below is downstream of that sentence. If a change makes
-> Elohim feel more like a dashboard and less like a person, it is the wrong change.
+> Evia feel more like a dashboard and less like a person, it is the wrong change.
 
-**Status:** Phase 1 (Elohim Core) + the skeleton every later phase plugs into.
+**Status:** Phase 1 (Evia Core) + the skeleton every later phase plugs into.
 **MVP art direction:** procedural / low-poly / holographic. Deliberately stylised, never
 unfinished. All visual assets sit behind interfaces so they can be replaced wholesale.
 
@@ -29,7 +29,7 @@ Two processes in dev: Vite on `5195`, API on `5196`, Vite proxies `/api`.
 ## 1. Layering
 
 ```
-                          ELOHIM FRONTEND
+                          EVIA FRONTEND
                                |
    +---------------+-----------+-----------+---------------+
    |               |                       |               |
@@ -40,7 +40,7 @@ Two processes in dev: Vite on `5195`, API on `5196`, Vite proxies `/api`.
                                |
                         HTTP  /api/*
                                |
-                       ELOHIM ORCHESTRATOR (server)
+                       EVIA ORCHESTRATOR (server)
                                |
    +---------------+-----------+-----------+---------------+
    |               |                       |               |
@@ -61,7 +61,7 @@ Hard rules, enforced by module boundaries:
 - **The skin analysis engine never touches the UI.** It takes pixels, returns a
   `SkinAnalysis`. It has no import from `src/scene` or `src/holograms`.
 - **The conversation engine never touches tables.** It receives an assembled
-  `ElohimContext` and returns an `ElohimTurn`. Repositories are injected at the orchestrator.
+  `EviaContext` and returns an `EviaTurn`. Repositories are injected at the orchestrator.
 - **The orchestrator is the only module allowed to know about all of the above.**
 
 The practical test: you can delete `src/character/` entirely and the app still holds a
@@ -72,7 +72,7 @@ upgrade a swap instead of a rewrite.
 
 ## 2. Data model
 
-SQLite, `data/elohim.db`. Migrations are numbered SQL applied in order and recorded in
+SQLite, `data/evia.db`. Migrations are numbered SQL applied in order and recorded in
 `_migrations`.
 
 ```
@@ -106,7 +106,7 @@ Two deliberate choices:
 
 **`memories` is separate from `messages`.** §7 of the brief demands the system distinguish
 durable facts from conversational noise. `messages` is the transcript; `memories` is what
-Elohim actually *knows*. A fact is promoted into `memories` only by the extraction pass
+Evia actually *knows*. A fact is promoted into `memories` only by the extraction pass
 (§6 below), keyed so a later contradiction updates rather than duplicates.
 
 **`model_version` on every scan.** Metric formulas will change. Comparing a v1 hydration
@@ -171,7 +171,7 @@ rest. `SkinAnalysis.confidence` is the product of capture quality and ROI confid
 is surfaced to the user when it is low.
 
 **These are appearance measurements, not diagnoses.** The type is literally named
-`SkinAppearanceMetrics`, and Elohim's system prompt forbids diagnostic phrasing (§11).
+`SkinAppearanceMetrics`, and Evia's system prompt forbids diagnostic phrasing (§11).
 
 **Optional cloud reasoning.** With explicit consent, the image can additionally go to
 Claude vision for qualitative observations. It layers *on top of* the deterministic
@@ -199,7 +199,7 @@ blocked at the prompt level and checked in the persona tests.
 ### 5.1 The avatar interface
 
 ```ts
-interface ElohimAvatar {
+interface EviaAvatar {
   mount(scene: THREE.Scene): void;
   update(dt: number, ctx: AvatarContext): void;
   applyDirective(d: CharacterDirective): void;
@@ -246,11 +246,11 @@ message
   -> context retrieval (profile, durable memories, recent scan, relevant trend, products)
   -> prompt assembly (frozen persona prefix -> stable context -> volatile turn)
   -> claude-opus-5, adaptive thinking, streamed
-  -> ElohimTurn { text, directive, intents[], memoryWrites[] }
+  -> EviaTurn { text, directive, intents[], memoryWrites[] }
   -> directive to character; memoryWrites to memories; text to transcript
 ```
 
-`ElohimTurn` is a structured output, not free text, because the character directive and the
+`EviaTurn` is a structured output, not free text, because the character directive and the
 memory writes have to be machine-readable and validated. The persona prefix and context
 block are ordered stable-first so the prompt cache actually hits.
 
@@ -267,14 +267,14 @@ timeline; every beat is interruptible.
 
 | Beat | What happens |
 |---|---|
-| 1 | Elohim says the line. Nothing visual yet. |
+| 1 | Evia says the line. Nothing visual yet. |
 | 2 | Lounge key light dims and cools over 1.2 s |
 | 3 | Lounge geometry dissolves; clinical room resolves (shared floor plane anchors it) |
 | 4 | Outfit cross-fade, casual to clinical, 0.8 s |
 | 5 | Holographic frame boots: rails, then panels, staggered |
 | 6 | Capture and analysis; scan-line sweep tracks real pipeline progress |
 | 7 | Metrics resolve into orbit around the face model |
-| 8 | Elohim turns to the user and explains |
+| 8 | Evia turns to the user and explains |
 
 The clinical environment module is **lazy-loaded** on first entry (§9) — the lounge boots
 without paying for it.
@@ -291,7 +291,7 @@ Layout is a `HoloLayout` solver, not hardcoded positions: it takes N elements pl
 viewport aspect and produces an arc in landscape, a stack in portrait. That is what makes
 "recompose, don't shrink" (§29 of the brief) actually true rather than aspirational.
 
-Numbers are deliberately sparse. Elohim is the interpreter; the holograms are her whiteboard.
+Numbers are deliberately sparse. Evia is the interpreter; the holograms are her whiteboard.
 
 ---
 
@@ -301,7 +301,7 @@ The development machine is an Intel HD Graphics 620 — an integrated GPU roughl
 of magnitude behind what a three.js scene is usually tuned on. The budget below is not
 aspirational; it is the constraint the art direction was chosen to satisfy.
 
-**Measured**, via `__elohim.inspect()` in a dev build at 1280×720:
+**Measured**, via `__evia.inspect()` in a dev build at 1280×720:
 
 | Scene | Draw calls | Triangles |
 |---|---|---|
@@ -332,7 +332,7 @@ at 30fps and hands the other half of every 33 ms back to the GPU.
 **Headless stepping.** `requestAnimationFrame` does not fire in a tab that is not
 compositing, which makes the scene impossible to exercise in a headless or backgrounded
 check. `Stage.stepManually()` and `SessionDirector.stepHeadless(n)` advance and render
-deterministically without rAF; `__elohim` exposes the director in dev builds. That is how the
+deterministically without rAF; `__evia` exposes the director in dev builds. That is how the
 table above was measured.
 
 ---
@@ -344,7 +344,7 @@ Face images are treated as sensitive from the first line of code, not retrofitte
 - Analysis is client-side; by default **the image is never uploaded**.
 - Storing an image requires explicit, separate consent (`consents.image_storage`).
   Sending it to Claude vision requires a second one (`consents.cloud_reasoning`).
-- Stored images are AES-256-GCM encrypted at rest under a key from `ELOHIM_BLOB_KEY`, written
+- Stored images are AES-256-GCM encrypted at rest under a key from `EVIA_BLOB_KEY`, written
   outside the served static root, and readable only through an authenticated route that
   checks ownership.
 - `DELETE /api/me/data` hard-deletes rows and shreds blobs. It is wired to a real button.
@@ -374,7 +374,7 @@ than only when that exact token happens to be presented again.
 
 ## 11. Safety positioning
 
-Elohim is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
+Evia is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
 device and the product must never imply she is. Enforced in three places, because a system
 prompt alone is not a control:
 
@@ -394,8 +394,8 @@ Final legal wording is a placeholder for counsel review; the hook is `LEGAL_DISC
 Per §33 of the brief, nothing fakes. Buttons run pipelines; history reads the DB.
 
 The one labelled exception: with no `ANTHROPIC_API_KEY` present, the conversation engine
-falls back to `server/ai/fallback.ts`, a local rule-based Elohim. It is marked in the UI as
-*Demo Elohim*, it never claims to be the model, and every response is generated from the
+falls back to `server/ai/fallback.ts`, a local rule-based Evia. It is marked in the UI as
+*Demo Evia*, it never claims to be the model, and every response is generated from the
 user's **real** stored profile and scan data. Set a key and the real engine takes over with
 no other change.
 
@@ -448,7 +448,7 @@ reports no boundaries — some do not — the estimated track keeps playing rath
 face freezing.
 
 Holograms are real controls: each metric is a focusable `<button>`, and tapping one asks
-Elohim about that metric rather than opening a detail panel. She stays the interpreter. The
+Evia about that metric rather than opening a detail panel. She stays the interpreter. The
 slot solver guarantees that whatever she is about to name — the biggest mover and the
 biggest one going the other way — is on screen, because otherwise she points at a ring that
 is not there.

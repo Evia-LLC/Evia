@@ -26,7 +26,7 @@ const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? '';
 const configured = BASE_URL.length > 0;
 
 /** Its own schema, named for this run. */
-const SCHEMA = `elohim_test_${process.pid}_${Date.now()}`;
+const SCHEMA = `evia_test_${process.pid}_${Date.now()}`;
 
 let repo: Repo;
 let userId: string;

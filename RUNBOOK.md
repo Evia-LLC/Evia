@@ -1,4 +1,4 @@
-# Elohim — operator runbook
+# Evia — operator runbook
 
 What to set where, and what each thing switches on. Nothing here is needed
 to run the app on a laptop: `node scripts/dev.mjs` starts a local Postgres,
@@ -12,19 +12,19 @@ redeploy. Keep them out of chat, out of the repo and out of screenshots.
 | Variable | What it switches on | Where to get it |
 | --- | --- | --- |
 | `DATABASE_URL` | Accounts, history, trends, memory, the voice cache, the shelf. Without it the site runs in guest mode only. | Any hosted Postgres. Neon and Supabase both give a free project and a connection string. On Neon use the **direct** endpoint, not the `-pooler` one — see "Where things stand" below for why. Migrations run themselves on the first request. |
-| `ELOHIM_BLOB_KEY` | Keeping scan photos (encrypted), which is what the before-and-after wipe needs across visits. | Generate one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `EVIA_BLOB_KEY` | Keeping scan photos (encrypted), which is what the before-and-after wipe needs across visits. | Generate one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `ANTHROPIC_API_KEY` | The real conversation model (Claude). Without it she runs the labelled local engine, which still scans, reads and recommends. | console.anthropic.com → API keys |
-| `ELOHIM_VOICE_API_KEY` + `ELOHIM_VOICE_ID` | Her licensed voice. Both are needed. | ElevenLabs → the voice clone made from the licensed recording. Use a Professional Voice Clone for the licensed recording; the voice id is on the voice's page. |
-| `ELOHIM_STORE_URL` | Your own shelf, read straight from the storefront. | The public URL of the shop (Shopify or WooCommerce). Set `ELOHIM_ADMIN_TOKEN` too, then call the sync (below). |
+| `EVIA_VOICE_API_KEY` + `EVIA_VOICE_ID` | Her licensed voice. Both are needed. | ElevenLabs → the voice clone made from the licensed recording. Use a Professional Voice Clone for the licensed recording; the voice id is on the voice's page. |
+| `EVIA_STORE_URL` | Your own shelf, read straight from the storefront. | The public URL of the shop (Shopify or WooCommerce). Set `EVIA_ADMIN_TOKEN` too, then call the sync (below). |
 
 Optional, with sensible defaults:
 
-- `ELOHIM_MODEL` (default `claude-sonnet-5`) — set `claude-opus-5` for the top model.
-- `ELOHIM_USER_DAILY_TURNS` / `ELOHIM_DAILY_TURNS` / `ELOHIM_DAILY_TOKENS` — spend caps. Over a cap she answers from the local engine and says so. `/api/health` reports today's spend against them.
-- `ELOHIM_GUEST_VOICE` (default on) — set `0` to keep the cloned voice for accounts only.
-- `ELOHIM_STORE_NAME` (default `Ese`), `ELOHIM_STORE_CURRENCY` (default `USD`, only for storefronts that do not state one).
+- `EVIA_MODEL` (default `claude-sonnet-5`) — set `claude-opus-5` for the top model.
+- `EVIA_USER_DAILY_TURNS` / `EVIA_DAILY_TURNS` / `EVIA_DAILY_TOKENS` — spend caps. Over a cap she answers from the local engine and says so. `/api/health` reports today's spend against them.
+- `EVIA_GUEST_VOICE` (default on) — set `0` to keep the cloned voice for accounts only.
+- `EVIA_STORE_NAME` (default `Ese`), `EVIA_STORE_CURRENCY` (default `USD`, only for storefronts that do not state one).
 - `EBAY_CLIENT_ID` + `EBAY_CLIENT_SECRET` — real, priced marketplace offers for comparison. Without them she links to searches and says she has not compared.
-- `ELOHIM_AMAZON_TAG` / `ELOHIM_AMAZON_DOMAIN` — affiliate tag and marketplace for the Amazon search links.
+- `EVIA_AMAZON_TAG` / `EVIA_AMAZON_DOMAIN` — affiliate tag and marketplace for the Amazon search links.
 
 ## Where things stand (5 September 2026)
 
@@ -38,7 +38,7 @@ awaits `ready()` (migrations) before every request, and only a *failed* database
 no `database` key at all. `/api/public/catalogue/status` reads the catalogue table and
 answers, Neon's `pg_stat_database` commit counter moved with those requests, and the
 function's backend (an AWS-internal client address) is visible in `pg_stat_activity`.
-Neon project `elohim` (id `calm-silence-63515149`, organisation
+Neon project `evia` (id `calm-silence-63515149`, organisation
 "Boluwatife"), region `aws-us-east-2` — the same Ohio region the Netlify function
 runs in, so a query does not cross the country. Postgres 17, branch `production`,
 database `elohim`, role `elohim_owner`. All ten migrations were applied on
@@ -54,12 +54,12 @@ Two rules learned setting it up:
   host and the string is otherwise unchanged.
 - **Never put the production `DATABASE_URL` in the local `.env`.** Outside a
   deployment `server/lib/env.ts` turns `DEMO_MODE` on, and the launcher would seed
-  `demo@elohim.local` into the live database on its first start. PGlite stays the
+  `demo@evia.local` into the live database on its first start. PGlite stays the
   local database.
 
-**Voice — done.** The clone exists in the ElevenLabs workspace as "Elohim's voice",
-id `0UFPkz6r4cUaHBRHtegr` (Creator tier, 131k characters a month). `ELOHIM_VOICE_ID` and
-`ELOHIM_VOICE_API_KEY` are both set on Netlify (both plain — a secret write would not have stored) and in the local `.env`,
+**Voice — done.** The clone exists in the ElevenLabs workspace as "Evia's voice",
+id `0UFPkz6r4cUaHBRHtegr` (Creator tier, 131k characters a month). `EVIA_VOICE_ID` and
+`EVIA_VOICE_API_KEY` are both set on Netlify (both plain — a secret write would not have stored) and in the local `.env`,
 so her composed replies are synthesised on demand with word timings. All thirteen fixed
 lines were also synthesised in that voice and ship in `public/voice/` with their manifest;
 `node scripts/voice-lines-synth.mjs --voice 0UFPkz6r4cUaHBRHtegr` regenerates any line
@@ -68,7 +68,7 @@ The shipped lines were made with the model's default delivery; the on-demand rou
 the steadier settings in `server/voice/tts.ts` — if the two ever sound different side by
 side, regenerate the files with `--force`.
 
-**Photos — key set and live.** `ELOHIM_BLOB_KEY` was generated on 2026-09-05; that secret
+**Photos — key set and live.** `EVIA_BLOB_KEY` was generated on 2026-09-05; that secret
 write was silently dropped, so it was set again on 2026-09-06 as a plain production variable
 (confirmed in the list) and `/api/health` now answers `imageStorage:true`, so accounts can
 opt in to keep encrypted scan photos. A copy is in
@@ -80,7 +80,7 @@ unreadable, so keep a copy somewhere safer than this folder.
 or scope returns 422, and a *secret* write reports success without storing anything. Read the
 list back (`getAllEnvVars: true`) after every write.
 
-**Not yet set:** `ANTHROPIC_API_KEY`, `ELOHIM_STORE_URL`.
+**Not yet set:** `ANTHROPIC_API_KEY`, `EVIA_STORE_URL`.
 
 **Migrations on Netlify (fixed 2026-09-05).** With `DATABASE_URL` finally present the function
 failed on every request with `ENOENT … /var/task/netlify/functions/migrations`: `migrate()`
@@ -159,7 +159,7 @@ works: it makes an anonymous deployment that lives about an hour unless claimed 
 claim link, and `-e`/`-b` flags carry the runtime and build variables (see the deploy script in the
 session scratchpad, which reads them from files). After `vercel login`, `vercel deploy --prod` and
 `vercel env add` replace all of that. The prebuild fetches the unchanged art from whichever site
-`ELOHIM_ASSET_ORIGIN` names (default: the Netlify site).
+`EVIA_ASSET_ORIGIN` names (default: the Netlify site).
 
 **Every environment change needs a redeploy** before the function sees it. `dist/`
 was rebuilt with the voice files on 2026-09-05 and is ready to upload.
@@ -193,10 +193,10 @@ tokens after use, so expect to ask for a fresh one).
 She recommends an ingredient first, then a product that carries it. Products
 come from `catalogue_products`, filled one of two ways.
 
-**From the storefront.** With `ELOHIM_STORE_URL` and `ELOHIM_ADMIN_TOKEN` set:
+**From the storefront.** With `EVIA_STORE_URL` and `EVIA_ADMIN_TOKEN` set:
 
 ```bash
-curl -X POST https://elohim-consultant.netlify.app/api/admin/catalogue/sync -H "X-Admin-Token: $ELOHIM_ADMIN_TOKEN"
+curl -X POST https://elohim-consultant.netlify.app/api/admin/catalogue/sync -H "X-Admin-Token: $EVIA_ADMIN_TOKEN"
 ```
 
 Shopify shops are read from `/products.json`, WooCommerce shops from the
@@ -209,7 +209,7 @@ whenever the shop changes (a daily schedule is a one-line addition).
 **From a file.** For any other shop, or a hand-kept list:
 
 ```bash
-curl -X POST https://elohim-consultant.netlify.app/api/admin/catalogue/import -H "X-Admin-Token: $ELOHIM_ADMIN_TOKEN" -H "Content-Type: application/json" --data-binary @catalogue.json
+curl -X POST https://elohim-consultant.netlify.app/api/admin/catalogue/import -H "X-Admin-Token: $EVIA_ADMIN_TOKEN" -H "Content-Type: application/json" --data-binary @catalogue.json
 ```
 
 with `catalogue.json` shaped as `{ "products": [ { "id", "name", "brand", "category", "price", "currency", "url", "image", "ingredients", "inStock" } ] }` — `price` in major units, `ingredients` either an array or a comma-separated string. `.sc/sample-catalogue.json` in the repo is a worked example.
@@ -234,7 +234,7 @@ choreography, the greeting and the region narration are therefore fixed
 strings on purpose — after the first play they are free and instant. There is
 no need to pre-record clips.
 
-Guests hear her too (`ELOHIM_GUEST_VOICE`), rate-limited per address; accounts
+Guests hear her too (`EVIA_GUEST_VOICE`), rate-limited per address; accounts
 need the cloud-reasoning consent on, because the line she speaks carries their
 readings and goes to the voice provider.
 

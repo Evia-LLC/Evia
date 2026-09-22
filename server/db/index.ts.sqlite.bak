@@ -13,7 +13,7 @@ import { log } from '../lib/log.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(here, '..', '..', 'data');
-const DB_PATH = process.env.ELOHIM_DB_PATH ?? path.join(DATA_DIR, 'elohim.db');
+const DB_PATH = process.env.EVIA_DB_PATH ?? path.join(DATA_DIR, 'evia.db');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 

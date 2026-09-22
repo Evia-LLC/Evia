@@ -1,7 +1,7 @@
 # Contributing to Evia
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing application boundaries.
-The repository retains some Ese/Elohim names internally; changing the company
+The repository retains some Ese/Evia names internally; changing the company
 repository name does not migrate those identifiers or release unfinished work.
 
 ## Branches and review
@@ -42,7 +42,7 @@ npm run build
 `test:local` runs the full suite against a fresh in-memory PGlite database. It
 overrides both database URL variables, uses no persistent database directory,
 and discards the database when finished. Its default loopback port is 5434;
-set `ELOHIM_TEST_DB_PORT` to a free port if needed. A busy port fails before tests
+set `EVIA_TEST_DB_PORT` to a free port if needed. A busy port fails before tests
 start. Prefer this command over bare `npm test` for routine verification.
 
 The build copies MediaPipe files from installed dependencies and may download

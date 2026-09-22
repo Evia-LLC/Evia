@@ -1,7 +1,7 @@
 /**
  * Context retrieval — the step between "user said something" and "ask the model".
  *
- * Elohim does not get one enormous prompt containing everything. She gets her frozen
+ * Evia does not get one enormous prompt containing everything. She gets her frozen
  * persona, then a compact block of what is actually relevant to this user right
  * now, then the turn. This file builds the middle part.
  */
@@ -20,7 +20,7 @@ import { BODY_READING_LABELS } from '../../shared/types.ts';
 import type { BodySnapshot, ProductPick, ProductUsage, UserSummary } from '../../shared/types.ts';
 import type { PregnancyStatus } from '../../shared/types.ts';
 
-export interface ElohimContext {
+export interface EviaContext {
   user: UserSummary;
   latest: SkinAnalysis | null;
   summary: LongitudinalSummary;
@@ -38,7 +38,7 @@ export interface ElohimContext {
  * database — it arrives with the request, lives for one turn and is discarded.
  * Folding it into the builder would imply a persistence that does not exist.
  */
-export function withBody(ctx: ElohimContext, body: BodySnapshot): ElohimContext {
+export function withBody(ctx: EviaContext, body: BodySnapshot): EviaContext {
   const lines = body.findings.length
     ? body.findings.map((f) => {
         const label = BODY_READING_LABELS[f.key] ?? f.key;
@@ -72,7 +72,7 @@ export function withBody(ctx: ElohimContext, body: BodySnapshot): ElohimContext 
 }
 
 /**
- * What Elohim is told about pregnancy, and what she is told to do about it.
+ * What Evia is told about pregnancy, and what she is told to do about it.
  *
  * The instruction matters as much as the fact. Left to itself the model will
  * answer "is retinol ok?" by asking for the product label, because that is what
@@ -104,7 +104,7 @@ function pregnancyLine(status: PregnancyStatus): string {
   );
 }
 
-export async function buildContext(userId: string): Promise<ElohimContext> {
+export async function buildContext(userId: string): Promise<EviaContext> {
   const user = await users.getUserSummary(userId);
   if (!user) throw new Error('unknown user');
 
@@ -261,7 +261,7 @@ export async function buildContext(userId: string): Promise<ElohimContext> {
 
 /**
  * What is doubled up, conflicting or missing in the routine, rendered for the
- * prompt. Giving Elohim this means she can raise "you have two exfoliating acids"
+ * prompt. Giving Evia this means she can raise "you have two exfoliating acids"
  * without waiting to be asked, which is the difference between a consultant and
  * a lookup.
  */

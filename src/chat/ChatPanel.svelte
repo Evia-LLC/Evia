@@ -4,7 +4,7 @@
    *
    * On a phone this is a sheet rather than a column. It rests at a peek height
    * that shows the tail of what she just said plus the composer, which leaves
-   * Elohim roughly 70% of the screen; dragging or tapping the grip expands it to
+   * Evia roughly 70% of the screen; dragging or tapping the grip expands it to
    * about 68% for reading back through the history. She is the interface, so
    * the transcript is the thing that yields space, not her.
    */
@@ -68,7 +68,7 @@
 
   $effect(() => {
     const m = session.messages[session.messages.length - 1];
-    if (!m || m.role !== 'elohim' || m.id === revealId) return;
+    if (!m || m.role !== 'evia' || m.id === revealId) return;
     ticker?.stop();
     revealId = m.id;
     revealChars = 0;
@@ -104,7 +104,7 @@
     const el = transcript;
     if (!el) return;
     // Judged from where the reader was before this growth, not after.
-    const fromHer = count > seenCount && session.messages[count - 1]?.role === 'elohim';
+    const fromHer = count > seenCount && session.messages[count - 1]?.role === 'evia';
     seenCount = count;
     queueMicrotask(() => {
       if (nearBottom) el.scrollTop = el.scrollHeight;
@@ -261,7 +261,7 @@
     class="sheet-grip"
     type="button"
     aria-expanded={sheet === 'full'}
-    aria-controls="elohim-transcript"
+    aria-controls="evia-transcript"
     aria-label={sheet === 'full' ? 'Collapse the conversation' : 'Expand the conversation'}
     onpointerdown={onGripDown}
     onpointermove={onGripMove}
@@ -272,34 +272,34 @@
 
   <div
     class="transcript"
-    id="elohim-transcript"
+    id="evia-transcript"
     bind:this={transcript}
     role="log"
-    aria-label="Conversation with Elohim"
+    aria-label="Conversation with Evia"
     style:height={dragHeight === null ? null : `${dragHeight}px`}
     onscroll={onTranscriptScroll}
   >
     {#each session.messages as message (message.id)}
-      {#if message.role === 'elohim' && message.id === revealId && revealChars < message.content.length}
+      {#if message.role === 'evia' && message.id === revealId && revealChars < message.content.length}
         <!-- Still being said: the words land at her pace, a tap reads the rest. -->
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="bubble bubble--elohim" onclick={revealAll}>
+        <div class="bubble bubble--evia" onclick={revealAll}>
           {message.content.slice(0, revealChars)}
         </div>
       {:else}
-        <div class="bubble bubble--{message.role === 'elohim' ? 'elohim' : 'user'}">
+        <div class="bubble bubble--{message.role === 'evia' ? 'evia' : 'user'}">
           {message.content}
         </div>
       {/if}
     {/each}
 
     {#if session.thinking}
-      <div class="typing" role="status" aria-label="Elohim is thinking"></div>
+      <div class="typing" role="status" aria-label="Evia is thinking"></div>
     {/if}
   </div>
 
   {#if unseen}
-    <button class="new-pill" type="button" onclick={jumpToNew}>New from Elohim</button>
+    <button class="new-pill" type="button" onclick={jumpToNew}>New from Evia</button>
   {/if}
 
   {#if session.pendingOffer?.type === 'offer_scan'}
@@ -322,8 +322,8 @@
       onfocus={onComposerFocus}
       rows="1"
       readonly={session.listening}
-      placeholder={session.listening ? 'Listening…' : 'Talk to Elohim…'}
-      aria-label="Message Elohim"
+      placeholder={session.listening ? 'Listening…' : 'Talk to Evia…'}
+      aria-label="Message Evia"
     ></textarea>
 
     {#if session.canListen}
@@ -331,7 +331,7 @@
         class="mic"
         class:mic--on={session.listening}
         onclick={() => toggleListening()}
-        aria-label={session.listening ? 'Stop listening' : 'Speak to Elohim'}
+        aria-label={session.listening ? 'Stop listening' : 'Speak to Evia'}
         aria-pressed={session.listening}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">

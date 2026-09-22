@@ -15,9 +15,9 @@
  *
  * Limits come from the environment and have conservative defaults:
  *
- *   ELOHIM_USER_DAILY_TURNS   turns per user per day            (default 80)
- *   ELOHIM_DAILY_TURNS        turns across everyone per day     (default 2000)
- *   ELOHIM_DAILY_TOKENS       tokens across everyone per day    (default 4,000,000)
+ *   EVIA_USER_DAILY_TURNS   turns per user per day            (default 80)
+ *   EVIA_DAILY_TURNS        turns across everyone per day     (default 2000)
+ *   EVIA_DAILY_TOKENS       tokens across everyone per day    (default 4,000,000)
  *
  * Prices are estimates for the cost line in the health report, not the source
  * of truth for any decision - the token counts are.
@@ -55,13 +55,13 @@ export async function allowance(userId: string): Promise<BudgetVerdict> {
         day,
       ),
     ]);
-    if ((mine?.turns ?? 0) >= limit('ELOHIM_USER_DAILY_TURNS', 80)) {
+    if ((mine?.turns ?? 0) >= limit('EVIA_USER_DAILY_TURNS', 80)) {
       return { ok: false, reason: 'user_turns' };
     }
-    if (Number(everyone?.turns ?? 0) >= limit('ELOHIM_DAILY_TURNS', 2000)) {
+    if (Number(everyone?.turns ?? 0) >= limit('EVIA_DAILY_TURNS', 2000)) {
       return { ok: false, reason: 'global_turns' };
     }
-    if (Number(everyone?.tokens ?? 0) >= limit('ELOHIM_DAILY_TOKENS', 4_000_000)) {
+    if (Number(everyone?.tokens ?? 0) >= limit('EVIA_DAILY_TOKENS', 4_000_000)) {
       return { ok: false, reason: 'global_tokens' };
     }
     return { ok: true, reason: '' };
@@ -116,9 +116,9 @@ export async function todaySummary(): Promise<{
     turns: Number(found?.turns ?? 0),
     tokens: Number(found?.tokens ?? 0),
     limits: {
-      userTurns: limit('ELOHIM_USER_DAILY_TURNS', 80),
-      turns: limit('ELOHIM_DAILY_TURNS', 2000),
-      tokens: limit('ELOHIM_DAILY_TOKENS', 4_000_000),
+      userTurns: limit('EVIA_USER_DAILY_TURNS', 80),
+      turns: limit('EVIA_DAILY_TURNS', 2000),
+      tokens: limit('EVIA_DAILY_TOKENS', 4_000_000),
     },
   };
 }

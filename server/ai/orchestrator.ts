@@ -1,5 +1,5 @@
 /**
- * The Elohim orchestrator (ARCHITECTURE §6).
+ * The Evia orchestrator (ARCHITECTURE §6).
  *
  * The only module allowed to know about conversation, skin, products and storage
  * at the same time. Everything else stays in its lane and this file wires them:
@@ -8,7 +8,7 @@
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import { classify } from './classify.ts';
-import { buildContext, withBody, type ElohimContext } from './context.ts';
+import { buildContext, withBody, type EviaContext } from './context.ts';
 import { PERSONA, TURN_SCHEMA } from './persona.ts';
 import { modelAvailable, structuredTurn, describeApiError } from './claude.ts';
 import * as budget from './budget.ts';
@@ -19,8 +19,8 @@ import { sanitiseDirective } from '../../shared/character-fsm.ts';
 import { log } from '../lib/log.ts';
 import {
   type BodySnapshot,
-  type ElohimAction,
-  type ElohimTurn,
+  type EviaAction,
+  type EviaTurn,
   type ExplanationStyle,
   type MemoryWrite,
 } from '../../shared/types.ts';
@@ -80,7 +80,7 @@ async function modelTurnPermitted(userId: string): Promise<boolean> {
 
 /**
  * Events are things that happen *to* the conversation rather than things the
- * user said. They produce a turn from Elohim without inventing a user message —
+ * user said. They produce a turn from Evia without inventing a user message —
  * putting "I just finished the scan" in the transcript as if the user typed it
  * would corrupt the history the model reads on every later turn.
  */
@@ -123,7 +123,7 @@ interface RawTurn {
   actions?: Array<{ type: string; reason?: string; metric?: string }>;
 }
 
-export async function handleTurn(userId: string, message: string): Promise<ElohimTurn> {
+export async function handleTurn(userId: string, message: string): Promise<EviaTurn> {
   const conversationId = await chat.currentConversation(userId);
   const history = await chat.recentMessages(conversationId, HISTORY_TURNS);
 
@@ -143,7 +143,7 @@ export async function handleTurn(userId: string, message: string): Promise<Elohi
   const ctx = await buildContext(userId);
 
   // 3+4. Model, or the labelled local engine.
-  let turn: ElohimTurn;
+  let turn: EviaTurn;
   if (cloud && (await modelTurnPermitted(userId))) {
     try {
       turn = await callModel(userId, message, classification, ctx, history);
@@ -165,7 +165,7 @@ export async function handleTurn(userId: string, message: string): Promise<Elohi
     intent: classification.intent,
   });
   const stored = await chat.appendMessage(conversationId, {
-    role: 'elohim',
+    role: 'evia',
     content: turn.text,
     directive: turn.directive,
     demo: turn.demo,
@@ -204,7 +204,7 @@ export async function handleEvent(
   event: ConversationEvent,
   body?: BodySnapshot,
   extras?: EventExtras,
-): Promise<ElohimTurn> {
+): Promise<EviaTurn> {
   const conversationId = await chat.currentConversation(userId);
   const history = await chat.recentMessages(conversationId, HISTORY_TURNS);
   const base = await buildContext(userId);
@@ -239,7 +239,7 @@ export async function handleEvent(
       'it left out, or move to what to do about it.';
   }
 
-  let turn: ElohimTurn;
+  let turn: EviaTurn;
   if (await modelTurnPermitted(userId)) {
     try {
       turn = await callModel(userId, cue, classification, ctx, history, {
@@ -256,7 +256,7 @@ export async function handleEvent(
   }
 
   const stored = await chat.appendMessage(conversationId, {
-    role: 'elohim',
+    role: 'evia',
     content: turn.text,
     directive: turn.directive,
     demo: turn.demo,
@@ -270,10 +270,10 @@ async function callModel(
   userId: string,
   message: string,
   classification: Awaited<ReturnType<typeof classify>>,
-  ctx: ElohimContext,
+  ctx: EviaContext,
   history: Awaited<ReturnType<typeof chat.recentMessages>>,
   opts: { isEvent?: boolean } = {},
-): Promise<ElohimTurn> {
+): Promise<EviaTurn> {
   /*
    * Checked again, immediately before the data leaves.
    *
@@ -368,16 +368,16 @@ const ACTION_TYPES = new Set([
   'ask_explanation_style',
 ]);
 
-function sanitiseActions(input: unknown): ElohimAction[] {
+function sanitiseActions(input: unknown): EviaAction[] {
   if (!Array.isArray(input)) return [];
-  const out: ElohimAction[] = [];
+  const out: EviaAction[] = [];
   for (const raw of input.slice(0, 3)) {
     const a = raw as { type?: string; reason?: string; metric?: string };
     if (!a?.type || !ACTION_TYPES.has(a.type)) continue;
     if (a.type === 'offer_scan') out.push({ type: 'offer_scan', reason: a.reason ?? '' });
     else if (a.type === 'show_progress')
       out.push({ type: 'show_progress', metric: a.metric as never });
-    else out.push({ type: a.type } as ElohimAction);
+    else out.push({ type: a.type } as EviaAction);
   }
   return out;
 }

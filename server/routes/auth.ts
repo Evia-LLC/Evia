@@ -12,7 +12,7 @@ declare module 'express-serve-static-core' {
   }
 }
 
-const COOKIE = 'elohim_session';
+const COOKIE = 'evia_session';
 
 function setSessionCookie(res: Response, token: string) {
   /*

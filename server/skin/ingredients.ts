@@ -2,7 +2,7 @@
  * Ingredient and routine assessment (brief §10).
  *
  * Deterministic, explainable, and explicit about the edge of its own knowledge.
- * Every finding names the ingredient that caused it, so Elohim can talk about a
+ * Every finding names the ingredient that caused it, so Evia can talk about a
  * product without inventing a reason.
  *
  * Three things it checks, in order of how often they actually matter:
@@ -225,7 +225,7 @@ function buildRationale(
 
 /**
  * Whole-routine review: what is doubled up, what is missing, what is scheduled
- * against itself. Used by the routine panel and available to Elohim as context.
+ * against itself. Used by the routine panel and available to Evia as context.
  */
 export interface RoutineReview {
   stacked: Array<{ family: IngredientFamily; label: string; products: string[] }>;

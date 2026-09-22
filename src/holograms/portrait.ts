@@ -2,7 +2,7 @@
  * The hologram, made out of the face it is a hologram *of*.
  *
  * Everything else in this app stopped being primitives and got better for it:
- * the rooms became photographic plates, Elohim became painted layers. The
+ * the rooms became photographic plates, Evia became painted layers. The
  * contour model was the last thing built out of maths, and it showed — an
  * ovoid with line-art features, sitting between two pieces of finished art and
  * losing to both. It was also, more importantly, *nobody*. A skin analysis that

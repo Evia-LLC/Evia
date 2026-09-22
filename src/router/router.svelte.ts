@@ -29,12 +29,12 @@ export interface Route {
 }
 
 export const ROUTES: readonly Route[] = [
-  { id: 'home', path: '/', label: 'Talk', title: 'Elohim', nav: true },
-  { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Elohim', nav: true },
-  { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Elohim', nav: true },
-  { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Elohim', nav: true },
-  { id: 'profile', path: '/profile', label: 'You', title: 'You — Elohim', nav: true },
-  { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Elohim', nav: false },
+  { id: 'home', path: '/', label: 'Talk', title: 'Evia', nav: true },
+  { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Evia', nav: true },
+  { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Evia', nav: true },
+  { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Evia', nav: true },
+  { id: 'profile', path: '/profile', label: 'You', title: 'You — Evia', nav: true },
+  { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Evia', nav: false },
 ];
 
 const HOME = ROUTES[0];

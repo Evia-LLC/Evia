@@ -5,7 +5,7 @@
  * behind an interface that reports its own availability honestly rather than
  * throwing halfway through a user's sentence.
  *
- * Interim results are surfaced so Elohim can react while you are still talking —
+ * Interim results are surfaced so Evia can react while you are still talking —
  * she starts listening, tilts her head, and the composer fills in live. That is
  * most of what makes voice feel like a conversation rather than a command line.
  */
@@ -97,7 +97,7 @@ export class Listener {
 
     const recognition = new Ctor();
     recognition.lang = locale;
-    // Single phrase at a time: Elohim should answer when you stop talking, not
+    // Single phrase at a time: Evia should answer when you stop talking, not
     // accumulate a monologue.
     recognition.continuous = false;
     recognition.interimResults = true;

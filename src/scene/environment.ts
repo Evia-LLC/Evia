@@ -13,7 +13,7 @@ export interface EnvironmentLights {
   ambient: THREE.AmbientLight;
 }
 
-export interface ElohimEnvironment {
+export interface EviaEnvironment {
   readonly group: THREE.Group;
   readonly lights: EnvironmentLights;
   /** Background colour this environment wants the renderer to clear to. */

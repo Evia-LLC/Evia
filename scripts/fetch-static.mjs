@@ -23,7 +23,7 @@
  *
  *   node scripts/fetch-static.mjs
  *
- * `ELOHIM_ASSET_ORIGIN` overrides where files are fetched from.
+ * `EVIA_ASSET_ORIGIN` overrides where files are fetched from.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -32,7 +32,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const origin = (process.env.ELOHIM_ASSET_ORIGIN || 'https://elohim-consultant.netlify.app').replace(/\/$/, '');
+const origin = (process.env.EVIA_ASSET_ORIGIN || 'https://elohim-consultant.netlify.app').replace(/\/$/, '');
 
 /** @type {Array<{ path: string; sha256: string; bytes: number }>} */
 /*
@@ -73,7 +73,7 @@ console.log(`static assets: ${present} present, ${fetched} fetched from ${origin
 const voiceManifest = path.join(root, 'public', 'voice', 'manifest.json');
 if (fs.existsSync(voiceManifest)) {
   console.log('voice lines already present');
-} else if (process.env.ELOHIM_VOICE_API_KEY && process.env.ELOHIM_VOICE_ID) {
+} else if (process.env.EVIA_VOICE_API_KEY && process.env.EVIA_VOICE_ID) {
   console.log('voice lines missing; synthesising them in her voice');
   execFileSync(process.execPath, [path.join(root, 'scripts', 'voice-lines-synth.mjs')], { stdio: 'inherit' });
 } else {

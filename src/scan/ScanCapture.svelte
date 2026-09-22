@@ -186,12 +186,12 @@
   }
 
   /*
-   * Developer handle, like `__elohim` on the scene: `requestAnimationFrame`
+   * Developer handle, like `__evia` on the scene: `requestAnimationFrame`
    * does not fire in a tab that is not compositing, so the overlay cannot be
    * exercised in a headless check without a way to step it by hand.
    */
   if (import.meta.env.DEV) {
-    (window as unknown as { __elohimMesh?: unknown }).__elohimMesh = {
+    (window as unknown as { __eviaMesh?: unknown }).__eviaMesh = {
       step: (now: number) => {
         cancelAnimationFrame(raf);
         raf = 0;

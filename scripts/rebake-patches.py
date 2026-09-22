@@ -31,7 +31,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "public" / "character" / "elohim"
+OUT = ROOT / "public" / "character" / "evia"
 FEATHER = 26
 
 

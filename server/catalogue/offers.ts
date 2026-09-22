@@ -98,8 +98,8 @@ export async function ebayOffers(query: string, limit = 4): Promise<Offer[]> {
 // --- search links -----------------------------------------------------------
 
 export function amazonLink(query: string): Offer {
-  const domain = process.env.ELOHIM_AMAZON_DOMAIN?.trim() || 'www.amazon.com';
-  const tag = process.env.ELOHIM_AMAZON_TAG?.trim();
+  const domain = process.env.EVIA_AMAZON_DOMAIN?.trim() || 'www.amazon.com';
+  const tag = process.env.EVIA_AMAZON_TAG?.trim();
   const url = `https://${domain}/s?k=${encodeURIComponent(query)}${tag ? `&tag=${encodeURIComponent(tag)}` : ''}`;
   return { merchant: 'Amazon', title: `Search Amazon for ${query}`, priceCents: null, currency: null, url, imageUrl: null, compared: false };
 }

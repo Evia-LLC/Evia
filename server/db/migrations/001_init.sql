@@ -1,4 +1,4 @@
--- Elohim initial schema. See ARCHITECTURE.md §2.
+-- Evia initial schema. See ARCHITECTURE.md §2.
 -- Everything user-owned cascades from users(id) so account deletion is a single
 -- statement rather than a checklist somebody will eventually forget to update.
 

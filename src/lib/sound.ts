@@ -28,7 +28,7 @@
  * switch governs the cues only; her voice is not "room sound".
  */
 
-const STORAGE_KEY = 'elohim.sound';
+const STORAGE_KEY = 'evia.sound';
 
 let context: AudioContext | null = null;
 let master: GainNode | null = null;

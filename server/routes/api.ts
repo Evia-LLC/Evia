@@ -145,7 +145,7 @@ apiRouter.post('/chat', chatLimiter, async (req, res) => {
 
 /**
  * Turns produced by app events rather than by a typed message — opening the app,
- * a scan finishing. Only Elohim's side is written to the transcript.
+ * a scan finishing. Only Evia's side is written to the transcript.
  */
 apiRouter.post('/chat/event', chatLimiter, async (req, res) => {
   const event = req.body?.event;
@@ -273,7 +273,7 @@ apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
       }
     }
   } else if (req.body?.imageBase64 && consents.image_storage) {
-    log.warn('body-scans', 'image supplied but ELOHIM_BLOB_KEY is unset; not storing it');
+    log.warn('body-scans', 'image supplied but EVIA_BLOB_KEY is unset; not storing it');
   }
 
   const stored = await bodyRepo.insertBodyScan(
@@ -332,7 +332,7 @@ apiRouter.get('/routine/picks', async (req, res) => {
  * ever reporting its own successes.
  */
 /**
- * Elohim's voice, synthesised.
+ * Evia's voice, synthesised.
  *
  * The key lives here and never reaches the browser. A 503 means no cloned voice
  * is configured, and the client falls back to the browser's own synthesis and
@@ -348,7 +348,7 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
   }
 
   /*
-   * The cloned voice is a third party, and what gets sent to it is Elohim's
+   * The cloned voice is a third party, and what gets sent to it is Evia's
    * reply — which routinely quotes the user's readings and concerns back to
    * them. That is the user's data leaving this server, so it sits behind the
    * same consent as the model.
@@ -481,7 +481,7 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
 
   if (imageBase64 && consents.image_storage) {
     if (!blobStorageAvailable()) {
-      log.warn('scans', 'image supplied but ELOHIM_BLOB_KEY is unset; not storing it');
+      log.warn('scans', 'image supplied but EVIA_BLOB_KEY is unset; not storing it');
     } else {
       try {
         imageRef = await putBlob(Buffer.from(imageBase64, 'base64'), `${newId()}.bin`);

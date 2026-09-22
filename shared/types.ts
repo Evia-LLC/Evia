@@ -1,5 +1,5 @@
 /**
- * The contract between every layer of Elohim.
+ * The contract between every layer of Evia.
  *
  * This file is imported by the character engine, the skin-analysis engine, the
  * orchestrator and the database layer alike — it is the only thing they are all
@@ -130,7 +130,7 @@ export interface CaptureQuality {
   sharpness: number;
   faceHeightFraction: number;
   centeringError: number;
-  /** Human-readable, shown verbatim by Elohim. Empty when the verdict is 'pass'. */
+  /** Human-readable, shown verbatim by Evia. Empty when the verdict is 'pass'. */
   issues: string[];
 }
 
@@ -346,18 +346,18 @@ export interface MemoryRecord extends MemoryWrite {
 }
 
 /** What the conversation engine returns for one user turn. */
-export interface ElohimTurn {
+export interface EviaTurn {
   text: string;
   directive: CharacterDirective;
   classification: TurnClassification;
   memoryWrites: MemoryWrite[];
-  /** Client-side actions Elohim is asking the UI to take. Closed vocabulary. */
-  actions: ElohimAction[];
+  /** Client-side actions Evia is asking the UI to take. Closed vocabulary. */
+  actions: EviaAction[];
   /** True when produced by the local fallback rather than the model. */
   demo: boolean;
 }
 
-export type ElohimAction =
+export type EviaAction =
   | { type: 'offer_scan'; reason: string }
   | { type: 'enter_clinical' }
   | { type: 'show_progress'; metric?: SkinMetricKey }
@@ -366,7 +366,7 @@ export type ElohimAction =
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'elohim';
+  role: 'user' | 'evia';
   content: string;
   createdAt: string;
   emotion?: Emotion;
@@ -429,7 +429,7 @@ export interface SkinProfile {
 export interface Preferences {
   explanationStyle: ExplanationStyle;
   voiceEnabled: boolean;
-  /** Chosen speech-synthesis voice; null means Elohim picks the best available. */
+  /** Chosen speech-synthesis voice; null means Evia picks the best available. */
   voiceURI: string | null;
   reducedMotion: boolean;
   qualityTier: 'low' | 'medium' | 'high' | 'auto';
@@ -562,7 +562,7 @@ export type RoutineStep = 'cleanse' | 'treat' | 'hydrate' | 'protect';
 
 /**
  * One recommendation. Carries the metric that triggered it so the UI — and
- * Elohim — can always answer "why are you telling me this?".
+ * Evia — can always answer "why are you telling me this?".
  */
 export interface Suggestion {
   step: RoutineStep;
@@ -627,7 +627,7 @@ export interface ProductAssessment {
 }
 
 /**
- * A body reading, passed to Elohim with the event rather than stored.
+ * A body reading, passed to Evia with the event rather than stored.
  *
  * Body scans have no server table, so this travels with the message that needs
  * it and is gone afterwards. That is a deliberate consequence of the split:

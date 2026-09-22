@@ -31,8 +31,8 @@ import {
   METRIC_LABELS,
   type BodySnapshot,
   type CharacterDirective,
-  type ElohimAction,
-  type ElohimTurn,
+  type EviaAction,
+  type EviaTurn,
   type SkinAnalysis,
 } from '@shared/types.ts';
 
@@ -76,7 +76,7 @@ export function registerDirector(instance: SessionDirector | null): void {
   director = instance;
   voice.attach(instance);
 
-  // Tapping a hologram asks Elohim about it. Deliberately not a detail panel:
+  // Tapping a hologram asks Evia about it. Deliberately not a detail panel:
   // she is the interpreter, and the whole product falls apart the moment the
   // holograms start explaining themselves.
   if (instance) {
@@ -94,7 +94,7 @@ export function registerDirector(instance: SessionDirector | null): void {
       lastPokeLine = line;
       session.pushMessage({
         id: `poke-${now}`,
-        role: 'elohim',
+        role: 'evia',
         content: line,
         createdAt: new Date().toISOString(),
       });
@@ -483,7 +483,7 @@ async function introFinished(capMs = 90_000): Promise<void> {
 }
 
 /**
- * The opening beat. Elohim speaks first — the product is a conversation, and
+ * The opening beat. Evia speaks first — the product is a conversation, and
  * conversations do not start with an empty text box.
  *
  * This goes through the event endpoint rather than sending a fabricated "hey"
@@ -545,7 +545,7 @@ async function chatEventWithExtras(
   event: 'opened' | 'scan_complete' | 'body_scan_complete',
   body: BodySnapshot | undefined,
   extras: { spokenNarration?: string; introSkipped?: boolean },
-): Promise<{ turn: ElohimTurn }> {
+): Promise<{ turn: EviaTurn }> {
   const res = await fetch('/api/chat/event', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -555,7 +555,7 @@ async function chatEventWithExtras(
   if (res.status === 401) return api.chatEvent(event, body);
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, payload.error ?? 'Something went wrong on my side.');
-  return payload as { turn: ElohimTurn };
+  return payload as { turn: EviaTurn };
 }
 
 /**
@@ -573,8 +573,8 @@ function failSoftly(err: unknown): void {
   }
   director?.applyDirective({ state: 'IDLE', expression: 'concerned', gesture: 'none', intensity: 0.6 });
   session.pushMessage({
-    id: `elohim-${Date.now()}`,
-    role: 'elohim',
+    id: `evia-${Date.now()}`,
+    role: 'evia',
     content: CONNECTION_LOST_LINE,
     createdAt: new Date().toISOString(),
   });
@@ -659,13 +659,13 @@ async function waitForQuiet(guardMs = 15_000): Promise<void> {
 }
 
 /** Applies one turn to the store, the character and the UI. */
-function absorbTurn(turn: ElohimTurn): void {
+function absorbTurn(turn: EviaTurn): void {
   // A turn arriving is the success that retires any earlier failure notice,
   // and it opens a fresh turn for the typing interrupt.
   session.chatError = null;
   session.pushMessage({
-    id: `elohim-${Date.now()}`,
-    role: 'elohim',
+    id: `evia-${Date.now()}`,
+    role: 'evia',
     content: turn.text,
     createdAt: new Date().toISOString(),
     emotion: turn.classification.emotion,
@@ -681,7 +681,7 @@ function absorbTurn(turn: ElohimTurn): void {
    * transcript, the intro's voice keeps the mouth, and the turn is not spoken
    * twice.
    */
-  director?.elohimSpoke(turn.directive, turn.text, session.introPlaying ? 'keep' : 'wait');
+  director?.eviaSpoke(turn.directive, turn.text, session.introPlaying ? 'keep' : 'wait');
   if (!session.introPlaying) voice.speak(turn.text);
   handleActions(turn.actions);
 
@@ -693,7 +693,7 @@ function absorbTurn(turn: ElohimTurn): void {
   }
 }
 
-function handleActions(actions: ElohimAction[]): void {
+function handleActions(actions: EviaAction[]): void {
   for (const action of actions) {
     switch (action.type) {
       case 'offer_scan':
@@ -708,7 +708,7 @@ function handleActions(actions: ElohimAction[]): void {
         router.go('/progress');
         break;
       case 'ask_explanation_style':
-        // Handled conversationally by Elohim; nothing for the UI to force.
+        // Handled conversationally by Evia; nothing for the UI to force.
         break;
     }
   }
@@ -758,7 +758,7 @@ export function leaveScanPage(): void {
  * asked once she is in frame. Tapping a ring on the progress page is exactly
  * tapping a hologram in the clinic: she explains, the page does not.
  */
-export async function askElohim(text: string): Promise<void> {
+export async function askEvia(text: string): Promise<void> {
   router.go('/');
   await sendMessage(text);
 }
@@ -1191,7 +1191,7 @@ export async function refreshBodyScans(): Promise<void> {
 
 
 /**
- * The body reading, reduced to what Elohim needs to talk about it.
+ * The body reading, reduced to what Evia needs to talk about it.
  *
  * Keys rather than labels: this payload is browser-built and ends up inside a
  * model prompt, so the server looks the wording up from its own table and drops

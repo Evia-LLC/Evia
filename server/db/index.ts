@@ -79,7 +79,7 @@ function getPool(): pg.Pool {
     connectionString: url,
     // A function instance handles a request or two and is then discarded, so a
     // large pool is just idle connections the database has to hold open.
-    max: Number(process.env.ELOHIM_DB_POOL ?? 3),
+    max: Number(process.env.EVIA_DB_POOL ?? 3),
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
     // Plain text to anything on this machine — the dev listener in

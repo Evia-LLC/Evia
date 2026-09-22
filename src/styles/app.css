@@ -1,5 +1,5 @@
 /*
- * Elohim's visual language (brief §30).
+ * Evia's visual language (brief §30).
  *
  * Premium, futuristic, human, medical-inspired, warm, cinematic, minimal.
  * Deliberately not: a SaaS dashboard, neon cyberpunk, or a wall of panels. The
@@ -7,7 +7,7 @@
  *
  * Mobile is the primary target (brief §29). Portrait is a recomposition, not a
  * scaled-down desktop: the chat becomes a collapsible sheet that sits at a peek
- * height so Elohim keeps ~70% of the screen, panels become real bottom sheets with
+ * height so Evia keeps ~70% of the screen, panels become real bottom sheets with
  * a grip and their own scroll region, and every control clears a 44px target
  * without the visual language turning chunky.
  *
@@ -230,18 +230,18 @@ select:focus-visible,
   color: var(--quiet);
   white-space: normal;
 }
-.bubble--elohim::before {
-  content: 'Elohim';
+.bubble--evia::before {
+  content: 'Evia';
 }
 .bubble--user::before {
   content: 'You';
 }
-.bubble--elohim + .bubble--elohim::before,
+.bubble--evia + .bubble--evia::before,
 .bubble--user + .bubble--user::before {
   display: none;
 }
 
-.bubble--elohim {
+.bubble--evia {
   color: var(--ink);
   text-shadow: 0 1px 12px rgba(var(--ground-rgb), 0.85);
 }
@@ -839,7 +839,7 @@ select:focus-visible,
 }
 
 /*
- * 'New from Elohim' - raised when a reply lands while the reader is scrolled
+ * 'New from Evia' - raised when a reply lands while the reader is scrolled
  * back through the history. The transcript deliberately does not yank the
  * view; this is the way down when they are ready.
  */
@@ -995,7 +995,7 @@ select:focus-visible,
    Recompose for portrait (brief §29)
 
    Not a narrower desktop. The chat leaves the right-hand column entirely and
-   becomes a sheet across the bottom, at a peek height by default so that Elohim —
+   becomes a sheet across the bottom, at a peek height by default so that Evia —
    who is the interface — keeps roughly 70% of the screen at rest.
 
    --chat-width, --surface and --chat-chrome are recomposed in tokens.css.
@@ -1135,7 +1135,7 @@ select:focus-visible,
 /* --- reduced motion ------------------------------------------------------- */
 
 /*
- * The media query is the standard signal; `[data-reduced-motion]` is Elohim's own
+ * The media query is the standard signal; `[data-reduced-motion]` is Evia's own
  * preference from the profile panel, so turning it on there damps the interface
  * as well as her idle movement rather than only half of the product.
  */

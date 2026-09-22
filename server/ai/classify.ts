@@ -42,7 +42,7 @@ const CLASSIFY_SCHEMA = {
 } as const;
 
 /**
- * Optional model-backed classification, enabled with ELOHIM_MODEL_CLASSIFIER=1.
+ * Optional model-backed classification, enabled with EVIA_MODEL_CLASSIFIER=1.
  * The deterministic escalation flag is preserved regardless of what it returns.
  *
  * `cloud` is whether this user has consented to their words leaving the
@@ -57,7 +57,7 @@ export async function classify(
   opts: { cloud?: boolean } = {},
 ): Promise<TurnClassification> {
   const local = classifyLocally(message);
-  if (process.env.ELOHIM_MODEL_CLASSIFIER !== '1') return local;
+  if (process.env.EVIA_MODEL_CLASSIFIER !== '1') return local;
   if (opts.cloud !== true) return local;
 
   try {

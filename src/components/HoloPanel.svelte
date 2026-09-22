@@ -3,7 +3,7 @@
    * The analysis, for anyone who cannot see it.
    *
    * The readouts themselves are now floating in the room — canvas-textured
-   * panels arranged around Elohim, drawn by the hologram rig. That is the right
+   * panels arranged around Evia, drawn by the hologram rig. That is the right
    * answer for the look and the wrong one for accessibility: a texture on a quad
    * is invisible to a screen reader, unreachable by keyboard, and unselectable.
    *

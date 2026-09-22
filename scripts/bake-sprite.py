@@ -20,7 +20,7 @@ another face shows its own border the moment the two differ even slightly in
 tone, and these are separate generations, so they always differ slightly.
 
 Usage:
-    python scripts/bake-sprite.py .sc/h1-cut.png .sc/frames public/character/elohim
+    python scripts/bake-sprite.py .sc/h1-cut.png .sc/frames public/character/evia
 """
 import json
 import sys

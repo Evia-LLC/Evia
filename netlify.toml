@@ -1,4 +1,4 @@
-# Elohim on Netlify.
+# Evia on Netlify.
 #
 # The browser half is a static build; the API is one function running the same
 # Express app the local server runs. The database is any hosted Postgres,

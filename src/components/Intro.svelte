@@ -101,7 +101,7 @@
       <div class="intro__beat">
         <h1 class="intro__title" class:intro__title--mark={index === 0}>
           {#if index === 0}
-            Elohim
+            Evia
           {:else}
             {beat.title}
           {/if}
@@ -209,7 +209,7 @@
     color: var(--ink);
     text-shadow: var(--halo);
   }
-  /* The one wordmark: lowercase italic 'Elohim'. */
+  /* The one wordmark: lowercase italic 'Evia'. */
   .intro__title--mark {
     font-family: var(--font-serif);
     font-style: italic;

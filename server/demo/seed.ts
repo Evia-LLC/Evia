@@ -15,7 +15,7 @@ import * as productsRepo from '../db/products.ts';
 import { SKIN_MODEL_VERSION, type SkinAnalysis } from '../../shared/types.ts';
 import { log } from '../lib/log.ts';
 
-const DEMO_EMAIL = 'demo@elohim.local';
+const DEMO_EMAIL = 'demo@evia.local';
 const DEMO_PASSWORD = 'demo1234';
 
 /**

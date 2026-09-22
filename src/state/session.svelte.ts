@@ -10,7 +10,7 @@ import type {
   ChatMessage,
   ProductPick,
   RoutinePlan,
-  ElohimAction,
+  EviaAction,
   LongitudinalSummary,
   SkinAnalysis,
   UserSummary,
@@ -96,8 +96,8 @@ class SessionState {
   summary = $state<LongitudinalSummary | null>(null);
   latestScan = $state<SkinAnalysis | null>(null);
 
-  /** Set when Elohim offers a scan, so the composer can show the prompt inline. */
-  pendingOffer = $state<ElohimAction | null>(null);
+  /** Set when Evia offers a scan, so the composer can show the prompt inline. */
+  pendingOffer = $state<EviaAction | null>(null);
 
   /** The routine plan for the latest scan, and which face the panel is showing. */
   plan = $state<RoutinePlan | null>(null);
@@ -151,7 +151,7 @@ class SessionState {
   /**
    * Whether the licensed human voice is the one actually speaking.
    *
-   * Reported rather than assumed: a user told Elohim has a real voice should be
+   * Reported rather than assumed: a user told Evia has a real voice should be
    * able to see when she has fallen back to the browser's synthesiser instead.
    */
   clonedVoice = $state(false);

@@ -2,8 +2,8 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { fileURLToPath } from 'node:url';
 
-const API_PORT = Number(process.env.ELOHIM_PORT ?? 5196);
-const WEB_PORT = Number(process.env.ELOHIM_WEB_PORT ?? 5195);
+const API_PORT = Number(process.env.EVIA_PORT ?? 5196);
+const WEB_PORT = Number(process.env.EVIA_WEB_PORT ?? 5195);
 
 /*
  * Where the database tests point.
