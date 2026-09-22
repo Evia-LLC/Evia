@@ -18,6 +18,17 @@ repository name does not migrate those identifiers or release unfinished work.
 
 ## Local setup and verification
 
+Use a fresh clone of the company repository:
+
+```sh
+git clone https://github.com/Evia-LLC/Evia.git
+cd Evia
+```
+
+The company repository has sanitized history. Do not push, merge, or mirror old
+clones or archive branches into it: those can reintroduce removed private runtime
+data. Keep the owner's historical archive separate from development work.
+
 Use Node.js 24 and the committed lockfile:
 
 ```sh
