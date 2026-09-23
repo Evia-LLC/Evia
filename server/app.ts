@@ -34,7 +34,8 @@ const IMAGE_ROUTES = ['/api/scans', '/api/products/read-label', '/api/admin/cata
 const largeBody = express.json({ limit: '12mb' });
 const smallBody = express.json({ limit: '64kb' });
 app.use((req, res, next) =>
-  (IMAGE_ROUTES.includes(req.path) ? largeBody : smallBody)(req, res, next),
+  (IMAGE_ROUTES.includes(req.path) || /^\/api\/scans\/[^/]+\/progress-photo$/.test(req.path)
+    ? largeBody : smallBody)(req, res, next),
 );
 
 app.get('/api/health', async (_req, res) => {

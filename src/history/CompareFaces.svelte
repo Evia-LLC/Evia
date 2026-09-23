@@ -17,20 +17,19 @@
   import { alignTo } from './align.ts';
   import { api } from '@/lib/api.ts';
   import { session } from '@/state/session.svelte.ts';
-  import type { SkinAnalysis } from '@shared/types.ts';
+  import type { ProgressPhoto, SkinAnalysis } from '@shared/types.ts';
 
   interface Props {
     scans: SkinAnalysis[];
+    photos: ProgressPhoto[];
   }
 
-  let { scans }: Props = $props();
+  let { scans, photos }: Props = $props();
 
   /** Scans that can take part: a mesh, and pixels we can reach. */
   const usable = $derived(
-    scans.filter(
-      (s) => Array.isArray(s.landmarks) && s.landmarks.length >= 2 * 100 &&
-        (session.localImages[s.capturedAt] !== undefined || (s.hasImage && !session.guest)),
-    ),
+    scans.filter((s) => Array.isArray(s.landmarks) && s.landmarks.length >= 2 * 100 &&
+      photos.some((p) => p.skinScanId === s.id)),
   );
 
   let afterIndex = $state(0);
@@ -46,10 +45,9 @@
   const dateFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' });
 
   async function imageFor(scan: SkinAnalysis): Promise<string | null> {
-    const local = session.localImages[scan.capturedAt];
-    if (local) return `data:image/jpeg;base64,${local}`;
-    if (scan.id && scan.hasImage && !session.guest) {
-      const url = await api.scanImage(scan.id);
+    const photo = photos.find((p) => p.skinScanId === scan.id);
+    if (photo && !session.guest) {
+      const url = await api.progressPhotoImage(photo.id);
       if (url) owned.push(url);
       return url;
     }

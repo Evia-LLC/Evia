@@ -17,6 +17,7 @@ import type {
   ProductAssessment,
   ProductPick,
   ProductUsage,
+  ProgressPhoto,
   CatalogueStatus,
   SkinAppearanceMetrics,
   SkinAnalysis,
@@ -100,7 +101,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  setConsent: (kind: 'image_storage' | 'cloud_reasoning', granted: boolean) =>
+  setConsent: (kind: 'progress_photos' | 'cloud_reasoning', granted: boolean) =>
     request<{ consents: Record<string, boolean> }>('/me/consent', {
       method: 'PUT',
       body: JSON.stringify({ kind, granted }),
@@ -130,10 +131,10 @@ export const api = {
   /** Whether each product in the routine achieved what it was suggested for. */
   routineOutcomes: () => request<{ outcomes: RoutineOutcome[] }>('/routine/outcomes'),
 
-  saveScan: (analysis: SkinAnalysis, imageBase64?: string) =>
+  saveScan: (analysis: SkinAnalysis, cloudImageBase64?: string) =>
     request<{ scan: SkinAnalysis; summary: LongitudinalSummary }>('/scans', {
       method: 'POST',
-      body: JSON.stringify({ analysis, imageBase64 }),
+      body: JSON.stringify({ analysis, imageBase64: cloudImageBase64 }),
     }),
 
   deleteScan: (id: string) => request<{ ok: true }>(`/scans/${id}`, { method: 'DELETE' }),
@@ -168,10 +169,21 @@ export const api = {
    * authenticated with a bearer token and an image element cannot send one.
    * Callers own the returned URL and must revoke it.
    */
-  async scanImage(id: string): Promise<string | null> {
+  progressPhotos: () => request<{ photos: ProgressPhoto[] }>('/progress-photos'),
+
+  saveProgressPhoto: (scanId: string, imageBase64: string) =>
+    request<{ photo: ProgressPhoto }>(`/scans/${scanId}/progress-photo`, {
+      method: 'POST',
+      body: JSON.stringify({ imageBase64 }),
+    }),
+
+  deleteProgressPhoto: (id: string) =>
+    request<{ ok: true }>(`/progress-photos/${id}`, { method: 'DELETE' }),
+
+  async progressPhotoImage(id: string): Promise<string | null> {
     const headers = new Headers();
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    const res = await fetch(`/api/scans/${id}/image`, { headers, credentials: 'same-origin' });
+    const res = await fetch(`/api/progress-photos/${id}/image`, { headers, credentials: 'same-origin' });
     if (!res.ok) return null;
     return URL.createObjectURL(await res.blob());
   },

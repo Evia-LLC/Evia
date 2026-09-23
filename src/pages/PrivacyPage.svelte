@@ -9,6 +9,7 @@
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { deleteEverything, setConsent } from '@/state/controller.ts';
+  import { LEGAL_CONTENT } from '@shared/legal-content.ts';
 
   let confirming = $state(false);
   let busy = $state(false);
@@ -16,7 +17,7 @@
 
   const consents = $derived(session.user?.consents);
 
-  async function toggle(kind: 'image_storage' | 'cloud_reasoning', event: Event) {
+  async function toggle(kind: 'progress_photos' | 'cloud_reasoning', event: Event) {
     const granted = (event.target as HTMLInputElement).checked;
     await setConsent(kind, granted);
   }
@@ -67,19 +68,20 @@
       <label class="toggle">
         <input
           type="checkbox"
-          checked={consents?.image_storage ?? false}
-          onchange={(e) => toggle('image_storage', e)}
+          checked={consents?.progress_photos ?? false}
+          onchange={(e) => toggle('progress_photos', e)}
           disabled={!session.imageStorage || session.guest}
         />
         <div>
-          <strong>Keep my scan photos</strong>
+          <strong>{LEGAL_CONTENT.progress_photos.title}</strong>
           <small>
-            Stores each capture, encrypted with AES-256-GCM, so you can look back at them and
-            see the measured zones drawn on your own face.
+            {LEGAL_CONTENT.progress_photos.wording}
             {#if !session.imageStorage}
               Unavailable: this server has no encryption key configured, so it refuses to
               store images at all rather than store them in the clear.
             {/if}
+            <br /><br />This consent never saves a capture by itself. You must affirmatively
+            save each photo from its result screen.
           </small>
         </div>
       </label>

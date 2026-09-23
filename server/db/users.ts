@@ -10,6 +10,7 @@ import {
   type SkinType,
   type UserSummary,
 } from '../../shared/types.ts';
+import { LEGAL_CONTENT } from '../../shared/legal-content.ts';
 
 const SESSION_DAYS = 30;
 
@@ -69,7 +70,7 @@ export async function createUser(
     );
 
     // Consent defaults to withheld and must be granted explicitly.
-    for (const kind of ['image_storage', 'cloud_reasoning'] as ConsentKind[]) {
+    for (const kind of ['progress_photos', 'cloud_reasoning'] as ConsentKind[]) {
       await tx.run('INSERT INTO consents (user_id, kind, granted) VALUES (?, ?, 0)', id, kind);
     }
   });
@@ -225,7 +226,7 @@ export async function getConsents(userId: string): Promise<Record<ConsentKind, b
     'SELECT kind, granted FROM consents WHERE user_id = ?',
     userId,
   );
-  const out: Record<ConsentKind, boolean> = { image_storage: false, cloud_reasoning: false };
+  const out: Record<ConsentKind, boolean> = { progress_photos: false, cloud_reasoning: false };
   for (const r of found) out[r.kind as ConsentKind] = Number(r.granted) === 1;
   return out;
 }
@@ -234,16 +235,42 @@ export async function setConsent(
   userId: string,
   kind: ConsentKind,
   granted: boolean,
-): Promise<void> {
-  await run(
-    `INSERT INTO consents (user_id, kind, granted, granted_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT (user_id, kind) DO UPDATE SET granted = excluded.granted,
-                                               granted_at = excluded.granted_at`,
-    userId,
-    kind,
-    granted ? 1 : 0,
-    granted ? nowIso() : null,
+): Promise<string> {
+  const eventId = newId();
+  const at = nowIso();
+  const wordingVersion = kind === 'progress_photos'
+    ? LEGAL_CONTENT.progress_photos.version
+    : 'cloud-reasoning-legacy-v1';
+  await transaction(async (tx) => {
+    await tx.run(
+      `INSERT INTO consent_events (id, user_id, kind, wording_version, granted, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      eventId, userId, kind, wordingVersion, granted ? 1 : 0, at,
+    );
+    await tx.run(
+      `INSERT INTO consents (user_id, kind, granted, granted_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, kind) DO UPDATE SET granted = excluded.granted,
+                                                 granted_at = excluded.granted_at`,
+      userId, kind, granted ? 1 : 0, granted ? at : null,
+    );
+  });
+  return eventId;
+}
+
+/** Latest event is authoritative; a withdrawal immediately invalidates saves. */
+export async function activeConsentEvent(
+  userId: string,
+  kind: ConsentKind,
+): Promise<{ id: string; wordingVersion: string } | null> {
+  if (!(await getConsents(userId))[kind]) return null;
+  const found = await row<{ id: string; wording_version: string; granted: number }>(
+    `SELECT id, wording_version, granted FROM consent_events
+      WHERE user_id = ? AND kind = ? AND granted = 1 ORDER BY created_at DESC LIMIT 1`,
+    userId, kind,
   );
+  return found && Number(found.granted) === 1
+    ? { id: found.id, wordingVersion: found.wording_version }
+    : null;
 }
 
 export async function getUserSummary(userId: string): Promise<UserSummary | null> {

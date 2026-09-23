@@ -28,7 +28,6 @@ function hydrate(row: ScanRow): SkinAnalysis {
     observations: JSON.parse(row.observations_json),
     confidence: row.confidence,
     modelVersion: row.model_version,
-    hasImage: row.image_ref !== null,
     notes: row.notes ?? undefined,
     ...(row.landmarks_json ? { landmarks: JSON.parse(row.landmarks_json) as number[] } : {}),
   };
@@ -37,7 +36,7 @@ function hydrate(row: ScanRow): SkinAnalysis {
 export async function insertScan(
   userId: string,
   analysis: SkinAnalysis,
-  refs: { imageRef?: string; thumbRef?: string } = {},
+  _refs: { imageRef?: string; thumbRef?: string } = {},
 ): Promise<SkinAnalysis> {
   const id = newId();
   await run(
@@ -48,8 +47,8 @@ export async function insertScan(
     id,
     userId,
     analysis.capturedAt || nowIso(),
-    refs.imageRef ?? null,
-    refs.thumbRef ?? null,
+    null,
+    null,
     JSON.stringify(analysis.metrics),
     JSON.stringify(analysis.regions ?? {}),
     JSON.stringify(analysis.quality ?? {}),

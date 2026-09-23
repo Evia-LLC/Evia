@@ -46,6 +46,11 @@
     await api.deleteScan(id);
     await refreshScans();
   }
+
+  async function removePhoto(id: string) {
+    await api.deleteProgressPhoto(id);
+    session.progressPhotos = session.progressPhotos.filter((photo) => photo.id !== id);
+  }
 </script>
 
 <Page eyebrow="Progress" {title} {lede} wide>
@@ -107,13 +112,13 @@
     {#if session.scans.length >= 2}
       <section class="sec" aria-label="Before and after">
         <div class="card card--plane">
-          <CompareFaces scans={session.scans} />
+          <CompareFaces scans={session.scans} photos={session.progressPhotos} />
         </div>
       </section>
     {/if}
 
     <section class="sec" aria-label="Scan images">
-      <ScanAtlas scans={session.scans} />
+      <ScanAtlas scans={session.scans} photos={session.progressPhotos} />
     </section>
   {/if}
 
@@ -163,7 +168,7 @@
             <div class="line__main">
               <span class="line__title">{dateFormat.format(new Date(scan.capturedAt))}</span>
               <span class="line__sub">
-                confidence {Math.round(scan.confidence * 100)}%{#if scan.hasImage} · photo kept{/if}{#if scan.notes} · {scan.notes}{/if}
+                confidence {Math.round(scan.confidence * 100)}%{#if session.progressPhotos.some((p) => p.skinScanId === scan.id)} · progress photo saved{/if}{#if scan.notes} · {scan.notes}{/if}
               </span>
             </div>
             <div class="line__end">
@@ -173,6 +178,19 @@
         {/each}
       </div>
     </section>
+    {#if session.progressPhotos.length}
+      <section class="sec" aria-labelledby="photos">
+        <div class="sec__head"><h2 class="sec__title" id="photos">Progress photos</h2></div>
+        <div class="card">
+          {#each session.progressPhotos as photo (photo.id)}
+            <div class="line">
+              <span class="line__title">{dateFormat.format(new Date(photo.capturedAt))}</span>
+              <button class="btn btn--danger btn--mini" onclick={() => removePhoto(photo.id)}>Delete photo</button>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
   {:else}
     <div class="empty sec">
       <p class="empty__title">I have nothing of yours yet.</p>

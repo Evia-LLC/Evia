@@ -445,7 +445,18 @@ export const DEFAULT_PREFERENCES: Preferences = {
   locale: 'en',
 };
 
-export type ConsentKind = 'image_storage' | 'cloud_reasoning';
+export type ConsentKind = 'progress_photos' | 'cloud_reasoning';
+
+/** Metadata only. Image bytes are fetched through the authenticated image route. */
+export interface ProgressPhoto {
+  id: string;
+  skinScanId: string | null;
+  createdAt: string;
+  capturedAt: string;
+  consentEventId: string;
+  /** Non-biometric display hints only; never landmarks or face geometry. */
+  presentation?: Record<string, string>;
+}
 
 export interface UserSummary {
   id: string;

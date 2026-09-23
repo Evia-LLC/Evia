@@ -9,6 +9,7 @@ import { handleTurn, handleEvent, type ConversationEvent } from '../ai/orchestra
 import * as users from '../db/users.ts';
 import * as scansRepo from '../db/scans.ts';
 import * as bodyRepo from '../db/body-scans.ts';
+import * as progressPhotos from '../db/progress-photos.ts';
 import * as chat from '../db/chat.ts';
 import * as productsRepo from '../db/products.ts';
 import { summarise } from '../skin/longitudinal.ts';
@@ -29,7 +30,6 @@ import {
   putBlob,
   getBlob,
   shredBlob,
-  BlobStorageUnavailable,
 } from '../lib/crypto.ts';
 import { newId } from '../lib/ids.ts';
 import { chatLimiter, scanLimiter, visionLimiter, voiceLimiter } from '../lib/rate-limit.ts';
@@ -84,7 +84,7 @@ apiRouter.patch('/me/preferences', async (req, res) => {
 
 apiRouter.put('/me/consent', async (req, res) => {
   const { kind, granted } = req.body ?? {};
-  if (kind !== 'image_storage' && kind !== 'cloud_reasoning') {
+  if (kind !== 'progress_photos' && kind !== 'cloud_reasoning') {
     res.status(400).json({ error: 'Unknown consent kind.' });
     return;
   }
@@ -102,6 +102,7 @@ apiRouter.put('/me/consent', async (req, res) => {
  */
 apiRouter.delete('/me/data', async (req, res) => {
   const refs = [
+    ...(await progressPhotos.allProgressPhotoRefs(req.userId!)),
     ...(await scansRepo.allBlobRefs(req.userId!)),
     ...(await bodyRepo.allBodyBlobRefs(req.userId!)),
   ];
@@ -205,6 +206,91 @@ apiRouter.get('/scans', async (req, res) => {
   res.json({ scans: await scansRepo.listScans(req.userId!, 50) });
 });
 
+apiRouter.get('/progress-photos', async (req, res) => {
+  res.json({ photos: await progressPhotos.listProgressPhotos(req.userId!) });
+});
+
+apiRouter.get('/progress-photos/:id/image', async (req, res) => {
+  const ref = await progressPhotos.getProgressPhotoRef(req.userId!, req.params.id);
+  if (!ref) {
+    res.status(404).json({ error: 'No such progress photo.' });
+    return;
+  }
+  const data = await getBlob(ref);
+  if (!data) {
+    res.status(410).json({ error: 'The stored image could not be read.' });
+    return;
+  }
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(data);
+});
+
+apiRouter.delete('/progress-photos/:id', async (req, res) => {
+  const ref = await progressPhotos.deleteProgressPhoto(req.userId!, req.params.id);
+  if (!ref) {
+    res.status(404).json({ error: 'No such progress photo.' });
+    return;
+  }
+  await shredBlob(ref);
+  res.json({ ok: true });
+});
+
+/** An explicit per-capture action. Consent merely makes this route available. */
+apiRouter.post('/scans/:id/progress-photo', scanLimiter, async (req, res) => {
+  const scanId = String(req.params.id);
+  const scan = await scansRepo.getScan(req.userId!, scanId);
+  if (!scan) {
+    res.status(404).json({ error: 'No such scan.' });
+    return;
+  }
+  const existing = await progressPhotos.getProgressPhotoForScan(req.userId!, scanId);
+  if (existing) {
+    res.json({ photo: existing });
+    return;
+  }
+  const consent = await users.activeConsentEvent(req.userId!, 'progress_photos');
+  if (!consent) {
+    res.status(403).json({ error: 'Progress-photo consent is required before saving.' });
+    return;
+  }
+  const imageBase64 = req.body?.imageBase64;
+  if (typeof imageBase64 !== 'string' || imageBase64.length < 100) {
+    res.status(400).json({ error: 'The pending capture is required.' });
+    return;
+  }
+  if (!blobStorageAvailable()) {
+    res.status(503).json({ error: 'Encrypted photo storage is unavailable.' });
+    return;
+  }
+  const blobRef = await putBlob(Buffer.from(imageBase64, 'base64'), `${newId()}.bin`);
+  try {
+    const { photo, created } = await progressPhotos.createProgressPhoto(req.userId!, {
+      skinScanId: scanId,
+      blobRef,
+      capturedAt: scan.capturedAt,
+      consentEventId: consent.id,
+      presentation: sanitisePresentation(req.body?.presentation),
+    });
+    if (!created) await shredBlob(blobRef);
+    res.json({ photo });
+  } catch (err) {
+    await shredBlob(blobRef).catch(() => {});
+    throw err;
+  }
+});
+
+function sanitisePresentation(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const allowed = ['orientation', 'crop'];
+  const out: Record<string, string> = {};
+  for (const key of allowed) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (typeof value === 'string') out[key] = value.slice(0, 40);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 // --- body scans -------------------------------------------------------------
 //
 // A separate endpoint against a separate table, for the same reason they are
@@ -254,27 +340,7 @@ apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
     return;
   }
 
-  const consents = await users.getConsents(req.userId!);
   const refs: { imageRef?: string; profileImageRef?: string } = {};
-
-  // Both frames are gated behind the same consent as a face capture. No vision
-  // pass: there is no second opinion to ask for on a set of joint ratios.
-  if (consents.image_storage && blobStorageAvailable()) {
-    for (const [field, ref] of [
-      ['imageBase64', 'imageRef'],
-      ['profileImageBase64', 'profileImageRef'],
-    ] as const) {
-      const base64: string | undefined = req.body?.[field];
-      if (!base64) continue;
-      try {
-        refs[ref] = await putBlob(Buffer.from(base64, 'base64'), `${newId()}.bin`);
-      } catch (err) {
-        if (!(err instanceof BlobStorageUnavailable)) throw err;
-      }
-    }
-  } else if (req.body?.imageBase64 && consents.image_storage) {
-    log.warn('body-scans', 'image supplied but ELOHIM_BLOB_KEY is unset; not storing it');
-  }
 
   const stored = await bodyRepo.insertBodyScan(
     req.userId!,
@@ -431,26 +497,6 @@ apiRouter.get('/scans/:id', async (req, res) => {
   res.json({ scan });
 });
 
-/**
- * The image is only ever readable through here: authenticated, ownership
- * checked, decrypted on the way out. It is never a static file.
- */
-apiRouter.get('/scans/:id/image', async (req, res) => {
-  const ref = await scansRepo.getScanImageRef(req.userId!, req.params.id);
-  if (!ref) {
-    res.status(404).json({ error: 'No stored image for that scan.' });
-    return;
-  }
-  const data = await getBlob(ref);
-  if (!data) {
-    res.status(410).json({ error: 'The stored image could not be read.' });
-    return;
-  }
-  res.setHeader('Content-Type', 'image/jpeg');
-  res.setHeader('Cache-Control', 'private, no-store');
-  res.send(data);
-});
-
 apiRouter.delete('/scans/:id', async (req, res) => {
   const refs = await scansRepo.deleteScan(req.userId!, req.params.id);
   for (const ref of refs) await shredBlob(ref);
@@ -458,8 +504,8 @@ apiRouter.delete('/scans/:id', async (req, res) => {
 });
 
 /**
- * Accepts an analysis computed on the device. The image is optional and is only
- * stored when the user has separately consented — ARCHITECTURE §10.
+ * Accepts structured analysis computed on the device. Raw capture bytes are
+ * never accepted or persisted by this endpoint.
  */
 apiRouter.post('/scans', scanLimiter, async (req, res) => {
   const analysis = req.body?.analysis as SkinAnalysis | undefined;
@@ -476,20 +522,7 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
   }
 
   const consents = await users.getConsents(req.userId!);
-  const imageBase64: string | undefined = req.body?.imageBase64;
-  let imageRef: string | undefined;
-
-  if (imageBase64 && consents.image_storage) {
-    if (!blobStorageAvailable()) {
-      log.warn('scans', 'image supplied but ELOHIM_BLOB_KEY is unset; not storing it');
-    } else {
-      try {
-        imageRef = await putBlob(Buffer.from(imageBase64, 'base64'), `${newId()}.bin`);
-      } catch (err) {
-        if (!(err instanceof BlobStorageUnavailable)) throw err;
-      }
-    }
-  }
+  let imageBase64: string | undefined = req.body?.imageBase64;
 
   let observations = analysis.observations ?? [];
   if (imageBase64 && consents.cloud_reasoning && modelAvailable()) {
@@ -501,6 +534,11 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
       });
     }
   }
+  // Do not keep a second route-local reference alive through persistence and
+  // summary work. Express owns the request body only for this request; nothing
+  // here writes it to a file, row, log, or queue.
+  imageBase64 = undefined;
+  if (req.body && typeof req.body === 'object') delete req.body.imageBase64;
 
   const stored = await scansRepo.insertScan(
     req.userId!,
@@ -511,7 +549,7 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
       capturedAt: analysis.capturedAt || new Date().toISOString(),
       modelVersion: analysis.modelVersion || SKIN_MODEL_VERSION,
     },
-    { imageRef },
+    {},
   );
 
   const history = await scansRepo.scanHistory(req.userId!, 60);
@@ -520,7 +558,7 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
   log.info('scans', 'scan stored', {
     confidence: stored.confidence,
     quality: stored.quality?.verdict,
-    imageStored: Boolean(imageRef),
+    imageStored: false,
   });
 
   res.json({ scan: stored, summary });

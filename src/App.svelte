@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
-  import { bootstrap, enterScanPage, initVoice, leaveScanPage, refreshVoice } from '@/state/controller.ts';
+  import { bootstrap, discardPendingCapture, enterScanPage, initVoice, leaveScanPage, refreshVoice } from '@/state/controller.ts';
   import { router } from '@/router/router.svelte.ts';
   import ElohimStage from '@/components/ElohimStage.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
@@ -90,6 +90,12 @@
     if (booting || !session.signedIn) return;
     if (router.is('scan')) enterScanPage();
     else leaveScanPage();
+  });
+
+  onMount(() => {
+    const clearCapture = () => discardPendingCapture();
+    window.addEventListener('pagehide', clearCapture);
+    return () => window.removeEventListener('pagehide', clearCapture);
   });
 
   /**

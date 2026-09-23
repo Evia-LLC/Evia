@@ -29,16 +29,21 @@
     SKIN_METRIC_KEYS,
     type FaceRegionKey,
     type SkinAnalysis,
+    type ProgressPhoto,
     type SkinMetricKey,
   } from '@shared/types.ts';
 
   interface Props {
     scans: SkinAnalysis[];
+    photos: ProgressPhoto[];
   }
-  const { scans }: Props = $props();
+  const { scans, photos }: Props = $props();
 
   /** Only scans that actually kept a photo can appear here. */
-  const withImages = $derived(scans.filter((s) => s.hasImage && s.id));
+  const withImages = $derived(
+    photos.map((photo) => ({ photo, scan: scans.find((s) => s.id === photo.skinScanId) }))
+      .filter((v): v is { photo: ProgressPhoto; scan: SkinAnalysis } => Boolean(v.scan)),
+  );
 
   let metric = $state<SkinMetricKey>('hydration');
   /** 0 = fully the earlier capture, 1 = fully the later one. */
@@ -75,16 +80,16 @@
   }
 
   $effect(() => {
-    const key = `${after?.id ?? ''}|${before?.id ?? ''}`;
-    if (!after?.id || key === loadedFor) return;
+    const key = `${after?.photo.id ?? ''}|${before?.photo.id ?? ''}`;
+    if (!after?.photo.id || key === loadedFor) return;
     loadedFor = key;
     loading = true;
     failed = false;
     void (async () => {
       release();
       const [a, b] = await Promise.all([
-        api.scanImage(after.id!),
-        before?.id ? api.scanImage(before.id) : Promise.resolve(null),
+        api.progressPhotoImage(after.photo.id),
+        before?.photo.id ? api.progressPhotoImage(before.photo.id) : Promise.resolve(null),
       ]);
       afterUrl = a;
       beforeUrl = b;
@@ -102,12 +107,11 @@
   <div class="empty">
     <p class="empty__title">No photos kept</p>
     <p class="empty__text">
-      {#if session.user?.consents.image_storage}
-        Image storage is on, but no scan since you turned it on has kept a photo yet. The next
-        one will.
+      {#if session.user?.consents.progress_photos}
+        Progress photos are enabled, but none has been affirmatively saved yet.
       {:else}
         Your scans are analysed on this device and only the numbers are saved. Turn on image
-        storage in Privacy and future scans will keep the photo too — then this becomes a
+        progress photos in Privacy, then choose save on an individual result — this becomes a
         before-and-after of your own face, with the measured zones drawn on it.
       {/if}
     </p>
@@ -162,8 +166,8 @@
       <label class="atlas__wipe">
         <input type="range" min="0" max="1" step="0.001" bind:value={wipe} />
         <span class="atlas__dates">
-          <span>{dateFormat.format(new Date(before.capturedAt))}</span>
-          <span>{dateFormat.format(new Date(after.capturedAt))}</span>
+          <span>{dateFormat.format(new Date(before.photo.capturedAt))}</span>
+          <span>{dateFormat.format(new Date(after.photo.capturedAt))}</span>
         </span>
       </label>
     {/if}

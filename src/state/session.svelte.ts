@@ -12,6 +12,7 @@ import type {
   RoutinePlan,
   ElohimAction,
   LongitudinalSummary,
+  ProgressPhoto,
   SkinAnalysis,
   UserSummary,
 } from '@shared/types.ts';
@@ -36,6 +37,13 @@ export type ScanKind = 'face' | 'body';
  * is the only frame it is actually in.
  */
 export type BodyScanStep = 'front' | 'side';
+export type PendingCaptureState = 'analysing' | 'presenting' | 'save-available' | 'saved' | 'discarded';
+export interface PendingCapture {
+  imageBase64: string;
+  capturedAt: string;
+  scanId?: string;
+  state: PendingCaptureState;
+}
 
 class SessionState {
   user = $state<UserSummary | null>(null);
@@ -83,6 +91,7 @@ class SessionState {
   sceneMode = $state<SceneMode>('lounge');
 
   scans = $state<SkinAnalysis[]>([]);
+  progressPhotos = $state<ProgressPhoto[]>([]);
   /**
    * Body readings, newest first.
    *
@@ -122,7 +131,8 @@ class SessionState {
    * right here. They live as long as the tab and are never sent anywhere from
    * this map.
    */
-  localImages = $state<Record<string, string>>({});
+  /** The sole owner of a raw face JPEG. It is never durable client state. */
+  pendingCapture = $state<PendingCapture | null>(null);
 
   /** Progress of an in-flight analysis, 0..1, driven by the real pipeline. */
   scanProgress = $state(0);
@@ -187,6 +197,8 @@ class SessionState {
     this.user = null;
     this.messages = [];
     this.scans = [];
+    this.progressPhotos = [];
+    this.pendingCapture = null;
     this.bodyScans = [];
     this.latestBody = null;
     this.summary = null;
