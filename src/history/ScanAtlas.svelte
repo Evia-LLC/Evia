@@ -21,6 +21,8 @@
   import { onDestroy } from 'svelte';
   import { api } from '@/lib/api.ts';
   import { session } from '@/state/session.svelte.ts';
+  import { hasConsent } from '@shared/types.ts';
+  import { CONSENT_KEYS } from '@shared/consent-keys.ts';
   import { subdivide } from '@/skin-analysis/roi.ts';
   import { METRIC_REGIONS } from '@/skin-analysis/metrics.ts';
   import {
@@ -102,7 +104,7 @@
   <div class="empty">
     <p class="empty__title">No photos kept</p>
     <p class="empty__text">
-      {#if session.user?.consents.image_storage}
+      {#if hasConsent(session.user?.consents, CONSENT_KEYS.IMAGE_STORAGE)}
         Image storage is on, but no scan since you turned it on has kept a photo yet. The next
         one will.
       {:else}

@@ -9,6 +9,8 @@
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { deleteEverything, setConsent } from '@/state/controller.ts';
+  import { hasConsent } from '@shared/types.ts';
+  import { CONSENT_KEYS } from '@shared/consent-keys.ts';
 
   let confirming = $state(false);
   let busy = $state(false);
@@ -67,7 +69,7 @@
       <label class="toggle">
         <input
           type="checkbox"
-          checked={consents?.image_storage ?? false}
+          checked={hasConsent(consents, CONSENT_KEYS.IMAGE_STORAGE)}
           onchange={(e) => toggle('image_storage', e)}
           disabled={!session.imageStorage || session.guest}
         />
@@ -87,7 +89,7 @@
       <label class="toggle">
         <input
           type="checkbox"
-          checked={consents?.cloud_reasoning ?? false}
+          checked={hasConsent(consents, CONSENT_KEYS.CLOUD_REASONING)}
           onchange={(e) => toggle('cloud_reasoning', e)}
           disabled={!session.modelAvailable || session.guest}
         />

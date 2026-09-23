@@ -10,6 +10,8 @@
   import { session } from '@/state/session.svelte.ts';
   import { pickLabelReader, type LabelRead, type LabelReader } from './label-reader.ts';
   import { api } from '@/lib/api.ts';
+  import { hasConsent } from '@shared/types.ts';
+  import { CONSENT_KEYS } from '@shared/consent-keys.ts';
 
   const { onSaved }: { onSaved: () => void } = $props();
 
@@ -31,7 +33,7 @@
   let editable = $state('');
 
   const usingCloud = $derived(
-    (session.user?.consents.cloud_reasoning ?? false) && session.modelAvailable,
+    hasConsent(session.user?.consents, CONSENT_KEYS.CLOUD_REASONING) && session.modelAvailable,
   );
 
   async function startCamera() {
@@ -81,7 +83,7 @@
     progress = 0;
     try {
       reader ??= pickLabelReader({
-        cloudConsent: session.user?.consents.cloud_reasoning ?? false,
+        cloudConsent: hasConsent(session.user?.consents, CONSENT_KEYS.CLOUD_REASONING),
         modelAvailable: session.modelAvailable,
       });
       const read = await reader.read(canvas, (p) => (progress = p));

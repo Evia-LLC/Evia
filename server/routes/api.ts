@@ -7,6 +7,7 @@ import { asyncRouter } from '../lib/async-router.ts';
 import { requireAuth } from './auth.ts';
 import { handleTurn, handleEvent, type ConversationEvent } from '../ai/orchestrator.ts';
 import * as users from '../db/users.ts';
+import * as consentsRepo from '../db/consents.ts';
 import * as scansRepo from '../db/scans.ts';
 import * as bodyRepo from '../db/body-scans.ts';
 import * as chat from '../db/chat.ts';
@@ -39,12 +40,15 @@ import {
   PROFILE_METRIC_KEYS,
   SKIN_METRIC_KEYS,
   SKIN_MODEL_VERSION,
+  hasConsent,
   type BodyAnalysisRecord,
-  type ConsentKind,
   PREGNANCY_STATUSES,
   type PregnancyStatus,
   type SkinAnalysis,
 } from '../../shared/types.ts';
+import type { ConsentState } from '../../shared/types.ts';
+import { CONSENT_KEYS } from '../../shared/consent-keys.ts';
+import { consentWordingVersion } from '../../shared/legal-content.ts';
 
 export const apiRouter = asyncRouter();
 apiRouter.use(requireAuth);
@@ -82,14 +86,36 @@ apiRouter.patch('/me/preferences', async (req, res) => {
   res.json({ preferences: await users.updatePreferences(req.userId!, req.body ?? {}) });
 });
 
-apiRouter.put('/me/consent', async (req, res) => {
-  const { kind, granted } = req.body ?? {};
-  if (kind !== 'image_storage' && kind !== 'cloud_reasoning') {
-    res.status(400).json({ error: 'Unknown consent kind.' });
+apiRouter.get('/me/consents', async (req, res) => {
+  res.json({ consents: await consentsRepo.currentConsents(req.userId!) });
+});
+
+apiRouter.get('/me/consents/history', async (req, res) => {
+  const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+  res.json({ decisions: await consentsRepo.consentHistory(req.userId!, type) });
+});
+
+apiRouter.post('/me/consents/:type/decisions', async (req, res) => {
+  const consentType = req.params.type;
+  const { wordingVersionId, state, metadata, idempotencyKey } = req.body ?? {};
+  const wording = typeof wordingVersionId === 'string' ? consentWordingVersion(wordingVersionId) : undefined;
+  if (!wording || wording.consentType !== consentType) {
+    res.status(400).json({ error: 'Unknown wording version for this consent type.' });
     return;
   }
-  await users.setConsent(req.userId!, kind as ConsentKind, Boolean(granted));
-  res.json({ consents: await users.getConsents(req.userId!) });
+  if (state !== 'granted' && state !== 'withdrawn') {
+    res.status(400).json({ error: 'State must be granted or withdrawn.' });
+    return;
+  }
+  if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
+    res.status(400).json({ error: 'idempotencyKey is required.' });
+    return;
+  }
+  const decision = await consentsRepo.recordConsentDecision(
+    req.userId!, consentType, wordingVersionId, state as ConsentState,
+    { ...(metadata && typeof metadata === 'object' ? metadata : {}), idempotencyKey },
+  );
+  res.status(201).json({ decision, current: await consentsRepo.currentConsent(req.userId!, consentType) });
 });
 
 /**
@@ -254,12 +280,12 @@ apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
     return;
   }
 
-  const consents = await users.getConsents(req.userId!);
+  const consents = await consentsRepo.currentConsents(req.userId!);
   const refs: { imageRef?: string; profileImageRef?: string } = {};
 
   // Both frames are gated behind the same consent as a face capture. No vision
   // pass: there is no second opinion to ask for on a set of joint ratios.
-  if (consents.image_storage && blobStorageAvailable()) {
+  if (hasConsent(consents, CONSENT_KEYS.IMAGE_STORAGE) && blobStorageAvailable()) {
     for (const [field, ref] of [
       ['imageBase64', 'imageRef'],
       ['profileImageBase64', 'profileImageRef'],
@@ -272,7 +298,7 @@ apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
         if (!(err instanceof BlobStorageUnavailable)) throw err;
       }
     }
-  } else if (req.body?.imageBase64 && consents.image_storage) {
+  } else if (req.body?.imageBase64 && hasConsent(consents, CONSENT_KEYS.IMAGE_STORAGE)) {
     log.warn('body-scans', 'image supplied but ELOHIM_BLOB_KEY is unset; not storing it');
   }
 
@@ -357,8 +383,8 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
    * a signal to use the browser's own speech synthesis, and says which voice it
    * is using. She still talks; she talks locally.
    */
-  const consents = await users.getConsents(req.userId!);
-  if (!consents.cloud_reasoning) {
+  const consents = await consentsRepo.currentConsents(req.userId!);
+  if (!hasConsent(consents, CONSENT_KEYS.CLOUD_REASONING)) {
     res.status(403).json({ error: 'Cloud reasoning is off, so the cloned voice is unavailable.' });
     return;
   }
@@ -475,11 +501,11 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
     }
   }
 
-  const consents = await users.getConsents(req.userId!);
+  const consents = await consentsRepo.currentConsents(req.userId!);
   const imageBase64: string | undefined = req.body?.imageBase64;
   let imageRef: string | undefined;
 
-  if (imageBase64 && consents.image_storage) {
+  if (imageBase64 && hasConsent(consents, CONSENT_KEYS.IMAGE_STORAGE)) {
     if (!blobStorageAvailable()) {
       log.warn('scans', 'image supplied but ELOHIM_BLOB_KEY is unset; not storing it');
     } else {
@@ -492,7 +518,7 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
   }
 
   let observations = analysis.observations ?? [];
-  if (imageBase64 && consents.cloud_reasoning && modelAvailable()) {
+  if (imageBase64 && hasConsent(consents, CONSENT_KEYS.CLOUD_REASONING) && modelAvailable()) {
     try {
       observations = await describeSkinImage(imageBase64, 'image/jpeg', renderMetrics(analysis));
     } catch (err) {
@@ -594,7 +620,7 @@ apiRouter.post('/products/read-label', visionLimiter, async (req, res) => {
     res.status(503).json({ error: 'No model is configured; use the on-device reader.' });
     return;
   }
-  if (!(await users.getConsents(req.userId!)).cloud_reasoning) {
+  if (!hasConsent(await consentsRepo.currentConsents(req.userId!), CONSENT_KEYS.CLOUD_REASONING)) {
     res.status(403).json({ error: 'Cloud reading is off. Turn it on in Privacy, or use on-device OCR.' });
     return;
   }
