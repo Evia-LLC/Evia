@@ -15,6 +15,8 @@ import * as budget from './budget.ts';
 import * as fallback from './fallback.ts';
 import * as chat from '../db/chat.ts';
 import * as users from '../db/users.ts';
+import { currentConsent } from '../db/consents.ts';
+import { CONSENT_KEYS } from '../../shared/consent-keys.ts';
 import { sanitiseDirective } from '../../shared/character-fsm.ts';
 import { log } from '../lib/log.ts';
 import {
@@ -50,13 +52,13 @@ class CloudReasoningDenied extends Error {
  *
  * Enforced here, on the server, from the stored consent row — never from a
  * flag the client sends, because a privacy control the client can assert is
- * not a control. `getConsents` returns false for a kind with no row, so a user
- * who has never touched the toggle is off.
+ * not a control. A missing current decision resolves to false, so a user who has
+ * never touched the toggle is off without inventing a withdrawal event.
  */
 async function cloudReasoningAllowed(userId: string): Promise<boolean> {
   if (!modelAvailable()) return false;
-  const consents = await users.getConsents(userId);
-  return consents.cloud_reasoning === true;
+  const consent = await currentConsent(userId, CONSENT_KEYS.CLOUD_REASONING);
+  return consent?.state === 'granted';
 }
 
 /**

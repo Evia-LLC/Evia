@@ -1,9 +1,9 @@
-import { row, rows, run, transaction } from './index.ts';
+import { row, run, transaction } from './index.ts';
+import { currentConsents } from './consents.ts';
 import { newId, newToken, nowIso } from '../lib/ids.ts';
 import { hashPassword, verifyPassword } from '../lib/crypto.ts';
 import {
   DEFAULT_PREFERENCES,
-  type ConsentKind,
   type PregnancyStatus,
   type Preferences,
   type SkinProfile,
@@ -36,7 +36,7 @@ export async function createUser(
   const now = nowIso();
 
   // Every statement goes through `tx`, not the pool. An account is a user plus
-  // a profile plus preferences plus two withheld consents, and a half-made one
+  // a profile plus preferences, and a half-made one
   // is worse than none — it would sign in and then behave as though the user
   // had agreed to nothing and preferred nothing.
   await transaction(async (tx) => {
@@ -67,11 +67,6 @@ export async function createUser(
       DEFAULT_PREFERENCES.locale,
       now,
     );
-
-    // Consent defaults to withheld and must be granted explicitly.
-    for (const kind of ['image_storage', 'cloud_reasoning'] as ConsentKind[]) {
-      await tx.run('INSERT INTO consents (user_id, kind, granted) VALUES (?, ?, 0)', id, kind);
-    }
   });
 
   return id;
@@ -220,32 +215,6 @@ export async function updatePreferences(
   return next;
 }
 
-export async function getConsents(userId: string): Promise<Record<ConsentKind, boolean>> {
-  const found = await rows<{ kind: string; granted: number }>(
-    'SELECT kind, granted FROM consents WHERE user_id = ?',
-    userId,
-  );
-  const out: Record<ConsentKind, boolean> = { image_storage: false, cloud_reasoning: false };
-  for (const r of found) out[r.kind as ConsentKind] = Number(r.granted) === 1;
-  return out;
-}
-
-export async function setConsent(
-  userId: string,
-  kind: ConsentKind,
-  granted: boolean,
-): Promise<void> {
-  await run(
-    `INSERT INTO consents (user_id, kind, granted, granted_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT (user_id, kind) DO UPDATE SET granted = excluded.granted,
-                                               granted_at = excluded.granted_at`,
-    userId,
-    kind,
-    granted ? 1 : 0,
-    granted ? nowIso() : null,
-  );
-}
-
 export async function getUserSummary(userId: string): Promise<UserSummary | null> {
   const found = await row<UserRow>('SELECT * FROM users WHERE id = ?', userId);
   if (!found) return null;
@@ -264,7 +233,7 @@ export async function getUserSummary(userId: string): Promise<UserSummary | null
   const [profile, preferences, consents] = await Promise.all([
     getProfile(userId),
     getPreferences(userId),
-    getConsents(userId),
+    currentConsents(userId),
   ]);
   return {
     id: found.id,

@@ -445,7 +445,38 @@ export const DEFAULT_PREFERENCES: Preferences = {
   locale: 'en',
 };
 
-export type ConsentKind = 'image_storage' | 'cloud_reasoning';
+export type ConsentType = string;
+export type ConsentState = 'granted' | 'withdrawn';
+
+export interface ConsentDecision {
+  id: string;
+  userId: string;
+  consentType: ConsentType;
+  wordingVersionId: string;
+  state: ConsentState;
+  recordedAt: string;
+  actorType?: string;
+  actorId?: string;
+  metadata?: Record<string, unknown>;
+  idempotencyKey: string;
+}
+
+export interface ConsentSummary {
+  consentType: ConsentType;
+  state: ConsentState;
+  wordingVersionId: string;
+  recordedAt: string;
+  decisionId: string;
+}
+
+export type ConsentSummaries = Record<ConsentType, ConsentSummary | undefined>;
+
+export function hasConsent(
+  consents: ConsentSummaries | undefined,
+  consentType: ConsentType,
+): boolean {
+  return consents?.[consentType]?.state === 'granted';
+}
 
 export interface UserSummary {
   id: string;
@@ -454,7 +485,8 @@ export interface UserSummary {
   createdAt: string;
   profile: SkinProfile;
   preferences: Preferences;
-  consents: Record<ConsentKind, boolean>;
+  /** Missing key means no decision has ever been recorded. */
+  consents: ConsentSummaries;
   scanCount: number;
 }
 

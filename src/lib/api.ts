@@ -25,6 +25,10 @@ import type {
   RoutineReview,
   SkinProfile,
   UserSummary,
+  ConsentDecision,
+  ConsentState,
+  ConsentSummaries,
+  ConsentSummary,
 } from '@shared/types.ts';
 
 let token: string | null = null;
@@ -100,10 +104,16 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  setConsent: (kind: 'image_storage' | 'cloud_reasoning', granted: boolean) =>
-    request<{ consents: Record<string, boolean> }>('/me/consent', {
-      method: 'PUT',
-      body: JSON.stringify({ kind, granted }),
+  consents: () => request<{ consents: ConsentSummaries }>('/me/consents'),
+
+  recordConsentDecision: (
+    consentType: string, wordingVersionId: string, state: ConsentState,
+    metadata?: Record<string, unknown>, idempotencyKey = crypto.randomUUID(),
+  ) =>
+    request<{ decision: ConsentDecision; current: ConsentSummary }>(
+      `/me/consents/${encodeURIComponent(consentType)}/decisions`, {
+      method: 'POST',
+      body: JSON.stringify({ wordingVersionId, state, metadata, idempotencyKey }),
     }),
 
   deleteEverything: () =>

@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const structuredTurn = vi.fn();
 const classifyTurn = vi.fn();
-const getConsents = vi.fn();
+const currentConsent = vi.fn();
 
 vi.mock('../server/ai/claude.ts', () => ({
   MODEL: 'test-model',
@@ -34,10 +34,11 @@ vi.mock('../server/ai/budget.ts', () => ({
 }));
 
 vi.mock('../server/db/users.ts', () => ({
-  getConsents,
   getUserSummary: vi.fn(),
   updatePreferences: vi.fn(),
 }));
+
+vi.mock('../server/db/consents.ts', () => ({ currentConsent }));
 
 vi.mock('../server/db/chat.ts', () => ({
   currentConversation: vi.fn(async () => 'conv-1'),
@@ -98,7 +99,7 @@ beforeEach(() => {
   structuredTurn.mockReset();
   classifyTurn.mockReset();
   classifyTurn.mockResolvedValue({ emotion: 'neutral', intent: 'other', confidence: 0.5 });
-  getConsents.mockReset();
+  currentConsent.mockReset();
   structuredTurn.mockResolvedValue({
     text: 'model reply',
     directive: null,
@@ -107,30 +108,27 @@ beforeEach(() => {
   });
 });
 
-const OFF = { image_storage: false, cloud_reasoning: false };
-const ON = { image_storage: false, cloud_reasoning: true };
-
 describe('cloud reasoning OFF', () => {
   it('sends nothing to the model on a chat turn', async () => {
-    getConsents.mockResolvedValue(OFF);
+    currentConsent.mockResolvedValue(null);
     await handleTurn('user-1', 'my skin is dry');
     expect(structuredTurn).not.toHaveBeenCalled();
   });
 
   it('sends nothing to the model on an app event', async () => {
-    getConsents.mockResolvedValue(OFF);
+    currentConsent.mockResolvedValue(null);
     await handleEvent('user-1', 'opened');
     expect(structuredTurn).not.toHaveBeenCalled();
   });
 
   it('sends nothing on a scan-complete event, which carries fresh readings', async () => {
-    getConsents.mockResolvedValue(OFF);
+    currentConsent.mockResolvedValue(null);
     await handleEvent('user-1', 'scan_complete');
     expect(structuredTurn).not.toHaveBeenCalled();
   });
 
   it('still answers, from the labelled local engine', async () => {
-    getConsents.mockResolvedValue(OFF);
+    currentConsent.mockResolvedValue(null);
     const turn = await handleTurn('user-1', 'my skin is dry');
     expect(turn.text).toBe('local reply');
     // `demo` is what the UI reads to say she is answering locally. A silent
@@ -143,7 +141,7 @@ describe('cloud reasoning OFF', () => {
     // same data the consent is about - so it is not a separate, smaller yes.
     process.env.ELOHIM_MODEL_CLASSIFIER = '1';
     try {
-      getConsents.mockResolvedValue(OFF);
+      currentConsent.mockResolvedValue(null);
       await handleTurn('user-1', 'my skin is dry');
       expect(classifyTurn).not.toHaveBeenCalled();
       expect(structuredTurn).not.toHaveBeenCalled();
@@ -153,9 +151,8 @@ describe('cloud reasoning OFF', () => {
   });
 
   it('is the behaviour for a user who has never touched the toggle', async () => {
-    // getConsents returns false for a kind with no stored row, so "never
-    // decided" and "declined" are the same thing here. That is the point.
-    getConsents.mockResolvedValue({ image_storage: false, cloud_reasoning: false });
+    // A missing summary is no decision and must remain privacy-preserving.
+    currentConsent.mockResolvedValue(null);
     await handleTurn('user-new', 'hello');
     expect(structuredTurn).not.toHaveBeenCalled();
   });
@@ -163,13 +160,13 @@ describe('cloud reasoning OFF', () => {
 
 describe('cloud reasoning ON', () => {
   it('does reach the model', async () => {
-    getConsents.mockResolvedValue(ON);
+    currentConsent.mockResolvedValue({ consentType: 'cloud_reasoning', state: 'granted' });
     await handleTurn('user-1', 'my skin is dry');
     expect(structuredTurn).toHaveBeenCalledTimes(1);
   });
 
   it('is the only condition under which the context block is transmitted', async () => {
-    getConsents.mockResolvedValue(ON);
+    currentConsent.mockResolvedValue({ consentType: 'cloud_reasoning', state: 'granted' });
     await handleTurn('user-1', 'my skin is dry');
     const sent = JSON.stringify(structuredTurn.mock.calls[0]);
     expect(sent).toContain('Stated concerns: melasma');
@@ -178,20 +175,20 @@ describe('cloud reasoning ON', () => {
 
 describe('the consent is read per request', () => {
   it('stops transmitting as soon as it is revoked', async () => {
-    getConsents.mockResolvedValue(ON);
+    currentConsent.mockResolvedValue({ consentType: 'cloud_reasoning', state: 'granted' });
     await handleTurn('user-1', 'first');
     expect(structuredTurn).toHaveBeenCalledTimes(1);
 
     // No restart, no cache to clear — the next turn reads the stored row again.
-    getConsents.mockResolvedValue(OFF);
+    currentConsent.mockResolvedValue(null);
     await handleTurn('user-1', 'second');
     expect(structuredTurn).toHaveBeenCalledTimes(1);
   });
 
   it('is read from storage rather than from anything the caller passes', async () => {
-    getConsents.mockResolvedValue(OFF);
+    currentConsent.mockResolvedValue(null);
     await handleTurn('user-1', 'my skin is dry');
-    expect(getConsents).toHaveBeenCalledWith('user-1');
+    expect(currentConsent).toHaveBeenCalledWith('user-1', 'cloud_reasoning');
     expect(structuredTurn).not.toHaveBeenCalled();
   });
 });

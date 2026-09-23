@@ -34,7 +34,9 @@ import {
   type ElohimAction,
   type ElohimTurn,
   type SkinAnalysis,
+  hasConsent,
 } from '@shared/types.ts';
+import { CONSENT_KEYS } from '@shared/consent-keys.ts';
 
 let director: SessionDirector | null = null;
 
@@ -366,7 +368,7 @@ export function enterGuestMode(): void {
      * audio start, so the first thing they hear is her.
      */
     preferences: { ...DEFAULT_GUEST_PREFERENCES, voiceEnabled: session.guestVoice },
-    consents: { image_storage: false, cloud_reasoning: false },
+    consents: {},
     scanCount: 0,
   };
 
@@ -822,7 +824,7 @@ async function runBodyAnalysis(
     let storedPrevious = previous;
 
     if (!session.guest) {
-      const consented = session.user?.consents.image_storage === true;
+      const consented = hasConsent(session.user?.consents, CONSENT_KEYS.IMAGE_STORAGE);
       const saved = await api.saveBodyScan(
         analysis,
         consented ? imageBase64 : undefined,
@@ -971,7 +973,7 @@ export async function runAnalysis(
       session.scans = [analysis, ...session.scans];
       session.latestScan = analysis;
     } else {
-      const consented = session.user?.consents.image_storage === true;
+      const consented = hasConsent(session.user?.consents, CONSENT_KEYS.IMAGE_STORAGE);
       const { scan, summary } = await api.saveScan(
         analysis,
         consented ? imageBase64 : undefined,
@@ -1157,7 +1159,8 @@ export async function setConsent(
   kind: 'image_storage' | 'cloud_reasoning',
   granted: boolean,
 ): Promise<void> {
-  await api.setConsent(kind, granted);
+  const wordingVersionId = kind === 'image_storage' ? 'image-storage-v1' : 'cloud-reasoning-v1';
+  await api.recordConsentDecision(kind, wordingVersionId, granted ? 'granted' : 'withdrawn');
   const me = await api.me();
   session.user = me.user;
 }
