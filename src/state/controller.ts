@@ -34,9 +34,7 @@ import {
   type ElohimAction,
   type ElohimTurn,
   type SkinAnalysis,
-  hasConsent,
 } from '@shared/types.ts';
-import { CONSENT_KEYS } from '@shared/consent-keys.ts';
 
 let director: SessionDirector | null = null;
 
@@ -418,7 +416,7 @@ const DEFAULT_GUEST_PREFERENCES = {
 };
 
 async function loadUserData(): Promise<void> {
-  const [history, scans, summary, body] = await Promise.all([
+  const [history, scans, summary, body, photos] = await Promise.all([
     api.chatHistory(),
     api.scans(),
     api.scanSummary(),
@@ -431,6 +429,7 @@ async function loadUserData(): Promise<void> {
      * one thing a tracking feature cannot be.
      */
     api.bodyScans().catch(() => ({ scans: [] })),
+    api.progressPhotos().catch(() => ({ photos: [] })),
   ]);
   session.messages = history.messages;
   session.scans = scans.scans;
@@ -438,6 +437,7 @@ async function loadUserData(): Promise<void> {
   session.summary = summary.summary;
   session.bodyScans = body.scans;
   session.latestBody = body.scans[0] ?? null;
+  session.progressPhotos = photos.photos;
 
   /*
    * She speaks first: into an empty transcript, and into one that has gone
@@ -720,6 +720,7 @@ function handleActions(actions: ElohimAction[]): void {
 
 /** Opens the clinical room. The capture itself is driven by the scan overlay. */
 export async function startScanFlow(kind: ScanKind = 'face'): Promise<void> {
+  discardPendingCapture();
   session.pendingOffer = null;
   session.scanActive = true;
   session.scanKind = kind;
@@ -753,6 +754,7 @@ export function enterScanPage(): void {
 
 /** The scan page leaving. Whatever was open, she walks out of the clinic. */
 export function leaveScanPage(): void {
+  discardPendingCapture();
   // Route departure is a privacy boundary even if the room transition already finished.
   session.clearScanArtifacts();
   director?.setFaceMesh(null);
@@ -831,12 +833,7 @@ async function runBodyAnalysis(
     let storedPrevious = previous;
 
     if (!session.guest) {
-      const consented = hasConsent(session.user?.consents, CONSENT_KEYS.IMAGE_STORAGE);
-      const saved = await api.saveBodyScan(
-        analysis,
-        consented ? imageBase64 : undefined,
-        consented ? (profileImageBase64 ?? undefined) : undefined,
-      );
+      const saved = await api.saveBodyScan(analysis);
       scan = saved.scan;
       storedPrevious = saved.previous;
     }
@@ -956,7 +953,12 @@ export async function runAnalysis(
       director?.setScanProgress(progress, stage);
     });
 
-    session.localImages = { ...session.localImages, [analysis.capturedAt]: imageBase64 };
+    session.pendingCapture = {
+      imageBase64,
+      capturedAt: analysis.capturedAt,
+      state: 'analysing',
+    };
+    session.pendingCapture.state = 'presenting';
 
     /*
      * A guest keeps the reading in memory and nowhere else.
@@ -970,15 +972,15 @@ export async function runAnalysis(
       session.scans = [analysis, ...session.scans];
       session.latestScan = analysis;
     } else {
-      const consented = hasConsent(session.user?.consents, CONSENT_KEYS.IMAGE_STORAGE);
-      const { scan, summary } = await api.saveScan(
-        analysis,
-        consented ? imageBase64 : undefined,
-      );
+      const { scan, summary } = await api.saveScan(analysis);
 
       session.scans = [scan, ...session.scans];
       session.latestScan = scan;
       session.summary = summary;
+      if (session.pendingCapture) {
+        session.pendingCapture.scanId = scan.id;
+        session.pendingCapture.state = 'save-available';
+      }
     }
 
     /*
@@ -1068,6 +1070,7 @@ export async function runAnalysis(
     session.clearScanArtifacts();
     director?.setFaceMesh(null);
   } catch (err) {
+    discardPendingCapture();
     session.scanActive = false;
     session.clearScanArtifacts();
     director?.setFaceMesh(null);
@@ -1135,10 +1138,10 @@ export async function refreshPicks(): Promise<void> {
 }
 
 export async function setConsent(
-  kind: 'image_storage' | 'cloud_reasoning',
+  kind: 'progress_photos' | 'cloud_reasoning',
   granted: boolean,
 ): Promise<void> {
-  const wordingVersionId = kind === 'image_storage' ? 'image-storage-v1' : 'cloud-reasoning-v1';
+  const wordingVersionId = kind === 'progress_photos' ? 'progress-photos-v1' : 'cloud-reasoning-v1';
   await api.recordConsentDecision(kind, wordingVersionId, granted ? 'granted' : 'withdrawn');
   const me = await api.me();
   session.user = me.user;
@@ -1173,11 +1176,31 @@ export async function deleteAccount(): Promise<{ blobsShredded: number; blobsFai
   return { blobsShredded, blobsFailed };
 }
 
+/** Saves only after the result-screen button is pressed. Safe to retry per scan. */
+export async function saveProgressPhoto(): Promise<void> {
+  const pending = session.pendingCapture;
+  if (!pending?.scanId || pending.state !== 'save-available') {
+    throw new Error('There is no capture available to save.');
+  }
+  const { photo } = await api.saveProgressPhoto(pending.scanId, pending.imageBase64);
+  session.progressPhotos = [photo, ...session.progressPhotos.filter((p) => p.id !== photo.id)];
+  pending.state = 'saved';
+  session.pendingCapture = null;
+}
+
+export function discardPendingCapture(): void {
+  if (session.pendingCapture) session.pendingCapture.state = 'discarded';
+  session.pendingCapture = null;
+}
+
 export async function refreshScans(): Promise<void> {
-  const [scans, summary] = await Promise.all([api.scans(), api.scanSummary()]);
+  const [scans, summary, photos] = await Promise.all([
+    api.scans(), api.scanSummary(), api.progressPhotos(),
+  ]);
   session.scans = scans.scans;
   session.latestScan = scans.scans[0] ?? null;
   session.summary = summary.summary;
+  session.progressPhotos = photos.photos;
 }
 
 /**

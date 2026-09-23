@@ -35,7 +35,7 @@
   import ScanCapture from '@/scan/ScanCapture.svelte';
   import Picks from '@/products/Picks.svelte';
   import { session } from '@/state/session.svelte.ts';
-  import { sendMessage, startScanFlow, togglePanelView } from '@/state/controller.ts';
+  import { discardPendingCapture, saveProgressPhoto, sendMessage, startScanFlow, togglePanelView } from '@/state/controller.ts';
   import { averageGoodness } from '@/holograms/presented.ts';
   import { link, router } from '@/router/router.svelte.ts';
   import { arrive, depart } from '@/lib/motion.ts';
@@ -110,6 +110,23 @@
    * the dock on request and stay closed otherwise.
    */
   let showPicks = $state(false);
+  let saveSelected = $state(false);
+  let saveBusy = $state(false);
+  let saveMessage = $state<string | null>(null);
+
+  async function savePhoto() {
+    if (!saveSelected) return;
+    saveBusy = true;
+    try {
+      await saveProgressPhoto();
+      saveMessage = 'Progress photo saved.';
+      saveSelected = false;
+    } catch (error) {
+      saveMessage = error instanceof Error ? error.message : 'The photo could not be saved.';
+    } finally {
+      saveBusy = false;
+    }
+  }
 
   const capturing = $derived(session.scanActive);
   const hasReading = $derived(!capturing && scan !== null && session.sceneMode !== 'lounge');
@@ -198,6 +215,27 @@
         <span class="reading__sep" aria-hidden="true">·</span>
         <a class="cta cta--quiet" href="/progress" use:link>Against the last one</a>
       </div>
+
+      {#if session.scanKind === 'face' && session.pendingCapture?.state === 'save-available'}
+        <div class="reading__save">
+          {#if session.user?.consents.progress_photos}
+            <label>
+              <input type="checkbox" bind:checked={saveSelected} />
+              Save this as a progress photo
+            </label>
+            <button class="cta" type="button" disabled={!saveSelected || saveBusy} onclick={savePhoto}>
+              {saveBusy ? 'Saving…' : 'Save photo'}
+            </button>
+            <button class="cta cta--quiet" type="button" onclick={discardPendingCapture}>Discard photo</button>
+          {:else}
+            <p>Progress-photo consent is off. Nothing has been saved.</p>
+            <a class="cta" href="/privacy" use:link>Review progress-photo consent</a>
+            <button class="cta cta--quiet" type="button" onclick={discardPendingCapture}>Discard photo</button>
+          {/if}
+        </div>
+      {:else if saveMessage}
+        <p class="reading__save" aria-live="polite">{saveMessage}</p>
+      {/if}
 
       {#if session.picks.length && session.scanKind === 'face' && !session.thinking}
         <p class="reading__more">

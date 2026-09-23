@@ -472,6 +472,17 @@ export function hasConsent(
   return consents?.[consentType]?.state === 'granted';
 }
 
+/** Metadata only. Image bytes are fetched through the authenticated image route. */
+export interface ProgressPhoto {
+  id: string;
+  skinScanId: string | null;
+  createdAt: string;
+  capturedAt: string;
+  consentEventId: string;
+  /** Non-biometric display hints only; never landmarks or face geometry. */
+  presentation?: Record<string, string>;
+}
+
 export interface UserSummary {
   id: string;
   email: string;

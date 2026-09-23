@@ -1,6 +1,7 @@
 import * as users from '../db/users.ts';
 import * as scans from '../db/scans.ts';
 import * as bodyScans from '../db/body-scans.ts';
+import * as progressPhotos from '../db/progress-photos.ts';
 import { shredBlob } from '../lib/crypto.ts';
 import { log } from '../lib/log.ts';
 
@@ -13,6 +14,7 @@ export interface DeleteAccountResult {
 export interface DeleteAccountDependencies {
   skinBlobRefs: (userId: string) => Promise<string[]>;
   bodyBlobRefs: (userId: string) => Promise<string[]>;
+  progressPhotoRefs: (userId: string) => Promise<string[]>;
   shred: (ref: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
 }
@@ -20,6 +22,7 @@ export interface DeleteAccountDependencies {
 const defaults: DeleteAccountDependencies = {
   skinBlobRefs: scans.allBlobRefs,
   bodyBlobRefs: bodyScans.allBodyBlobRefs,
+  progressPhotoRefs: progressPhotos.allProgressPhotoRefs,
   shred: shredBlob,
   deleteUser: users.deleteUser,
 };
@@ -32,6 +35,7 @@ export async function deleteAccount(
   const refs = [
     ...(await dependencies.skinBlobRefs(userId)),
     ...(await dependencies.bodyBlobRefs(userId)),
+    ...(await dependencies.progressPhotoRefs(userId)),
   ];
   let blobsShredded = 0;
   let blobsFailed = 0;

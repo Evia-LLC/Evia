@@ -67,10 +67,11 @@ describe('account deletion service', () => {
     const removeUser = vi.fn(async () => undefined);
     const result = await deleteAccount('owner', {
       skinBlobRefs: async () => ['good', 'bad'], bodyBlobRefs: async () => [],
+      progressPhotoRefs: async () => ['progress-photo'],
       shred: async (ref) => { if (ref === 'bad') throw new Error('storage unavailable'); },
       deleteUser: removeUser,
     });
-    expect(result).toEqual({ ok: true, blobsShredded: 1, blobsFailed: 1 });
+    expect(result).toEqual({ ok: true, blobsShredded: 2, blobsFailed: 1 });
     expect(removeUser).toHaveBeenCalledWith('owner');
   });
 });
