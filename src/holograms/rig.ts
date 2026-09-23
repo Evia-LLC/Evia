@@ -1278,7 +1278,7 @@ export class HologramRig {
   }
 
   /**
-   * Builds the 3D face from a scan's landmarks, or clears it.
+   * Builds the 3D face from the active in-memory capture mesh, or clears it.
    *
    * Called before `present`, so the region lights the reading turns on land
    * on a face that is already there.
