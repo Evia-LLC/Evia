@@ -24,13 +24,16 @@ import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { prepareDirectory } from './lib/prepare-directory.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const dataDirectory = path.join(root, 'data');
 
 export const DEV_DB_PORT = Number(process.env.ELOHIM_DEV_DB_PORT ?? 5433);
 export const DEV_DB_URL = `postgres://postgres:postgres@localhost:${DEV_DB_PORT}/postgres`;
 
-const db = await PGlite.create({ dataDir: path.join(root, 'data', 'pglite') });
+await prepareDirectory(dataDirectory);
+const db = await PGlite.create({ dataDir: path.join(dataDirectory, 'pglite') });
 const server = new PGLiteSocketServer({ db, port: DEV_DB_PORT, host: '127.0.0.1' });
 
 // An EventTarget, not an EventEmitter, whatever the README's examples say.
