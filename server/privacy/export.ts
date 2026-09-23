@@ -4,13 +4,15 @@ import * as bodyScans from '../db/body-scans.ts';
 import * as chat from '../db/chat.ts';
 import * as products from '../db/products.ts';
 import * as consents from '../db/consents.ts';
+import * as progressPhotos from '../db/progress-photos.ts';
 
-export const DATA_EXPORT_VERSION = '1.0';
+export const DATA_EXPORT_VERSION = '1.1';
 
 export interface DataExportRepositories {
   account: typeof users.getUserSummary;
   consentHistory: typeof consents.consentHistory;
   skinScans: typeof scans.exportScans;
+  progressPhotos: typeof progressPhotos.listProgressPhotos;
   bodyScans: typeof bodyScans.exportBodyScans;
   routine: typeof products.listUsage;
   memories: typeof chat.exportMemories;
@@ -21,6 +23,7 @@ const repositories: DataExportRepositories = {
   account: users.getUserSummary,
   consentHistory: consents.consentHistory,
   skinScans: scans.exportScans,
+  progressPhotos: progressPhotos.listProgressPhotos,
   bodyScans: bodyScans.exportBodyScans,
   routine: products.listUsage,
   memories: chat.exportMemories,
@@ -33,10 +36,11 @@ const repositories: DataExportRepositories = {
  * streamed archive, never base64 folded into this document.
  */
 export async function assembleDataExport(userId: string, repos: DataExportRepositories = repositories) {
-  const [account, consentHistory, skin, body, routine, memories, transcripts] = await Promise.all([
+  const [account, consentHistory, skin, photos, body, routine, memories, transcripts] = await Promise.all([
     repos.account(userId),
     repos.consentHistory(userId),
     repos.skinScans(userId),
+    repos.progressPhotos(userId),
     repos.bodyScans(userId),
     repos.routine(userId),
     repos.memories(userId),
@@ -60,7 +64,7 @@ export async function assembleDataExport(userId: string, repos: DataExportReposi
     },
     preferences: account.preferences,
     consentHistory,
-    scans: { skin, body },
+    scans: { skin, body, progressPhotos: photos },
     routine: { products: routine },
     memories,
     transcripts,

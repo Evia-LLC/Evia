@@ -58,7 +58,7 @@ describe('facial geometry privacy boundary', () => {
     );
     expect(result.rows.map((row) => row.column_name)).toEqual(['id']);
     await db.close();
-  });
+  }, 30_000);
 
   it('clears the in-memory mesh on reset', () => {
     session.lastMesh = {

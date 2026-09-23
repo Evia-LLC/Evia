@@ -25,6 +25,10 @@ function repositories(content = ''): DataExportRepositories {
       { kind: 'cloud_reasoning', granted: false, recordedAt: '2025-01-03T00:00:00.000Z' },
     ]),
     skinScans: vi.fn(async () => []),
+    progressPhotos: vi.fn(async () => [{
+      id: 'photo-1', skinScanId: 'scan-1', createdAt: '2025-01-04',
+      capturedAt: '2025-01-04', consentEventId: 'consent-1',
+    }]),
     bodyScans: vi.fn(async () => []),
     routine: vi.fn(async () => []),
     memories: vi.fn(async () => []),
@@ -43,7 +47,8 @@ describe('structured data export', () => {
     expect(result).toMatchObject({
       metadata: { format: 'elohim-user-data', version: DATA_EXPORT_VERSION, photoBinariesIncluded: false },
       account: { id: 'owner' }, preferences: {}, consentHistory: [{ granted: true }, { granted: false }],
-      scans: { skin: [], body: [] }, routine: { products: [] }, memories: [], transcripts: [{}],
+      scans: { skin: [], body: [], progressPhotos: [{ id: 'photo-1', consentEventId: 'consent-1' }] },
+      routine: { products: [] }, memories: [], transcripts: [{}],
     });
   });
 
