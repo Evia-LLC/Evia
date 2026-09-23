@@ -1,0 +1,1 @@
+Temporary file to verify a real Git CLI push. Reverted in the next commit.
