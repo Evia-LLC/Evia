@@ -221,8 +221,10 @@
   background: var(--metal);
   box-shadow: none;
 }
-.nav__foot {
+.nav__footer {
   margin-top: auto;
+}
+.nav__foot {
   width: 56px;
   height: 56px;
 }
@@ -917,7 +919,7 @@
     border-top: var(--hair) solid var(--line);
   }
   .nav__brand,
-  .nav__foot,
+  .nav__footer,
   .nav__tools {
     display: none;
   }

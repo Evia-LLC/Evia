@@ -15,7 +15,7 @@
  * dependency for that would be a dependency for a `switch`.
  */
 
-export type RouteId = 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy';
+export type RouteId = 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy' | 'data';
 
 export interface Route {
   id: RouteId;
@@ -35,6 +35,7 @@ export const ROUTES: readonly Route[] = [
   { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Elohim', nav: true },
   { id: 'profile', path: '/profile', label: 'You', title: 'You — Elohim', nav: true },
   { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Elohim', nav: false },
+  { id: 'data', path: '/settings/data', label: 'Your data', title: 'Your data — Elohim', nav: false },
 ];
 
 const HOME = ROUTES[0];

@@ -8,13 +8,9 @@
    */
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
-  import { deleteEverything, setConsent } from '@/state/controller.ts';
+  import { setConsent } from '@/state/controller.ts';
   import { hasConsent } from '@shared/types.ts';
   import { CONSENT_KEYS } from '@shared/consent-keys.ts';
-
-  let confirming = $state(false);
-  let busy = $state(false);
-  let result = $state<string | null>(null);
 
   const consents = $derived(session.user?.consents);
 
@@ -23,15 +19,6 @@
     await setConsent(kind, granted);
   }
 
-  async function wipe() {
-    busy = true;
-    try {
-      const shredded = await deleteEverything();
-      result = `Everything is gone. ${shredded} stored image${shredded === 1 ? '' : 's'} shredded.`;
-    } finally {
-      busy = false;
-    }
-  }
 </script>
 
 <Page
@@ -114,43 +101,4 @@
     </div>
   </section>
 
-  <section class="sec" aria-labelledby="delete">
-    <div class="sec__head">
-      <h2 class="sec__title" id="delete">Delete everything</h2>
-    </div>
-    <p class="sec__lede">
-      Removes your account, every scan, every message, every remembered fact, and shreds any
-      stored images. There is no soft delete behind it and I cannot undo it.
-    </p>
-    {#if result}
-      <div class="card"><p class="card__text">{result}</p></div>
-    {:else if confirming}
-      <div class="card card--warm">
-        <p class="card__title">Are you sure?</p>
-        <p class="card__text">
-          This is the one thing I will ask you twice.
-        </p>
-        <div class="confirm__actions">
-          <button class="btn btn--danger" onclick={wipe} disabled={busy}>
-            {busy ? 'Deleting…' : 'Yes, delete all of it'}
-          </button>
-          <button class="btn" onclick={() => (confirming = false)}>Keep it</button>
-        </div>
-      </div>
-    {:else}
-      <button class="btn btn--danger" onclick={() => (confirming = true)} disabled={session.guest}>
-        Delete my data
-      </button>
-    {/if}
-  </section>
 </Page>
-
-<style>
-  .confirm__actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s-3) var(--s-5);
-    margin-top: var(--s-4);
-  }
-</style>

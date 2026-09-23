@@ -92,6 +92,16 @@ export async function listBodyScans(userId: string, limit = 50): Promise<BodyAna
   )).map(hydrate);
 }
 
+/** Complete export list, without encrypted photo bytes or storage references. */
+export async function exportBodyScans(userId: string): Promise<BodyAnalysisRecord[]> {
+  return (await rows<BodyScanRow>(
+    `SELECT id, user_id, captured_at, image_ref, profile_image_ref, metrics_json, waist_source,
+            profile_json, profile_detail_json, landmarks_json, confidence, model_version,
+            profile_model_version FROM body_scans WHERE user_id = ? ORDER BY captured_at`,
+    userId,
+  )).map(hydrate);
+}
+
 export async function latestBodyScan(userId: string): Promise<BodyAnalysisRecord | null> {
   return (await listBodyScans(userId, 1))[0] ?? null;
 }

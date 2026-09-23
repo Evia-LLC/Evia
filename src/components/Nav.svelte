@@ -113,10 +113,18 @@
     </button>
   </div>
 
-  <a class="nav__foot" href="/privacy" use:link aria-current={router.is('privacy') ? 'page' : undefined}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M12 3 5 6v5.5c0 4.4 3 8 7 9.5 4-1.5 7-5.1 7-9.5V6l-7-3z" />
-    </svg>
-    <span>Privacy</span>
-  </a>
+  <div class="nav__footer">
+    <a class="nav__foot" href="/privacy" use:link aria-current={router.is('privacy') ? 'page' : undefined}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3 5 6v5.5c0 4.4 3 8 7 9.5 4-1.5 7-5.1 7-9.5V6l-7-3z" />
+      </svg>
+      <span>Privacy</span>
+    </a>
+    <a class="nav__foot" href="/settings/data" use:link aria-current={router.is('data') ? 'page' : undefined}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 20h14" />
+      </svg>
+      <span>Your data</span>
+    </a>
+  </div>
 </nav>
