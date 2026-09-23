@@ -467,6 +467,11 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
     res.status(400).json({ error: 'An analysis is required.' });
     return;
   }
+  // Facial geometry is ephemeral client state, not an extensible scan field.
+  if (Object.prototype.hasOwnProperty.call(analysis, 'landmarks')) {
+    res.status(400).json({ error: 'Facial landmarks are not accepted.' });
+    return;
+  }
   for (const key of SKIN_METRIC_KEYS) {
     const v = analysis.metrics[key];
     if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100) {
@@ -505,11 +510,14 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
   const stored = await scansRepo.insertScan(
     req.userId!,
     {
-      ...analysis,
-      observations,
-      landmarks: sanitiseLandmarks(analysis.landmarks),
       capturedAt: analysis.capturedAt || new Date().toISOString(),
+      metrics: analysis.metrics,
+      regions: analysis.regions ?? {},
+      quality: analysis.quality,
+      confidence: analysis.confidence,
       modelVersion: analysis.modelVersion || SKIN_MODEL_VERSION,
+      observations,
+      ...(typeof analysis.notes === 'string' && { notes: analysis.notes }),
     },
     { imageRef },
   );
@@ -525,23 +533,6 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
 
   res.json({ scan: stored, summary });
 });
-
-/**
- * The mesh, rebuilt from untrusted JSON: a flat list of numbers, pairs, each
- * inside the crop. Anything else is dropped rather than stored, because a
- * malformed mesh would be drawn onto the wrong face later.
- */
-function sanitiseLandmarks(raw: unknown): number[] | undefined {
-  if (!Array.isArray(raw) || raw.length === 0 || raw.length % 2 !== 0 || raw.length > 2 * 520) {
-    return undefined;
-  }
-  const out: number[] = [];
-  for (const v of raw) {
-    if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
-    out.push(Math.round(Math.max(-0.5, Math.min(1.5, v)) * 10_000) / 10_000);
-  }
-  return out;
-}
 
 // --- products ---------------------------------------------------------------
 

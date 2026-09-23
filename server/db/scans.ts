@@ -15,7 +15,6 @@ interface ScanRow {
   confidence: number;
   model_version: string;
   notes: string | null;
-  landmarks_json: string | null;
 }
 
 function hydrate(row: ScanRow): SkinAnalysis {
@@ -30,7 +29,6 @@ function hydrate(row: ScanRow): SkinAnalysis {
     modelVersion: row.model_version,
     hasImage: row.image_ref !== null,
     notes: row.notes ?? undefined,
-    ...(row.landmarks_json ? { landmarks: JSON.parse(row.landmarks_json) as number[] } : {}),
   };
 }
 
@@ -43,8 +41,8 @@ export async function insertScan(
   await run(
     `INSERT INTO skin_scans (id, user_id, captured_at, image_ref, thumb_ref, metrics_json,
                              regions_json, capture_quality_json, observations_json,
-                             confidence, model_version, notes, landmarks_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                             confidence, model_version, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     userId,
     analysis.capturedAt || nowIso(),
@@ -60,7 +58,6 @@ export async function insertScan(
     analysis.confidence ?? 0,
     analysis.modelVersion,
     analysis.notes ?? null,
-    analysis.landmarks ? JSON.stringify(analysis.landmarks) : null,
   );
   return { ...analysis, id };
 }

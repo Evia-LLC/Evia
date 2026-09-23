@@ -6,7 +6,7 @@
  * own face — which is what the hologram beside her should be, rather than a
  * flat projection of a photograph or an abstract contour of nobody.
  *
- * Built once per scan from the landmarks the overlay captured at the moment of
+ * Built for the active presentation from landmarks captured at the moment of
  * measurement: the lattice as additive line segments, the vertices as points
  * brighter where they are nearer, and soft glows over the regions the reading
  * actually flagged — so the head turning slowly beside her is *their* head,

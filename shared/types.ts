@@ -158,12 +158,6 @@ export interface SkinAnalysis {
   /** Optional qualitative layer from cloud reasoning; never replaces metrics. */
   observations?: string[];
   notes?: string;
-  /**
-   * The face mesh at capture: 478 (x, y) pairs, flattened, normalised to the
-   * stored crop. Presentation and comparison only — the numbers above never
-   * read it. Absent on scans taken before the mesh was kept.
-   */
-  landmarks?: number[];
 }
 
 // ---------------------------------------------------------------------------

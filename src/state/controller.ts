@@ -319,6 +319,8 @@ export async function register(
 
 export async function signOut(): Promise<void> {
   voice.dispose();
+  session.clearScanArtifacts();
+  director?.setFaceMesh(null);
   // A guest was never signed in, so there is no session to end and no server
   // to tell. Asking would only produce an error about a thing that never was.
   if (!session.guest) await api.logout();
@@ -728,6 +730,8 @@ export async function startScanFlow(kind: ScanKind = 'face'): Promise<void> {
 export function cancelScanFlow(): void {
   session.scanActive = false;
   session.scanProgress = 0;
+  session.clearScanArtifacts();
+  director?.setFaceMesh(null);
   director?.showScan();
   director?.exitClinical();
 }
@@ -747,6 +751,9 @@ export function enterScanPage(): void {
 
 /** The scan page leaving. Whatever was open, she walks out of the clinic. */
 export function leaveScanPage(): void {
+  // Route departure is a privacy boundary even if the room transition already finished.
+  session.clearScanArtifacts();
+  director?.setFaceMesh(null);
   if (session.sceneMode === 'lounge' && !session.scanActive) return;
   cancelScanFlow();
 }
@@ -943,20 +950,10 @@ export async function runAnalysis(
   const previous: SkinAnalysis | null = session.latestScan;
 
   try {
-    const { analysis, imageBase64, crop } = await analyseFace(source, (progress, stage) => {
+    const { analysis, imageBase64 } = await analyseFace(source, (progress, stage) => {
       director?.setScanProgress(progress, stage);
     });
 
-    /*
-     * The mesh travels with the scan, in the crop's own frame.
-     *
-     * The live mesh was measured on the camera frame; the image that gets kept
-     * is a crop of it. Re-expressed here so that "where is the left cheek on
-     * this photo" has the same answer months later on a different device, which
-     * is what lets two scans be laid on top of each other.
-     */
-    const landmarks = meshInCrop(session.lastMesh, crop);
-    if (landmarks) analysis.landmarks = landmarks;
     session.localImages = { ...session.localImages, [analysis.capturedAt]: imageBase64 };
 
     /*
@@ -1066,8 +1063,12 @@ export async function runAnalysis(
       await waitForQuiet();
       director?.showRoutine();
     }
+    session.clearScanArtifacts();
+    director?.setFaceMesh(null);
   } catch (err) {
     session.scanActive = false;
+    session.clearScanArtifacts();
+    director?.setFaceMesh(null);
     director?.setScanProgress(0, '');
     sound.nope();
     if (err instanceof CaptureRejected) {
@@ -1129,28 +1130,6 @@ export async function refreshPicks(): Promise<void> {
   } catch {
     session.picks = [];
   }
-}
-
-/**
- * Flattens the live mesh into (x, y) pairs normalised to the crop rectangle.
- *
- * The mesh's points are normalised to the source frame (x by width, y by
- * height); the crop is a fraction of that same frame. Points outside the crop
- * are kept - the jawline can run past the bottom edge - because a warp needs
- * every vertex of every triangle, not just the ones that landed in shot.
- */
-function meshInCrop(
-  mesh: { points: Float32Array; count: number } | null,
-  crop: { x: number; y: number; w: number; h: number },
-): number[] | null {
-  if (!mesh || mesh.count === 0 || crop.w <= 0 || crop.h <= 0) return null;
-  const out: number[] = [];
-  for (let i = 0; i < mesh.count; i++) {
-    const x = (mesh.points[i * 3] - crop.x) / crop.w;
-    const y = (mesh.points[i * 3 + 1] - crop.y) / crop.h;
-    out.push(Math.round(x * 10_000) / 10_000, Math.round(y * 10_000) / 10_000);
-  }
-  return out;
 }
 
 export async function setConsent(

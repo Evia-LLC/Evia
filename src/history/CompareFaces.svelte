@@ -2,19 +2,16 @@
   /**
    * Before and after, on the same face.
    *
-   * Two scans are only comparable if they are looked at the same way, and two
-   * photographs never are: a slightly different distance, a slightly different
-   * tilt. Each scan carries the mesh it was measured with, so the newer one is
-   * warped onto the older one's mesh here and the two are shown under a wipe.
-   * What moves under the handle is the skin. The camera has been taken out.
+   * This is an intentionally non-aligned wipe. Facial geometry exists only
+   * during the active scan presentation, so historical photos may differ in
+   * pose, distance, and framing. The UI says that plainly rather than
+   * reconstructing or persisting a face mesh.
    *
    * Pixels come from wherever they are: this session's own captures for a
    * guest or for scans taken since the page opened, and the encrypted store for
-   * an account that chose to keep photos. Scans without a mesh or a photo are
-   * simply not offered - the wipe never runs on unregistered images.
+   * an account that chose to keep photos.
    */
   import { onDestroy } from 'svelte';
-  import { alignTo } from './align.ts';
   import { api } from '@/lib/api.ts';
   import { session } from '@/state/session.svelte.ts';
   import type { SkinAnalysis } from '@shared/types.ts';
@@ -25,11 +22,10 @@
 
   let { scans }: Props = $props();
 
-  /** Scans that can take part: a mesh, and pixels we can reach. */
+  /** Scans that can take part: pixels we can reach, with no geometry required. */
   const usable = $derived(
     scans.filter(
-      (s) => Array.isArray(s.landmarks) && s.landmarks.length >= 2 * 100 &&
-        (session.localImages[s.capturedAt] !== undefined || (s.hasImage && !session.guest)),
+      (s) => session.localImages[s.capturedAt] !== undefined || (s.hasImage && !session.guest),
     ),
   );
 
@@ -38,7 +34,7 @@
   let position = $state(50);
   let beforeUrl = $state<string | null>(null);
   let afterUrl = $state<string | null>(null);
-  let alignedUrl = $state<string | null>(null);
+  let displayedAfterUrl = $state<string | null>(null);
   let working = $state(false);
   let failed = $state<string | null>(null);
   const owned: string[] = [];
@@ -56,19 +52,10 @@
     return null;
   }
 
-  function load(url: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('That photo would not load.'));
-      img.src = url;
-    });
-  }
-
   async function build() {
     const after = usable[afterIndex];
     const before = usable[beforeIndex];
-    alignedUrl = null;
+    displayedAfterUrl = null;
     failed = null;
     if (!after || !before || after === before) return;
     working = true;
@@ -80,12 +67,11 @@
       }
       beforeUrl = beforeSrc;
       afterUrl = afterSrc;
-      const [beforeImg, afterImg] = await Promise.all([load(beforeSrc), load(afterSrc)]);
-      // The newer scan is drawn in the older scan's frame.
-      const canvas = alignTo(beforeImg, before.landmarks!, afterImg, after.landmarks!);
-      alignedUrl = canvas.toDataURL('image/jpeg', 0.9);
+      // Deliberately show the original capture. Historical geometry is neither
+      // stored nor reconstructed from the pixels.
+      displayedAfterUrl = afterSrc;
     } catch (err) {
-      failed = err instanceof Error ? err.message : 'I could not line those two up.';
+      failed = err instanceof Error ? err.message : 'I could not load those two photos.';
     } finally {
       working = false;
     }
@@ -109,8 +95,8 @@
     <div class="compare__head">
       <h2 class="compare__title">Same face, two dates.</h2>
       <p class="compare__lede">
-        The newer scan is warped onto the older one's mesh, so what moves under the handle
-        is your skin, not the camera.
+        Original captures, not face-aligned. Changes in pose, distance, or framing may move
+        under the handle as well as your skin.
       </p>
     </div>
 
@@ -141,8 +127,8 @@
       {#if beforeUrl}
         <img class="wipe__img wipe__img--before" src={beforeUrl} alt="Before" />
       {/if}
-      {#if alignedUrl}
-        <img class="wipe__img wipe__img--after" src={alignedUrl} alt="After, aligned" />
+      {#if displayedAfterUrl}
+        <img class="wipe__img wipe__img--after" src={displayedAfterUrl} alt="After, not aligned" />
       {:else if afterUrl && !working}
         <img class="wipe__img wipe__img--after" src={afterUrl} alt="After" />
       {/if}
@@ -150,7 +136,7 @@
       <span class="wipe__tag wipe__tag--before">before</span>
       <span class="wipe__tag wipe__tag--after">after</span>
       {#if working}
-        <div class="wipe__note">Lining them up…</div>
+        <div class="wipe__note">Loading captures…</div>
       {:else if failed}
         <div class="wipe__note">{failed}</div>
       {/if}
@@ -167,8 +153,8 @@
 {:else if scans.length >= 2}
   <div class="empty">
     <p class="empty__text">
-      Keep photos on in Privacy and your next two scans can be laid on top of each other here,
-      aligned by the mesh, so you can wipe between them.
+      Keep photos on in Privacy and your next two scans can appear in an original, non-aligned
+      wipe here. Pose and framing differences will remain visible.
     </p>
   </div>
 {/if}

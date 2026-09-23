@@ -106,11 +106,11 @@ class SessionState {
   picks = $state<ProductPick[]>([]);
 
   /**
-   * The face mesh captured at the moment of the last scan, for the hologram.
+   * The only lifetime for facial geometry: the active scan presentation.
    *
-   * Presentation, not measurement - the numbers come from the skin pipeline
-   * - so it lives in the session rather than in the stored scan, and is gone
-   * with the tab. See `holograms/face-mesh-3d.ts`.
+   * Presentation, not measurement - the numbers come from the skin pipeline.
+   * The mesh is never added to a scan or sent to the server, and every scan
+   * exit path clears it. See `holograms/face-mesh-3d.ts`.
    */
   lastMesh = $state<ScanMesh | null>(null);
 
@@ -183,7 +183,13 @@ class SessionState {
     this.messages = [...this.messages, message];
   }
 
+  /** Retires ephemeral geometry when capture or presentation is over. */
+  clearScanArtifacts(): void {
+    this.lastMesh = null;
+  }
+
   reset(): void {
+    this.clearScanArtifacts();
     this.user = null;
     this.messages = [];
     this.scans = [];
