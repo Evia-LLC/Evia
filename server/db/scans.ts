@@ -79,7 +79,7 @@ export async function scanHistory(userId: string, limit = 100): Promise<SkinAnal
 export async function exportScans(userId: string): Promise<SkinAnalysis[]> {
   return (await rows<ScanRow>(
     `SELECT id, user_id, captured_at, image_ref, thumb_ref, metrics_json, regions_json,
-            capture_quality_json, observations_json, confidence, model_version, notes, landmarks_json
+            capture_quality_json, observations_json, confidence, model_version, notes
        FROM skin_scans WHERE user_id = ? ORDER BY captured_at`,
     userId,
   )).map(hydrate);

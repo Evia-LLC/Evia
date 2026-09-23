@@ -21,7 +21,7 @@
   import { onDestroy } from 'svelte';
   import { api } from '@/lib/api.ts';
   import { session } from '@/state/session.svelte.ts';
-  import { hasConsent } from '@shared/types.ts';
+  import { approvedConsent } from '@shared/legal-content.ts';
   import { CONSENT_KEYS } from '@shared/consent-keys.ts';
   import { subdivide } from '@/skin-analysis/roi.ts';
   import { METRIC_REGIONS } from '@/skin-analysis/metrics.ts';
@@ -109,7 +109,7 @@
   <div class="empty">
     <p class="empty__title">No photos kept</p>
     <p class="empty__text">
-      {#if hasConsent(session.user?.consents, CONSENT_KEYS.PROGRESS_PHOTOS)}
+      {#if approvedConsent(session.user?.consents[CONSENT_KEYS.PROGRESS_PHOTOS])}
         Progress photos are enabled, but none has been affirmatively saved yet.
       {:else}
         Your scans are analysed on this device and only the numbers are saved. Turn on image

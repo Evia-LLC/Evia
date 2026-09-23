@@ -16,6 +16,7 @@ import * as fallback from './fallback.ts';
 import * as chat from '../db/chat.ts';
 import * as users from '../db/users.ts';
 import { currentConsent } from '../db/consents.ts';
+import { approvedConsent } from '../../shared/legal-content.ts';
 import { CONSENT_KEYS } from '../../shared/consent-keys.ts';
 import { sanitiseDirective } from '../../shared/character-fsm.ts';
 import { log } from '../lib/log.ts';
@@ -58,7 +59,7 @@ class CloudReasoningDenied extends Error {
 async function cloudReasoningAllowed(userId: string): Promise<boolean> {
   if (!modelAvailable()) return false;
   const consent = await currentConsent(userId, CONSENT_KEYS.CLOUD_REASONING);
-  return consent?.state === 'granted';
+  return approvedConsent(consent);
 }
 
 /**

@@ -25,8 +25,7 @@ describe('progress-photo privacy boundary', () => {
 
   it('requires an active consent event at the explicit save boundary', () => {
     expect(photoSave).toContain('consentsRepo.currentConsent(req.userId!, CONSENT_KEYS.PROGRESS_PHOTOS)');
-    expect(photoSave).toContain("consent?.state !== 'granted'");
-    expect(photoSave).toContain("status !== 'approved'");
+    expect(photoSave).toContain('!approvedConsent(consent)');
     expect(photoSave).toContain("res.status(403)");
     expect(photoSave).toContain('consentEventId: consent.decisionId');
   });

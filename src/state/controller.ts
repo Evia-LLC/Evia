@@ -27,6 +27,7 @@ import { introSeen, introWasSkipped } from '@/lib/intro.ts';
 import { BODY_HIGHER_IS_BETTER } from '@/body-analysis/metrics.ts';
 import { PROFILE_HIGHER_IS_BETTER } from '@/body-analysis/profile.ts';
 import { router } from '@/router/router.svelte.ts';
+import { LEGAL_CONTENT } from '@shared/legal-content.ts';
 import {
   METRIC_LABELS,
   type BodySnapshot,
@@ -1141,7 +1142,9 @@ export async function setConsent(
   kind: 'progress_photos' | 'cloud_reasoning',
   granted: boolean,
 ): Promise<void> {
-  const wordingVersionId = kind === 'progress_photos' ? 'progress-photos-v1' : 'cloud-reasoning-v1';
+  const wordingVersionId = kind === 'progress_photos'
+    ? LEGAL_CONTENT['progress-photo-consent'].wordingVersionId
+    : 'cloud-reasoning-v1';
   await api.recordConsentDecision(kind, wordingVersionId, granted ? 'granted' : 'withdrawn');
   const me = await api.me();
   session.user = me.user;

@@ -15,6 +15,10 @@
  * consented call can be inspected for the data it actually carries.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONSENT_WORDING_VERSIONS } from '../shared/legal-content.ts';
+
+const cloudWording = CONSENT_WORDING_VERSIONS.find((version) => version.id === 'cloud-reasoning-v1')!;
+const grantedCloudConsent = { consentType: 'cloud_reasoning', state: 'granted', wordingVersionId: 'cloud-reasoning-v1' };
 
 const structuredTurn = vi.fn();
 const classifyTurn = vi.fn();
@@ -96,6 +100,7 @@ vi.mock('../server/ai/fallback.ts', () => ({
 const { handleTurn, handleEvent } = await import('../server/ai/orchestrator.ts');
 
 beforeEach(() => {
+  cloudWording.status = 'placeholder';
   structuredTurn.mockReset();
   classifyTurn.mockReset();
   classifyTurn.mockResolvedValue({ emotion: 'neutral', intent: 'other', confidence: 0.5 });
@@ -160,13 +165,15 @@ describe('cloud reasoning OFF', () => {
 
 describe('cloud reasoning ON', () => {
   it('does reach the model', async () => {
-    currentConsent.mockResolvedValue({ consentType: 'cloud_reasoning', state: 'granted' });
+    cloudWording.status = 'approved';
+    currentConsent.mockResolvedValue(grantedCloudConsent);
     await handleTurn('user-1', 'my skin is dry');
     expect(structuredTurn).toHaveBeenCalledTimes(1);
   });
 
   it('is the only condition under which the context block is transmitted', async () => {
-    currentConsent.mockResolvedValue({ consentType: 'cloud_reasoning', state: 'granted' });
+    cloudWording.status = 'approved';
+    currentConsent.mockResolvedValue(grantedCloudConsent);
     await handleTurn('user-1', 'my skin is dry');
     const sent = JSON.stringify(structuredTurn.mock.calls[0]);
     expect(sent).toContain('Stated concerns: melasma');
@@ -175,7 +182,8 @@ describe('cloud reasoning ON', () => {
 
 describe('the consent is read per request', () => {
   it('stops transmitting as soon as it is revoked', async () => {
-    currentConsent.mockResolvedValue({ consentType: 'cloud_reasoning', state: 'granted' });
+    cloudWording.status = 'approved';
+    currentConsent.mockResolvedValue(grantedCloudConsent);
     await handleTurn('user-1', 'first');
     expect(structuredTurn).toHaveBeenCalledTimes(1);
 
@@ -189,6 +197,12 @@ describe('the consent is read per request', () => {
     currentConsent.mockResolvedValue(null);
     await handleTurn('user-1', 'my skin is dry');
     expect(currentConsent).toHaveBeenCalledWith('user-1', 'cloud_reasoning');
+    expect(structuredTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not transmit when the recorded wording is still a placeholder', async () => {
+    currentConsent.mockResolvedValue(grantedCloudConsent);
+    await handleTurn('user-1', 'my skin is dry');
     expect(structuredTurn).not.toHaveBeenCalled();
   });
 });

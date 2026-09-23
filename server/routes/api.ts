@@ -41,7 +41,6 @@ import {
   PROFILE_METRIC_KEYS,
   SKIN_METRIC_KEYS,
   SKIN_MODEL_VERSION,
-  hasConsent,
   type BodyAnalysisRecord,
   PREGNANCY_STATUSES,
   type PregnancyStatus,
@@ -49,7 +48,7 @@ import {
 } from '../../shared/types.ts';
 import type { ConsentState } from '../../shared/types.ts';
 import { CONSENT_KEYS } from '../../shared/consent-keys.ts';
-import { consentWordingVersion } from '../../shared/legal-content.ts';
+import { approvedConsent, consentWordingVersion } from '../../shared/legal-content.ts';
 
 export const apiRouter = asyncRouter();
 apiRouter.use(requireAuth);
@@ -269,7 +268,7 @@ apiRouter.post('/scans/:id/progress-photo', scanLimiter, async (req, res) => {
     return;
   }
   const consent = await consentsRepo.currentConsent(req.userId!, CONSENT_KEYS.PROGRESS_PHOTOS);
-  if (consent?.state !== 'granted' || consentWordingVersion(consent.wordingVersionId)?.status !== 'approved') {
+  if (!consent || !approvedConsent(consent)) {
     res.status(403).json({ error: 'Progress-photo consent is required before saving.' });
     return;
   }
@@ -442,7 +441,7 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
    * is using. She still talks; she talks locally.
    */
   const consents = await consentsRepo.currentConsents(req.userId!);
-  if (!hasConsent(consents, CONSENT_KEYS.CLOUD_REASONING)) {
+  if (!approvedConsent(consents[CONSENT_KEYS.CLOUD_REASONING])) {
     res.status(403).json({ error: 'Cloud reasoning is off, so the cloned voice is unavailable.' });
     return;
   }
@@ -626,7 +625,7 @@ apiRouter.post('/products/read-label', visionLimiter, async (req, res) => {
     res.status(503).json({ error: 'No model is configured; use the on-device reader.' });
     return;
   }
-  if (!hasConsent(await consentsRepo.currentConsents(req.userId!), CONSENT_KEYS.CLOUD_REASONING)) {
+  if (!approvedConsent((await consentsRepo.currentConsents(req.userId!))[CONSENT_KEYS.CLOUD_REASONING])) {
     res.status(403).json({ error: 'Cloud reading is off. Turn it on in Privacy, or use on-device OCR.' });
     return;
   }

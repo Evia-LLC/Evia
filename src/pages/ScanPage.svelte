@@ -40,6 +40,8 @@
   import { link, router } from '@/router/router.svelte.ts';
   import { arrive, depart } from '@/lib/motion.ts';
   import { revealLine, type RevealTicker } from '@/lib/reveal.ts';
+  import { approvedConsent } from '@shared/legal-content.ts';
+  import { CONSENT_KEYS } from '@shared/consent-keys.ts';
 
   const scan = $derived(session.latestScan);
   /**
@@ -218,7 +220,7 @@
 
       {#if session.scanKind === 'face' && session.pendingCapture?.state === 'save-available'}
         <div class="reading__save">
-          {#if session.user?.consents.progress_photos}
+          {#if approvedConsent(session.user?.consents[CONSENT_KEYS.PROGRESS_PHOTOS])}
             <label>
               <input type="checkbox" bind:checked={saveSelected} />
               Save this as a progress photo

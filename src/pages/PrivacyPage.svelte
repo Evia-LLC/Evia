@@ -9,9 +9,8 @@
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { setConsent } from '@/state/controller.ts';
-  import { hasConsent } from '@shared/types.ts';
   import { CONSENT_KEYS } from '@shared/consent-keys.ts';
-  import { LEGAL_CONTENT } from '@shared/legal-content.ts';
+  import { LEGAL_CONTENT, approvedConsent, consentWordingVersion } from '@shared/legal-content.ts';
 
   const consents = $derived(session.user?.consents);
 
@@ -57,14 +56,17 @@
       <label class="toggle">
         <input
           type="checkbox"
-          checked={hasConsent(consents, CONSENT_KEYS.PROGRESS_PHOTOS)}
+          checked={approvedConsent(consents?.[CONSENT_KEYS.PROGRESS_PHOTOS])}
           onchange={(e) => toggle('progress_photos', e)}
-          disabled={!session.imageStorage || session.guest}
+          disabled={!session.imageStorage || session.guest || LEGAL_CONTENT['progress-photo-consent'].status !== 'approved'}
         />
         <div>
-          <strong>{LEGAL_CONTENT.progress_photos.title}</strong>
+          <strong>{LEGAL_CONTENT['progress-photo-consent'].title}</strong>
           <small>
-            {LEGAL_CONTENT.progress_photos.wording}
+            {LEGAL_CONTENT['progress-photo-consent'].body.join(' ')}
+            {#if LEGAL_CONTENT['progress-photo-consent'].status !== 'approved'}
+              This option is unavailable until the consent wording is approved.
+            {/if}
             {#if !session.imageStorage}
               Unavailable: this server has no encryption key configured, so it refuses to
               store images at all rather than store them in the clear.
@@ -78,9 +80,9 @@
       <label class="toggle">
         <input
           type="checkbox"
-          checked={hasConsent(consents, CONSENT_KEYS.CLOUD_REASONING)}
+          checked={approvedConsent(consents?.[CONSENT_KEYS.CLOUD_REASONING])}
           onchange={(e) => toggle('cloud_reasoning', e)}
-          disabled={!session.modelAvailable || session.guest}
+          disabled={!session.modelAvailable || session.guest || consentWordingVersion('cloud-reasoning-v1')?.status !== 'approved'}
         />
         <div>
           <strong>Let me think in the cloud</strong>
@@ -88,14 +90,16 @@
             Off by default, and nothing below happens while it is off. Turning it on lets me
             send what you type, your name, skin type, stated concerns and sensitivities,
             anything I have remembered about you, and your scan history to the model I think
-            with (Anthropic). It also lets me look at a capture for qualitative observations,
-            and lets my own voice speak my replies — which means the words I say are sent to
+            with (Anthropic). It also lets my own voice speak my replies — which means the words I say are sent to
             the voice provider to be synthesised.
             <br /><br />
             With it off I still talk, still scan, still track your history — I answer from my
             own server instead, and say so. The measured numbers never depend on this either way.
             {#if !session.modelAvailable}
               Unavailable while no API key is configured.
+            {/if}
+            {#if consentWordingVersion('cloud-reasoning-v1')?.status !== 'approved'}
+              This option is unavailable until its consent wording is approved.
             {/if}
           </small>
         </div>
