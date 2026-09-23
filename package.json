@@ -17,7 +17,8 @@
     "test:local": "node scripts/test-local.mjs",
     "test:watch": "vitest",
     "sync:mediapipe": "node scripts/sync-mediapipe.mjs",
-    "prebuild": "node scripts/sync-mediapipe.mjs && node scripts/fetch-static.mjs && node scripts/build-api.mjs"
+    "prebuild": "node scripts/check-legal-content.ts && node scripts/sync-mediapipe.mjs && node scripts/fetch-static.mjs && node scripts/build-api.mjs",
+    "check:legal": "node scripts/check-legal-content.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

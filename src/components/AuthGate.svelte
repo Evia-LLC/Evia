@@ -22,6 +22,7 @@
   import { register, signIn } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
   import { enterGuestMode } from '@/state/controller.ts';
+  import { link } from '@/router/router.svelte.ts';
 
   /**
    * Six of the nine metrics the analysis pipeline actually produces, in its own
@@ -286,6 +287,15 @@
           </button>
         </div>
 
+        {#if mode === 'register'}
+          <!-- Planning boundary only. A later approved flow can mount decisions
+               here after credentials; creating an account does not accept them. -->
+          <div class="auth__legal-step" data-future-legal-step>
+            <span>Legal review step (not active)</span>
+            <small>No agreement is collected on this screen.</small>
+          </div>
+        {/if}
+
         {#if error}
           <div class="error auth__error" role="alert" transition:makeRoom={{ duration: 320 }}>
             {error}
@@ -359,7 +369,17 @@
         <p class="auth__promise">
           Skin scans are analysed on your device. The photo never leaves it unless you say so.
         </p>
+        <p class="auth__legal-links">
+          Review the placeholder <a href="/legal/terms" use:link>Terms</a> and
+          <a href="/legal/privacy" use:link>Privacy Policy</a>. These drafts are not accepted by signing in or creating an account.
+        </p>
       </form>
     </div>
   </div>
 </div>
+
+<style>
+  .auth__legal-step { display: grid; gap: .15rem; padding: .7rem 0; opacity: .72; }
+  .auth__legal-links { font-size: .75rem; opacity: .75; }
+  .auth__legal-links a { color: inherit; }
+</style>

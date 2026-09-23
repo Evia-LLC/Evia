@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
   import { bootstrap, enterScanPage, initVoice, leaveScanPage, refreshVoice } from '@/state/controller.ts';
-  import { router } from '@/router/router.svelte.ts';
+  import { isLegalRoute, router } from '@/router/router.svelte.ts';
   import ElohimStage from '@/components/ElohimStage.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
   import HoloPanel from '@/components/HoloPanel.svelte';
@@ -17,6 +17,14 @@
   import RoutinePage from '@/pages/RoutinePage.svelte';
   import ProfilePage from '@/pages/ProfilePage.svelte';
   import PrivacyPage from '@/pages/PrivacyPage.svelte';
+  import TermsPage from '@/pages/legal/TermsPage.svelte';
+  import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage.svelte';
+  import FacialScanConsentPage from '@/pages/legal/FacialScanConsentPage.svelte';
+  import HealthConsentPage from '@/pages/legal/HealthConsentPage.svelte';
+  import SafetyLifestyleConsentPage from '@/pages/legal/SafetyLifestyleConsentPage.svelte';
+  import ProgressPhotoConsentPage from '@/pages/legal/ProgressPhotoConsentPage.svelte';
+  import SubscriptionDisclosurePage from '@/pages/legal/SubscriptionDisclosurePage.svelte';
+  import CancellationPage from '@/pages/legal/CancellationPage.svelte';
 
   let booting = $state(true);
 
@@ -150,6 +158,18 @@
 
   {#if booting}
     <div class="auth"><div class="auth__mark">Elohim</div></div>
+  {:else if isLegalRoute(router.id)}
+    {#key router.id}
+      {#if router.is('legal-terms')}<TermsPage />
+      {:else if router.is('legal-privacy')}<PrivacyPolicyPage />
+      {:else if router.is('legal-facial-scan')}<FacialScanConsentPage />
+      {:else if router.is('legal-health')}<HealthConsentPage />
+      {:else if router.is('legal-safety-lifestyle')}<SafetyLifestyleConsentPage />
+      {:else if router.is('legal-progress-photo')}<ProgressPhotoConsentPage />
+      {:else if router.is('legal-subscription')}<SubscriptionDisclosurePage />
+      {:else if router.is('legal-cancellation')}<CancellationPage />
+      {/if}
+    {/key}
   {:else if !session.signedIn}
     <AuthGate />
   {:else}
