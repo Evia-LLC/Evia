@@ -31,7 +31,7 @@ npm run build
 node scripts/dev.mjs
 mkdir -p data && node scripts/dev.mjs
 rg -n -i "evia\.com|@evia\.com|meetevia\.com|@meetevia\.com" . \
-  --glob '!node_modules/**' --glob '!dist/**' --glob '!api/index.js'
+  --glob '!node_modules/**' --glob '!dist/**' --glob '!api/index.js' --glob '!docs/SRS_V2_COMPLIANCE_AUDIT.md'
 ```
 
 Test results: Vitest reported `17 passed | 1 skipped` files and `202 passed | 8 skipped` tests; `svelte-check` reported zero errors/warnings; `tsc --noEmit` passed. None of the existing tests is evidence for the absent age/Guardian/payment/consent state machine.
