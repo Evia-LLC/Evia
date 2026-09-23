@@ -63,6 +63,7 @@ class SessionState {
    * accounts, history and conversation are off. Stated as such on the gate.
    */
   databaseAvailable = $state(true);
+  dataExport = $state<{ status: 'idle' | 'exporting' | 'complete' | 'error'; filename?: string; error?: string }>({ status: 'idle' });
 
   /**
    * Looking around without an account.
@@ -200,6 +201,7 @@ class SessionState {
     this.listening = false;
     this.speaking = false;
     this.spokenChars = 0;
+    this.dataExport = { status: 'idle' };
   }
 }
 

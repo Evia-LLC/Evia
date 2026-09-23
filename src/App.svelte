@@ -17,6 +17,7 @@
   import RoutinePage from '@/pages/RoutinePage.svelte';
   import ProfilePage from '@/pages/ProfilePage.svelte';
   import PrivacyPage from '@/pages/PrivacyPage.svelte';
+  import DataRightsPage from '@/pages/DataRightsPage.svelte';
 
   let booting = $state(true);
 
@@ -172,6 +173,8 @@
         <ProfilePage />
       {:else if router.is('privacy')}
         <PrivacyPage />
+      {:else if router.is('data')}
+        <DataRightsPage />
       {/if}
     {/key}
 

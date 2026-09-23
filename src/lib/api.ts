@@ -55,6 +55,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+function attachmentFilename(value: string | null): string {
+  const match = value?.match(/filename="?([^";]+)"?/i);
+  return match?.[1] ?? 'elohim-data.json';
+}
+
 export const api = {
   health: () =>
     request<{
@@ -106,8 +111,22 @@ export const api = {
       body: JSON.stringify({ kind, granted }),
     }),
 
-  deleteEverything: () =>
-    request<{ ok: true; blobsShredded: number }>('/me/data', { method: 'DELETE' }),
+  async exportMyData(): Promise<{ blob: Blob; filename: string }> {
+    const headers = new Headers();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const res = await fetch('/api/me/data-export', { headers, credentials: 'same-origin' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      throw new ApiError(res.status, body.error ?? res.statusText);
+    }
+    return {
+      blob: await res.blob(),
+      filename: attachmentFilename(res.headers.get('Content-Disposition')),
+    };
+  },
+
+  deleteAccount: () =>
+    request<{ ok: true; blobsShredded: number; blobsFailed: number }>('/me/data', { method: 'DELETE' }),
 
   chatHistory: () => request<{ messages: ChatMessage[] }>('/chat/history'),
 

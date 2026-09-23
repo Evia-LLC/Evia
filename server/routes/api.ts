@@ -34,6 +34,8 @@ import {
 import { newId } from '../lib/ids.ts';
 import { chatLimiter, scanLimiter, visionLimiter, voiceLimiter } from '../lib/rate-limit.ts';
 import { log } from '../lib/log.ts';
+import { assembleDataExport } from '../privacy/export.ts';
+import { deleteAccount } from '../privacy/delete-account.ts';
 import {
   BODY_METRIC_KEYS,
   PROFILE_METRIC_KEYS,
@@ -92,29 +94,18 @@ apiRouter.put('/me/consent', async (req, res) => {
   res.json({ consents: await users.getConsents(req.userId!) });
 });
 
-/**
- * Hard delete. Shreds blobs first, then drops the user; rows cascade.
- *
- * Both tables, and this list has to grow whenever a table starts holding a
- * blob. "Delete everything" is the one promise in this app where a missed
- * source is not a bug in a feature, it is the feature being a lie — a body
- * capture left in storage after the account is gone is exactly that.
- */
+/** Portable, versioned JSON. Photo binaries remain out of scope for JSON. */
+apiRouter.get('/me/data-export', async (req, res) => {
+  const document = await assembleDataExport(req.userId!);
+  const date = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="elohim-data-${date}.json"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.type('application/json').send(JSON.stringify(document, null, 2));
+});
+
+/** Hard delete orchestration lives in privacy/delete-account.ts. */
 apiRouter.delete('/me/data', async (req, res) => {
-  const refs = [
-    ...(await scansRepo.allBlobRefs(req.userId!)),
-    ...(await bodyRepo.allBodyBlobRefs(req.userId!)),
-  ];
-  for (const ref of refs) {
-    try {
-      await shredBlob(ref);
-    } catch (err) {
-      log.error('privacy', 'blob shred failed', { error: (err as Error).message });
-    }
-  }
-  await users.deleteUser(req.userId!);
-  log.info('privacy', 'account and all data deleted', { blobs: refs.length });
-  res.json({ ok: true, blobsShredded: refs.length });
+  res.json(await deleteAccount(req.userId!));
 });
 
 // --- chat -------------------------------------------------------------------

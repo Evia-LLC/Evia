@@ -108,6 +108,55 @@ export async function recentMessages(
     .reverse();
 }
 
+export interface ConversationExport {
+  id: string;
+  startedAt: string;
+  lastActiveAt: string;
+  title: string | null;
+  messages: ChatMessage[];
+}
+
+/** Every transcript owned by one user, with no UI-oriented message limit. */
+export async function exportTranscripts(userId: string): Promise<ConversationExport[]> {
+  const conversations = await rows<{
+    id: string; started_at: string; last_active_at: string; title: string | null;
+  }>(
+    `SELECT id, started_at, last_active_at, title FROM conversations
+      WHERE user_id = ? ORDER BY started_at`,
+    userId,
+  );
+  return Promise.all(conversations.map(async (conversation) => ({
+    id: conversation.id,
+    startedAt: conversation.started_at,
+    lastActiveAt: conversation.last_active_at,
+    title: conversation.title,
+    messages: (await rows<MessageRow>(
+      `SELECT id, role, content, emotion, intent, directive_json, demo, created_at
+         FROM messages WHERE conversation_id = ? ORDER BY created_at`,
+      conversation.id,
+    )).map(hydrateMessage),
+  })));
+}
+
+/** Complete memory list for portability; the normal reader remains capped. */
+export async function exportMemories(userId: string): Promise<MemoryRecord[]> {
+  const found = await rows<{
+    id: string; kind: string; key: string; value: string; confidence: number; updated_at: string;
+  }>(
+    `SELECT id, kind, key, value, confidence, updated_at FROM memories
+      WHERE user_id = ? ORDER BY updated_at`,
+    userId,
+  );
+  return found.map((memory) => ({
+    id: memory.id,
+    kind: memory.kind as MemoryRecord['kind'],
+    key: memory.key,
+    value: memory.value,
+    confidence: memory.confidence,
+    updatedAt: memory.updated_at,
+  }));
+}
+
 // --- memories ---------------------------------------------------------------
 // Durable facts, distinct from the transcript (ARCHITECTURE §2).
 

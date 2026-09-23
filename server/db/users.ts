@@ -71,6 +71,11 @@ export async function createUser(
     // Consent defaults to withheld and must be granted explicitly.
     for (const kind of ['image_storage', 'cloud_reasoning'] as ConsentKind[]) {
       await tx.run('INSERT INTO consents (user_id, kind, granted) VALUES (?, ?, 0)', id, kind);
+      await tx.run(
+        `INSERT INTO consent_history (id, user_id, kind, granted, recorded_at)
+         VALUES (?, ?, ?, 0, ?)`,
+        newId(), id, kind, now,
+      );
     }
   });
 
@@ -235,15 +240,39 @@ export async function setConsent(
   kind: ConsentKind,
   granted: boolean,
 ): Promise<void> {
-  await run(
-    `INSERT INTO consents (user_id, kind, granted, granted_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT (user_id, kind) DO UPDATE SET granted = excluded.granted,
-                                               granted_at = excluded.granted_at`,
+  const recordedAt = nowIso();
+  await transaction(async (tx) => {
+    await tx.run(
+      `INSERT INTO consents (user_id, kind, granted, granted_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, kind) DO UPDATE SET granted = excluded.granted,
+                                                 granted_at = excluded.granted_at`,
+      userId, kind, granted ? 1 : 0, granted ? recordedAt : null,
+    );
+    await tx.run(
+      `INSERT INTO consent_history (id, user_id, kind, granted, recorded_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      newId(), userId, kind, granted ? 1 : 0, recordedAt,
+    );
+  });
+}
+
+export interface ConsentHistoryEntry {
+  kind: ConsentKind;
+  granted: boolean;
+  recordedAt: string;
+}
+
+export async function getConsentHistory(userId: string): Promise<ConsentHistoryEntry[]> {
+  const found = await rows<{ kind: string; granted: number; recorded_at: string }>(
+    `SELECT kind, granted, recorded_at FROM consent_history
+      WHERE user_id = ? ORDER BY recorded_at, id`,
     userId,
-    kind,
-    granted ? 1 : 0,
-    granted ? nowIso() : null,
   );
+  return found.map((entry) => ({
+    kind: entry.kind as ConsentKind,
+    granted: Number(entry.granted) === 1,
+    recordedAt: entry.recorded_at,
+  }));
 }
 
 export async function getUserSummary(userId: string): Promise<UserSummary | null> {

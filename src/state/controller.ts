@@ -1162,11 +1162,33 @@ export async function setConsent(
   session.user = me.user;
 }
 
-export async function deleteEverything(): Promise<number> {
-  const { blobsShredded } = await api.deleteEverything();
+export async function downloadDataExport(): Promise<void> {
+  if (session.dataExport.status === 'exporting') return;
+  session.dataExport = { status: 'exporting' };
+  try {
+    const { blob, filename } = await api.exportMyData();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    session.dataExport = { status: 'complete', filename };
+  } catch (err) {
+    session.dataExport = {
+      status: 'error',
+      error: err instanceof Error ? err.message : 'The export could not be prepared.',
+    };
+  }
+}
+
+export async function deleteAccount(): Promise<{ blobsShredded: number; blobsFailed: number }> {
+  const { blobsShredded, blobsFailed } = await api.deleteAccount();
+  // Authentication is retained throughout the request. Only a confirmed
+  // server response clears the in-memory token and local session.
   setToken(null);
   session.reset();
-  return blobsShredded;
+  return { blobsShredded, blobsFailed };
 }
 
 export async function refreshScans(): Promise<void> {
