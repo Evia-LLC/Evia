@@ -14,6 +14,7 @@
   import { director } from '@/stage/director.ts';
   import { sample } from '@/sample/mode.svelte.ts';
   import Shell from '@/shell/Shell.svelte';
+  import SampleBadge from '@/shell/SampleBadge.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
   import Intro from '@/components/Intro.svelte';
   import HoloPanel from '@/components/HoloPanel.svelte';
@@ -232,4 +233,8 @@
       <HoloPanel />
     {/if}
   {/if}
+
+  <!-- Sample data must be announced wherever it shows, the sign-in gate
+       included. The badge is a singleton, so the Shell's own copy defers. -->
+  <SampleBadge />
 </div>
