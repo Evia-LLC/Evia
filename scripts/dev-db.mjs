@@ -27,7 +27,11 @@ import { fileURLToPath } from 'node:url';
 import { prepareDirectory } from './lib/prepare-directory.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const dataDirectory = path.join(root, 'data');
+// ELOHIM_DEV_DB_DIR lets a second checkout or dev server keep its own database
+// instead of opening the same PGlite directory twice.
+const dataDirectory = process.env.ELOHIM_DEV_DB_DIR
+  ? path.resolve(root, process.env.ELOHIM_DEV_DB_DIR)
+  : path.join(root, 'data');
 
 export const DEV_DB_PORT = Number(process.env.ELOHIM_DEV_DB_PORT ?? 5433);
 export const DEV_DB_URL = `postgres://postgres:postgres@localhost:${DEV_DB_PORT}/postgres`;
