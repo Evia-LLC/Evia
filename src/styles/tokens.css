@@ -1,133 +1,645 @@
 /*
- * src/styles/tokens.css — imported FIRST from app.css (above ./auth.css).
+ * src/styles/tokens.css - the one token set (BUILD-PLAN decision 9).
  *
- * The only place a colour, size, space, duration or z-index is declared.
- * Every name an existing selector reads is kept and revalued: --ink, --ink-soft,
- * --ink-faint, --quiet, --line, --line-strong, --warm, --good, --bad, --radius,
- * --radius-sm, --shadow, --font, --font-mono, --display, --ease, --ease-soft,
- * --gutter, --rail-w, --tabbar-h, --page-w, --page-w-wide, --chat-width, --tap,
- * --safe-*, --vvh, --kb, --sheet-h, --chat-chrome, --topbar-h, --panel-w, --free-w,
- * --auth-ease, --auth-ease-soft, --auth-ease-press, --auth-quiet, --auth-display.
+ * Imported first from app.css. Every colour, size, radius, shadow, space,
+ * duration and z-index the app uses is declared here and nowhere else, so a
+ * page never picks its own pink.
  *
- * --holo is NOT declared here. The hologram cyan is --holo-scene, and --holo is
- * declared only on .stage-canvas below, so any var(--holo) left in a DOM rule
- * resolves to nothing and shows up in review instead of silently staying cyan.
+ * The palette is unified from the five measured mockup specs
+ * (work/evia-rebuild/specs/{home,routine,progress,products,scan}.md, section 3).
+ * Where the mockups disagree by a few units (the active tab pill is #FCB0AE on
+ * Progress and #F8B6AC on Routine) the values are merged into one step of a
+ * ramp rather than kept as per-screen variants.
+ *
+ * Three layers, read top to bottom:
+ *   1. raw ramps     (--rose-300, --choc-600 ...): what the colour is.
+ *   2. semantic      (--text, --surface-card, --focus-ring ...): what it is for.
+ *                    Components read these. Text tokens are checked for WCAG 2.2
+ *                    AA against the surface they are meant for (ratios noted).
+ *   3. legacy        the names the not-yet-restyled screens (auth gate, legal
+ *                    pages, the old page frame) still read, re-pointed at the new
+ *                    palette so they keep working until their owners restyle them.
+ *
+ * Breakpoints cannot be custom properties inside @media, so they are written
+ * out where used and listed here once: phone < 820px, tablet 820-1199px,
+ * desktop >= 1200px.
  */
 
 /*
- * Metric-matched fallbacks, so font-display: swap never reflows the hero.
- * PLACEHOLDER METRICS — replace before merge with the output of
- *   npx fontaine   (or @capsizecss/metrics) run against the exact files the
- * Google stylesheet serves. Do not ship these numbers unmeasured.
+ * Metric-matched fallbacks, so `font-display: swap` does not reflow the page
+ * when the web font lands. The numbers were computed from the exact TTFs the
+ * Google stylesheet serves (hhea/OS2 metrics, weighted average advance width
+ * against the local fallback), the same method fontaine/capsize use.
  */
 @font-face {
-  font-family: 'Manrope Fallback';
-  src: local('Segoe UI'), local('Roboto'), local('Helvetica Neue'), local('Arial');
-  size-adjust: 104%;      /* fontaine: replace */
-  ascent-override: 102%;  /* fontaine: replace */
-  descent-override: 27%;  /* fontaine: replace */
+  font-family: 'Google Sans Flex Fallback';
+  src: local('Arial'), local('ArialMT'), local('Helvetica Neue'), local('Roboto');
+  size-adjust: 101.87%;
+  ascent-override: 94.82%;
+  descent-override: 28.07%;
   line-gap-override: 0%;
 }
 @font-face {
-  font-family: 'Cormorant Garamond Fallback';
-  src: local('Iowan Old Style'), local('Palatino Linotype'), local('Georgia');
-  size-adjust: 89%;       /* fontaine: replace */
-  ascent-override: 104%;  /* fontaine: replace */
-  descent-override: 32%;  /* fontaine: replace */
+  font-family: 'Newsreader Fallback';
+  src: local('Georgia');
+  size-adjust: 93.77%;
+  ascent-override: 78.39%;
+  descent-override: 28.26%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Newsreader Fallback';
+  font-style: italic;
+  src: local('Georgia Italic'), local('Georgia-Italic');
+  size-adjust: 93.77%;
+  ascent-override: 78.39%;
+  descent-override: 28.26%;
+  line-gap-override: 0%;
+}
+@font-face {
+  /* Decorative only: whatever upright script the system has. */
+  font-family: 'Oooh Baby Fallback';
+  src: local('Snell Roundhand'), local('Segoe Script'), local('Brush Script MT');
+  size-adjust: 80%;
+  ascent-override: 112%;
+  descent-override: 41%;
   line-gap-override: 0%;
 }
 
 :root {
-  /* ---- faces ---- */
-  --font: 'Manrope', 'Manrope Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Cormorant Garamond', 'Cormorant Garamond Fallback', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-  --display: var(--font);            /* the h1 is the body face one weight lighter; every old --display use resolves */
-  --font-mono: var(--font);          /* retired: numerals are tabular, not monospaced. .devstats re-pins itself. */
-  --num: 'tnum' 1, 'lnum' 1;
+  color-scheme: light;
 
-  /* ---- type scale (no half pixels) ---- */
-  --t-xs: 11px;                      /* floor: caps labels, axis text, chips */
-  --t-sm: 12px;                      /* meta, legal, dates, deltas */
-  --t-md: 13px;                      /* secondary prose, notes, field labels */
-  --t-body: 15px;                    /* body, rows, transcript, inputs */
-  --t-lg: 17px;                      /* card / item titles */
-  --t-h2: 22px;                      /* prose-section titles, ring values, score */
+  /* ======================================================================
+     1. RAW RAMPS
+     ====================================================================== */
+
+  /* Cream and blush: the light surfaces (Progress, Routine, Products pages). */
+  --cream-0: #fffaf7;
+  --cream-50: #fdf6f5; /* product card body */
+  --blush-50: #fcf3f1; /* cards */
+  --blush-100: #f9e7e4; /* light pills, toast */
+  --blush-150: #f4e6e4; /* inactive chips */
+  --blush-200: #ebd9d6; /* light pill border */
+  --blush-250: #e7d3ce; /* segmented track */
+  --blush-300: #eed2ce; /* "why" card */
+
+  /* Page ground: the vertical wash behind light pages. */
+  --page-top: #f5e3df;
+  --page-mid: #f8ece9;
+  --page-bottom: #f2e4e0;
+
+  /* Rose: pills, active states, gentle accents. */
+  --rose-100: #fde8e6;
+  --rose-200: #fdd8d9; /* rose badge */
+  --rose-300: #fec4c5; /* active chip */
+  --rose-400: #f9b3ad; /* active tab pill (merged #FCB0AE / #F8B6AC) */
+  --rose-500: #f09092; /* header icon discs */
+  --rose-600: #dc6470; /* coral glyphs, sparkle */
+  --rose-700: #b2415c; /* raspberry: in-progress arcs */
+
+  /* The CTA and nav-pill gradients (Home CTA, Progress active nav pill). */
+  --cta-from: #f6ac98;
+  --cta-mid: #f3a99e;
+  --cta-to: #e19c93;
+  --cta-ink: #2b0f0a; /* 9.6:1 on --cta-from, 8.0:1 on --cta-to */
+  --cta-icon: #522a1d;
+  --navpill-from: #fec1ba;
+  --navpill-to: #d6948c;
+  --navpill-ink: #1c0100; /* 12.9:1 / 8.0:1 */
+  --navpill-icon: #471b16;
+
+  /* Chocolate / rose-brown: the dark glass (sidebar, tip card, profile pill). */
+  --choc-950: #1f110c;
+  --choc-900: #2f1f1e;
+  --choc-800: #452c23;
+  --choc-700: #55301f;
+  --choc-600: #5e3524; /* Home sidebar glass */
+  --choc-500: #6c4133;
+  --choc-400: #81503c; /* profile pill glass result */
+  --choc-300: #9c6a5c; /* tip card */
+  --choc-200: #b58576;
+
+  /* Ink on light, darkest to quietest. */
+  --ink-950: #140e0c;
+  --ink-900: #1a1110;
+  --ink-800: #2a1815;
+  --ink-700: #3a2c2a;
+  --ink-600: #5a4a47;
+  --ink-500: #655552;
+
+  /* Ink on dark glass. */
+  --cream-ink-100: #fff4ec;
+  --cream-ink-90: #f8e4da;
+  --cream-ink-80: #f4dacd; /* lifted from #EFD2C4 so muted text keeps 4.5:1 on the dark glass over white */
+
+  /* Terracotta / rose-gold accents. */
+  --terracotta-400: #b4675f; /* "why" icon (decorative, 3.8:1) */
+  --terracotta-500: #a24e4b; /* trust checks: 5.2:1 on card */
+  --terracotta-600: #8e3f3c;
+  --rose-gold-300: #e6ae9e; /* acrylic sign, etched text */
+  --rose-gold-400: #e0a296; /* wall logo */
+  --copper-500: #b97260;
+  --copper-200: #fec0a4;
+
+  /* Sage: success, "Good", best match. */
+  --sage-100: #dee7dd;
+  --sage-200: #c5ecce;
+  --sage-400: #86ae7f;
+  --sage-500: #6c8a66;
+  --sage-600: #3d8459;
+  --sage-700: #2c6442; /* 6.4:1 on card */
+  --sage-900: #102416;
+
+  /* Amber and blue, used sparingly. */
+  --amber-500: #e68a31;
+  --star: #f5a742;
+  --blue-100: #c1e2f5;
+  --blue-900: #162e40;
+
+  /* Scan: dark navy and cyan hologram set (scan.md section 3.1-3.2). */
+  --navy-950: #090a0d;
+  --navy-900: #0f121a;
+  --navy-850: #0b131f;
+  --navy-800: #141b2c;
+  --navy-750: #1c2130;
+  --navy-700: #1f334d;
+  --navy-600: #2f4568;
+  --navy-line: rgba(110, 135, 180, 0.45);
+  --navy-line-faint: rgba(160, 185, 225, 0.14);
+  --holo-ink-strong: #f2f8ff;
+  --holo-ink: #e6f1fc;
+  --holo-ink-body: #bcc6dc; /* 9.4:1 on --navy-750 */
+  --holo-ink-muted: #a6afbf; /* 7.3:1 on --navy-750 (mockup #9AA3B3 lifted a step) */
+  --holo-cyan: #86ddf8;
+  --holo-cyan-rgb: 134, 221, 248;
+  --holo-rim: #8eb0f2;
+  --holo-core: #dcffff;
+  --holo-rose: #e0a2b3;
+  --holo-rose-ink: #321128;
+
+  /* ======================================================================
+     2. SEMANTIC
+     ====================================================================== */
+
+  /* Surfaces (light). */
+  --surface-page: linear-gradient(180deg, var(--page-top) 0%, var(--page-mid) 50%, var(--page-bottom) 100%);
+  --surface-page-flat: var(--page-mid);
+  --surface-card: var(--blush-50);
+  --surface-card-raised: var(--cream-50);
+  --surface-sunken: var(--blush-150);
+  --surface-pill: var(--blush-100);
+  --surface-track: var(--blush-250);
+  --surface-selected: var(--rose-400);
+
+  /* Glass. The dark glass tint is strong enough that cream text keeps 4.5:1
+     over anything behind it, white included (0.8 x --choc-700 over #FFFFFF =
+     #77594C: cream-ink-80 4.7:1, cream-ink-90 5.1:1, cream-ink-100 5.8:1). */
+  --glass-dark: rgba(85, 48, 31, 0.8);
+  --glass-dark-strong: rgba(70, 38, 26, 0.9);
+  --glass-dark-rim: rgba(255, 210, 190, 0.22);
+  --glass-dark-hi: rgba(255, 214, 196, 0.1);
+  --glass-light: rgba(255, 246, 243, 0.78);
+  --glass-light-rim: rgba(190, 140, 130, 0.22);
+  --glass-holo: rgba(8, 13, 24, 0.72);
+  --glass-holo-rim: var(--navy-line);
+  --glass-blur: 18px;
+
+  /* Text on light surfaces (ratios on --page-top / --surface-card). */
+  --text-strong: var(--ink-950); /* 15.3 / 17.5 */
+  --text: var(--ink-700); /* 10.7 / 12.2 */
+  --text-secondary: var(--ink-600); /* 6.7 / 7.7 */
+  --text-muted: var(--ink-500); /* 5.6 / 6.5; 4.9 on --surface-track */
+  --text-on-accent: var(--cta-ink);
+  --text-success: var(--sage-700);
+  --text-danger: #9a2f3f;
+  --text-link: var(--terracotta-600);
+
+  /* Text on dark glass (ratios on --choc-600 / --glass-dark over white). */
+  --text-on-dark-strong: var(--cream-ink-100); /* 9.7 / 5.8 */
+  --text-on-dark: var(--cream-ink-90); /* 8.5 / 5.1 */
+  --text-on-dark-muted: var(--cream-ink-80); /* 7.8 / 4.7 */
+
+  /* Text on the scan's navy. */
+  --text-on-holo-strong: var(--holo-ink-strong);
+  --text-on-holo: var(--holo-ink-body);
+  --text-on-holo-muted: var(--holo-ink-muted);
+
+  /* Lines. The -strong steps are for borders that carry meaning (>= 3:1). */
+  --border-subtle: rgba(190, 140, 130, 0.22);
+  --border: rgba(160, 110, 100, 0.32);
+  --border-strong: var(--choc-300); /* 3.6:1 on --page-top */
+  --divider: #efe3e3;
+  --border-on-dark: var(--glass-dark-rim);
+  --border-on-dark-strong: rgba(255, 220, 205, 0.55);
+
+  /* Accent and state. */
+  --accent: var(--terracotta-500);
+  --accent-soft: var(--rose-400);
+  --accent-strong: var(--rose-700);
+  --success: var(--sage-600);
+  --success-soft: var(--sage-100);
+  --warning: var(--amber-500);
+
+  /* Interaction tints and the flat "soft" fill (the product card's button). */
+  --tint-hover: rgba(231, 211, 206, 0.55);
+  --tint-hover-rose: rgba(249, 179, 173, 0.18);
+  --tint-hover-dark: rgba(255, 228, 218, 0.1);
+  --tint-press-dark: rgba(255, 228, 218, 0.16);
+  --soft-bg: #febfbd;
+  --soft-bg-hover: #fdb2b0;
+  --soft-border: rgba(246, 194, 194, 0.9);
+  --soft-ink: #290c0c; /* 11.9:1 on --soft-bg */
+  --cta-rim: rgba(255, 215, 205, 0.45);
+
+  /* ---- component tokens (read by src/ui; ratios are text on fill) ---- */
+  --hi-inset-white: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --iconbtn-soft-bg: #f6eeec;
+
+  --badge-match-ink: #0f2513; /* 12.6 on --sage-200 */
+  --badge-rose-ink: #983843; /* 5.4 on --rose-200 */
+  --badge-blush-from: #fbc5c3;
+  --badge-blush-to: #fcdcd9;
+  --badge-blush-ink: #341615; /* 10.9 */
+  --amber-100: #fbe6cf;
+  --amber-900: #5a2e07; /* 9.5 */
+  --photo-badge-bg: rgba(20, 18, 20, 0.82);
+  --photo-badge-rim: rgba(255, 255, 255, 0.14);
+  --photo-badge-ink: #ecebef; /* >= 9 over any photo */
+
+  --chip-border: #e7dad7;
+  /* The selected chip's edge carries the state, so it is a 3:1 line (3.6 on
+     --page-top, 4.1 on a card) rather than the mockup's barely-there #EFBDBC. */
+  --chip-selected-border: #b85a66;
+  --chip-selected-halo: #ffe1e0;
+  --chip-selected-ink: #41221e; /* 9.5 on --rose-300 */
+  --chip-selected-icon: #913838;
+
+  --seg-on-ink: #3f1211; /* 9.3 on --rose-400 */
+  --seg-on-icon: #813b2f;
+  --tint-hover-light-seg: rgba(255, 255, 255, 0.3);
+  --shadow-seg-pill: 0 1px 3px rgba(240, 150, 140, 0.25);
+  --seg-glass-bg: rgba(255, 255, 255, 0.03);
+  --seg-glass-border: rgba(255, 232, 236, 0.3);
+  --seg-glass-on: #fbc4be;
+  --seg-glass-on-ink: #2b120f; /* 11.5 */
+  --seg-holo-border: #495b7b;
+  --seg-holo-on-from: #e8b0bf;
+  --seg-holo-on-to: #dc9cae;
+  --seg-holo-ink: #d3e6f8; /* 10.0 on --navy-700 */
+
+  --card-rim: rgba(236, 214, 211, 0.6);
+  --card-rim-raised: rgba(236, 214, 211, 0.7);
+  --card-selected-rim: #f8cccd;
+  --card-selected-halo: #ffeae9;
+  --why-border: #e6cbc7;
+
+  --glass-dark-rim-hi: rgba(255, 215, 200, 0.55);
+  --glass-dark-rim-lo: rgba(255, 215, 200, 0.14);
+  --glass-dark-sheen: rgba(255, 214, 196, 0.1);
+  --glass-light-rim-hi: rgba(255, 255, 255, 0.75);
+  --glass-light-strong: rgba(255, 246, 243, 0.9);
+  --holo-rim-hi: rgba(160, 190, 240, 0.45);
+  --shadow-holo: 0 8px 28px rgba(0, 0, 0, 0.35);
+
+  --bar-track: #e8dedd;
+  --bar-from: #f99a98;
+  --bar-to: #eb9592;
+  --bar-sheen: rgba(255, 255, 255, 0.28);
+  --holo-track: #3e4355;
+  --scrub-rest: rgba(255, 222, 216, 0.28);
+  --scrub-played: #eba99f;
+
+  --ring-rose-a: #e39493;
+  --ring-rose-b: #f29595;
+  --ring-rose-c: #f2aca8;
+  --ring-rose-d: #fd9797;
+  --ring-rose-track: #fddeda;
+  --ring-holo-arc: #8ebbd9;
+  --ring-holo-track: #3e4355;
+
+  --toggle-off: #efe2df;
+
+  /* A pressed icon button's glyph (a saved heart), per tone: 3:1 or better on
+     the surface that tone is for (light 4.8 on the page; dark 4.2 on
+     --glass-dark over white, 6.9 on --choc-600; holo 4.7 on --glass-holo over
+     white). */
+  --pressed-on-light: var(--rose-700);
+  --pressed-on-dark: var(--rose-300);
+  --pressed-on-holo: #f0b8c8;
+
+  --avatar-from: #f6c9c2;
+  --avatar-to: #e8aaa3;
+  --avatar-ink: #4a1f18; /* 7.1 on the darker stop */
+  --avatar-ring: rgba(255, 210, 190, 0.6);
+  --shadow-avatar: 0 2px 8px rgba(40, 15, 5, 0.25);
+
+  --rose-icon: #b77974;
+  --disc-pink: #fdd5d2;
+  --sage-green-disc: #529a68;
+
+  /* ---- shell tokens (src/shell) ---- */
+  --logo-ink: #fef8f3;
+  --logo-tag: #f3dcd0; /* 5.3:1 on the worst sidebar spot */
+  /*
+   * The sidebar over its own lounge-strip plate (progress.md 2.1): graded, so
+   * the room reads through and the tint is heavy only under type. The plate's
+   * own dark plaster column is the nav backdrop; the ramp adds weight at the
+   * top (wordmark and tagline, under the cove light) and the bottom (the Talk
+   * card, over the LED ledge), and stays light between. With the insurance
+   * layer (the spec's own, over the left 70% where the labels are) the worst
+   * named spots hold: tagline on the cove #FFCB96 5.3:1, nav labels on the dusk
+   * window #A07281 7.0:1, on the column #673D2F 10:1. Over the live room on
+   * Home and Routine the full --glass-dark frosts the room instead.
+   */
+  --sidebar-glass: linear-gradient(
+    180deg,
+    rgba(85, 48, 31, 0.72) 0%,
+    rgba(85, 48, 31, 0.64) 16%,
+    rgba(85, 48, 31, 0.46) 28%,
+    rgba(85, 48, 31, 0.46) 62%,
+    rgba(85, 48, 31, 0.6) 74%,
+    rgba(85, 48, 31, 0.64) 100%
+  );
+  --sidebar-insurance: linear-gradient(90deg, rgba(60, 30, 20, 0.18) 0 70%, rgba(60, 30, 20, 0) 100%);
+  --sidebar-glass-room: var(--glass-dark);
+  --sidebar-sheen: rgba(255, 214, 196, 0.06);
+  --sidebar-seam: rgba(255, 238, 227, 0.7);
+  --navpill-mid: #f7b2ad;
+  --navpill-mid2: #e8a29c;
+  --shadow-navpill: 0 4px 12px rgba(40, 10, 5, 0.22);
+  --icon-lift: 0 1px 1px rgba(30, 10, 5, 0.3);
+  /* The Talk card darkens rather than lightens what is behind it: over the
+     LED ledge it sits on (0.6 sidebar tint + this over #FFD9B0) its 14px body
+     and caption keep 5.3:1, and 4.7:1 even over white. */
+  --talk-glass: rgba(58, 32, 22, 0.35);
+  --talk-divider: rgba(255, 200, 180, 0.38);
+  --portrait-pink: #f6c2c0;
+  --portrait-pink-hi: #fbd5d1;
+  --portrait-rim: rgba(255, 225, 215, 0.5);
+  --tabbar-glass: rgba(70, 38, 26, 0.9);
+  --sheet-glass: rgba(58, 32, 22, 0.97);
+  --scrim: rgba(20, 10, 6, 0.45);
+  --pill-glass-dark: rgba(70, 35, 22, 0.62);
+  --shadow-pill-dark: 0 4px 14px rgba(40, 15, 6, 0.25);
+  --sample-bg: #1f110c;
+  --sample-rim: rgba(230, 174, 158, 0.6);
+  --sample-ink: #fff4ec; /* 17:1 */
+  --text-lift: 0 1px 2px rgba(31, 17, 12, 0.45);
+
+  /* Focus: 2px ring, offset 2px. Raspberry on light (5.0:1 on the page),
+     warm white on dark glass and on the navy (set by .on-dark / .on-holo). */
+  --focus-ring: #a63a55;
+  --focus-ring-on-dark: #ffe3d6;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  /* ======================================================================
+     RADIUS, SHADOW, SPACE
+     ====================================================================== */
+
+  --r-xs: 6px;
+  --r-sm: 8px; /* photo date badges */
+  --r-md: 12px; /* chips, small buttons, tip glass */
+  --r-lg: 14px; /* cards, segmented tracks */
+  --r-xl: 20px; /* video card, sidebar card */
+  --r-2xl: 26px; /* home tip card */
+  --r-pill: 999px;
+
+  --shadow-xs: 0 1px 2px rgba(90, 40, 30, 0.06);
+  --shadow-sm: 0 2px 8px rgba(150, 90, 80, 0.07);
+  --shadow-md: 0 6px 18px rgba(90, 50, 45, 0.1);
+  --shadow-lg: 0 10px 30px rgba(40, 15, 8, 0.25);
+  --shadow-cta: 0 8px 24px rgba(60, 20, 10, 0.22);
+  --shadow-glow-rose: 0 2px 6px rgba(240, 150, 150, 0.25);
+  --shadow-inset-hi: inset 0 1px 0 rgba(255, 225, 215, 0.45);
+
+  --sp-0: 2px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 48px;
+  --sp-10: 64px;
+  --sp-11: 80px;
+
+  /* ======================================================================
+     TYPE (typography.md; readability minimums per BUILD-PLAN decision 8)
+     ====================================================================== */
+
+  --font-sans: 'Google Sans Flex', 'Google Sans Flex Fallback', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Newsreader', 'Newsreader Fallback', Georgia, 'Times New Roman', serif;
+  --font-script: 'Oooh Baby', 'Oooh Baby Fallback', cursive;
+  --font-num: 'tnum' 1, 'lnum' 1;
+
+  /* Floors: nothing renders below --fs-micro, and that size is only for
+     uppercase labels with --tr-micro tracking. */
+  --fs-micro: 11px; /* UPPERCASE eyebrows only */
+  --fs-meta: 12px; /* dates, captions, secondary meta */
+  --fs-small: 13px;
+  --fs-body-sm: 14px; /* the body floor */
+  --fs-body: 15px;
+  --fs-label: 16px; /* nav, buttons, profile name */
+  --fs-lead: 17px; /* card titles (small), CTA */
+  --fs-title-sm: 20px; /* card titles */
+  --fs-title: 22px;
+  --fs-h3: 26px; /* light lead question */
+  --fs-h2: 32px; /* panel titles ("Routine") */
+  --fs-h1: 48px; /* page titles ("Progress") */
+  --fs-display: 54px; /* product hero */
+  --fs-display-xl: 66px; /* the greeting name */
+  --fs-script: 26px; /* never under 20px */
+
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.08;
+  --lh-snug: 1.25;
+  --lh-normal: 1.45;
+  --lh-relaxed: 1.6;
+
+  --tr-display: -0.015em;
+  --tr-title: -0.005em;
+  --tr-body: 0; /* below 16px: never tighter than -0.005em */
+  --tr-micro: 0.06em; /* uppercase micro labels (>= 0.04em) */
+  --tr-caps: 0.08em;
+
+  --measure: 68ch;
+
+  /* ======================================================================
+     MOTION
+     ====================================================================== */
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --dur-ambient: 7s; /* breathing glows */
+
+  /* ======================================================================
+     LAYOUT AND LAYERS
+     ====================================================================== */
+
+  --sidebar-w: 248px; /* >= 1200px */
+  --navrail-w: 80px; /* 820-1199px */
+  --tabbar-h: 64px; /* < 820px, plus the home-indicator inset */
+  --topbar-h: 72px;
+  --content-max: 1240px;
+  --page-pad: clamp(16px, 2.2vw, 32px);
+  --tap: 44px;
+
+  --z-backdrop: -1; /* the room plate, inside the shell's isolated stack */
+  --z-page: 4;
+  --z-chat: 3;
+  --z-reading: 5;
+  --z-devstats: 5;
+  --z-nav: 8;
+  --z-sheet: 12;
+  --z-badge: 16;
+  --z-auth: 20;
+  --z-intro: 40;
+
+  /* Environment (App.svelte keeps --vvh and --kb live). */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --vvh: 100dvh;
+  --kb: 0px;
+  --sheet-h: 0px;
+
+  /* ======================================================================
+     ENVIRONMENT STAND-INS
+     What Room.svelte paints while a room's Blender plate has not landed (or
+     fails): the specs' measured environment colours (home.md, progress.md,
+     products.md section 3; scan.md 3.3). Plate substitutes, not UI colours -
+     nothing but the fallback room reads them. Glows are rgb triples so the
+     room can vary their strength.
+     ====================================================================== */
+
+  /* Light: the amber cove and LED ledges, lamps, warm spill, the rose-gold
+     coves of the consult room, the products set's blush daylight. */
+  --env-cove-rgb: 255, 203, 150;
+  --env-lamp-rgb: 255, 216, 176;
+  --env-ember-rgb: 249, 166, 117;
+  --env-dusk-rgb: 176, 86, 75;
+  --env-mauve-rgb: 160, 114, 129;
+  --env-rosegold-rgb: 248, 173, 153;
+  --env-copper-rgb: 173, 105, 91;
+  --env-led-rgb: 255, 224, 209;
+  --env-blush-rgb: 252, 236, 230;
+  --env-panel-rgb: 190, 128, 108;
+  --env-etch-rgb: 255, 220, 200;
+  --env-shade-rgb: 60, 25, 15;
+
+  /* Lounge at dusk: the window's sky, top to bottom, then wall and floor. */
+  --env-sky-1: #5c5469;
+  --env-sky-2: #7f525d;
+  --env-sky-3: #9e5555;
+  --env-sky-4: #b0564b;
+  --env-wall-1: #9b5d47;
+  --env-wall-2: #b36f51;
+  --env-wall-3: #a46b5a;
+  --env-wall-4: #8e5642;
+  --env-floor-1: #7e4c3e;
+  --env-floor-2: #623d33;
+
+  /* The sidebar strips' dark plaster (progress.md 2.1, products.md 6B). */
+  --env-plaster-1: #673d2f;
+  --env-plaster-2: #603a2b;
+  --env-plaster-3: #573127;
+  --env-plaster-4: #3a241e;
+  --env-shelf: #3b260f;
+
+  /* Consult room at night, below the window. */
+  --env-night-1: #1b1a24;
+  --env-night-2: #3d2a2c;
+  --env-night-3: #563d3e;
+
+  /* The Products campaign set. */
+  --env-set-1: #d1b0a9;
+  --env-set-2: #deb8b0;
+  --env-set-3: #e5bdb3;
+  --env-set-4: #efcfc8;
+  --env-set-5: #f1d3cb;
+
+  /* ======================================================================
+     3. LEGACY NAMES
+     Read by auth.css, pages.css, app.css and the not-yet-restyled screens.
+     The dark champagne theme is gone: these now resolve to the rose-brown
+     palette (a dark chocolate ground, cream ink, rose-gold instead of the
+     champagne metal), so those screens stay legible until they are rebuilt.
+     Delete a name once nothing reads it.
+     ====================================================================== */
+  --font: var(--font-sans);
+  --display: var(--font-sans);
+  --font-mono: var(--font-sans);
+  --num: var(--font-num);
+
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-md: 14px;
+  --t-body: 15px;
+  --t-lg: 17px;
+  --t-h2: 22px;
   --t-display: clamp(30px, 3.2vw, 40px);
   --t-figure: clamp(34px, 3.6vw, 48px);
-  --t-voice: clamp(19px, 1.6vw, 22px);   /* her words: the serif floor is 19px */
+  --t-voice: clamp(19px, 1.6vw, 22px);
   --t-count: clamp(64px, 10vw, 96px);
-
   --w-light: 300;
   --w-regular: 400;
-  --w-medium: 500;                   /* the ceiling. Nothing on the DOM is 600. */
-
-  --lh-tight: 1.1;
-  --lh-snug: 1.3;
+  --w-medium: 500;
   --lh-body: 1.6;
   --lh-voice: 1.45;
-
-  --trk-cap: 0.14em;                 /* the ONLY tracking for uppercase */
-  --trk-cta: 0.12em;
+  --trk-cap: 0.12em;
+  --trk-cta: 0.1em;
   --trk-display: -0.02em;
   --trk-figure: -0.03em;
-  --measure: 60ch;
 
-  /* ---- ink: three tiers ---- */
-  --ink: #edeff4;
-  --ink-soft: #aeb5c6;
-  --quiet: #8b94a9;                  /* AA at 11px over the ground; the only grey small text may use */
-  --ink-faint: var(--quiet);         /* retired tier, aliased so old rules stay legal */
-  --ink-on-metal: #0b0e15;
-
-  /* ---- ground and planes (no blur, no bevel, no scanline) ---- */
-  --bg: #0a0d14;
-  --ground-rgb: 6, 8, 14;            /* the one near-black every grade is built from */
-  --surface: rgba(12, 15, 23, 0.88);
-  --surface-strong: rgba(10, 13, 20, 0.96);
-  --surface-raised: rgba(237, 239, 244, 0.035);
-  --chip: rgba(6, 8, 14, 0.74);      /* small text over skin needs a ground, not tracking */
-
-  /* ---- hairlines ---- */
+  --ink: var(--cream-ink-100);
+  --ink-soft: var(--cream-ink-90);
+  --quiet: #d8beb4; /* 10.1:1 on the legacy ground */
+  --ink-faint: var(--quiet);
+  --ink-on-metal: var(--choc-950);
+  --bg: #24140f;
+  --ground-rgb: 36, 20, 15;
+  --surface: rgba(36, 20, 15, 0.88);
+  --surface-strong: rgba(31, 17, 12, 0.96);
+  --surface-raised: rgba(255, 244, 236, 0.05);
+  --chip: rgba(31, 17, 12, 0.74);
   --hair: 1px;
-  --line: rgba(174, 181, 198, 0.14);
-  --line-strong: rgba(174, 181, 198, 0.28);
-  --line-metal: rgba(207, 187, 160, 0.55);
-
-  /* ---- the one metal: champagne ---- */
-  --metal: #cfbba0;
-  --metal-soft: #b3a289;
-  --metal-bright: #e8dac3;
-  --metal-rgb: 207, 187, 160;
-  --warm: var(--metal);              /* legacy name, same value */
-
-  /* ---- semantic: text and 5px dots only, never a fill ---- */
-  --good: #a6c9b7;
-  --bad: #d8a595;
-
-  /* ---- scene only ---- */
-  --holo-scene: #7fd4ff;
-  --holo-scene-rgb: 127, 212, 255;
-  /* The gate's two drifting lights (auth.css .auth__key / .auth__fill): light in
-     the room, not chrome. Declared here so the lint:chrome gate can stay strict
-     about literals in every other file; the values are unchanged. */
-  --auth-key-rgb: 230, 176, 122;
-  --auth-fill-rgb: 127, 212, 255;
-
-  /* ---- shape ---- */
-  --radius: 3px;
-  --radius-sm: 2px;
+  --line: rgba(255, 220, 205, 0.16);
+  --line-strong: rgba(255, 220, 205, 0.3);
+  --line-metal: rgba(230, 174, 158, 0.6);
+  --metal: var(--rose-gold-300);
+  --metal-soft: #c99583;
+  --metal-bright: #f7d3c6;
+  --metal-rgb: 230, 174, 158;
+  --warm: var(--metal);
+  --good: #b5d3b3;
+  --bad: #f0aa9c;
+  --holo-scene: var(--holo-cyan);
+  --holo-scene-rgb: var(--holo-cyan-rgb);
+  --auth-key-rgb: 246, 172, 152;
+  --auth-fill-rgb: 224, 162, 150;
+  --radius: 12px;
+  --radius-sm: 8px;
   --radius-round: 50%;
-  --shadow: 0 24px 48px -32px rgba(0, 0, 0, 0.7);                        /* the reading dock only */
-  --halo: 0 1px 2px rgba(3, 5, 9, 0.65), 0 2px 28px rgba(3, 5, 9, 0.85);  /* display type over the room */
-
-  /* ---- motion: arrival and state change only ---- */
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --dur-1: 160ms;
-  --dur-2: 240ms;
-  --dur-3: 360ms;                    /* page arrival — the ceiling */
-
-  /* ---- space: 4-base, eight steps ---- */
+  --shadow: var(--shadow-lg);
+  --halo: 0 1px 2px rgba(31, 17, 12, 0.55), 0 2px 24px rgba(31, 17, 12, 0.7);
+  --ease: var(--ease-out);
+  --dur-1: var(--dur-fast);
+  --dur-2: var(--dur-base);
+  --dur-3: var(--dur-slow);
   --s-1: 4px;
   --s-2: 8px;
   --s-3: 12px;
@@ -137,75 +649,84 @@
   --s-7: 48px;
   --s-8: 64px;
   --gutter: clamp(16px, 2vw, 32px);
-
-  /* ---- layout ---- */
-  --rail-w: 72px;
-  --tabbar-h: 60px;
+  /* The shell now owns the frame: an old page sits inside the content area,
+     so it no longer offsets itself for a rail or a tab bar. */
+  --rail-w: 0px;
   --page-w: min(560px, 46vw);
   --page-w-wide: min(680px, 54vw);
   --page-feather: 160px;
   --chat-width: min(360px, 30vw);
-  --tap: 44px;
-
-  --z-chat: 3;
-  --z-page: 4;
-  --z-reading: 5;
-  --z-devstats: 5;
-  --z-nav: 8;
-  --z-auth: 20;
-  --z-intro: 40;
-
-  /* ---- environment (unchanged mechanics) ---- */
-  --safe-t: env(safe-area-inset-top, 0px);
-  --safe-b: env(safe-area-inset-bottom, 0px);
-  --safe-l: env(safe-area-inset-left, 0px);
-  --safe-r: env(safe-area-inset-right, 0px);
-  --vvh: 100dvh;
-  --kb: 0px;
-  --sheet-h: 0px;
-
-  /* ---- retired layout tokens: zeroed, not deleted, until .chat stops reading them ---- */
-  --topbar-h: 0px;
   --panel-w: 0px;
   --free-w: 100%;
-
-  /* ---- auth.css reads these; its own --auth-* declarations are deleted ---- */
-  --auth-ease: var(--ease);
+  --auth-ease: var(--ease-out);
   --auth-ease-soft: var(--ease-soft);
   --auth-ease-press: cubic-bezier(0.4, 0, 0.2, 1);
   --auth-quiet: var(--quiet);
-  --auth-display: var(--display);
+  --auth-display: var(--font-sans);
 }
 
-/* The scene owns the cyan. Nothing under .shell inherits this. */
-.stage-canvas {
-  --holo: var(--holo-scene);
-}
-
-/* Phone / portrait: the same tokens, recomposed. */
+/* Legacy phone recomposition for the old page frame (the shell handles its own). */
 @media (max-width: 860px), (orientation: portrait) {
   :root {
-    --rail-w: 0px;
-    --page-w: 100vw;
-    --page-w-wide: 100vw;
+    --page-w: 100%;
+    --page-w-wide: 100%;
     --page-feather: 0px;
     --chat-width: 100%;
     --chat-chrome: 112px;
-    --surface: rgba(12, 15, 23, 0.94);
     --t-display: clamp(26px, 6.4vw, 32px);
     --t-figure: clamp(30px, 8vw, 40px);
     --t-voice: 19px;
   }
 }
 
-::selection {
-  background: rgba(207, 187, 160, 0.28);
+/* Phones: the display steps come down so the name and headings still fit. */
+@media (max-width: 819px) {
+  :root {
+    --fs-h1: 36px;
+    --fs-display: 40px;
+    --fs-display-xl: 48px;
+    --fs-h2: 28px;
+    --fs-h3: 22px;
+  }
 }
 
 /*
- * The two arrival keyframes live here, not in pages.css / app.css, so auth.css
- * (imported before pages.css) can reach page-in, and every file can reach fade.
+ * Reduced motion: from the system, or from the user's own preference (App.svelte
+ * sets data-reduced-motion on its root). Durations collapse rather than vanish,
+ * so transitionend listeners still fire.
  */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+    --dur-ambient: 0s;
+  }
+}
+[data-reduced-motion='true'] {
+  --dur-fast: 1ms;
+  --dur-base: 1ms;
+  --dur-slow: 1ms;
+  --dur-ambient: 0s;
+}
+
+/* Context switches: anything inside a dark or holographic surface gets the
+   light focus ring and the dark-surface ink by default. */
+.on-dark {
+  --focus-ring: var(--focus-ring-on-dark);
+  color: var(--text-on-dark);
+}
+.on-holo {
+  --focus-ring: var(--holo-ink);
+  color: var(--text-on-holo);
+}
+
+::selection {
+  background: rgba(249, 179, 173, 0.55);
+  color: var(--ink-950);
+}
+
+/* The two arrival keyframes the legacy files share. */
 @keyframes page-in {
   from {
     opacity: 0;
