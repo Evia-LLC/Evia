@@ -1,4 +1,15 @@
-# Test the demo on a Netlify preview
+# Test the hosted sample demo
+
+## Vercel from main (current setup)
+
+The user authorized a sample-only deployment from `main` on Vercel's production URL. The tracked `vercel.json` supplies the explicit `sample_demo` build profile, visible demo notice, `EVIA_SAMPLE_DEMO=1`, and `DEMO_MODE=0` at runtime. Keep the standard `npm run build` command. No `LEGAL_RELEASE` dashboard setting is needed; remove an old conflicting override if one was added. This is hosting configuration, not approval to launch to real users.
+
+Set `DATABASE_URL` to a dedicated sample-only Postgres database in Vercel's **Production** environment, since this deployment comes from `main`. Put `PERFECTCORP_API_KEY` there too if exercising the vendor path; `ANALYSIS_PROVIDER=local` avoids vendor calls for initial walkthroughs. Local `.env` is ignored and does not transfer through GitHub. Use the browser checklist below after deployment succeeds. No database/provider connectivity has been verified merely by building.
+
+Before a real-user launch, remove the demo build/runtime profile and banner flag from `vercel.json`, select the appropriate normal legal release, obtain approved documents, and close the tracker blockers. Ordinary production legal checks remain intact.
+
+## Alternative: Netlify preview
+
 
 Use the preview URL rather than the production site. All data must be sample data. Automated checks passed (323 tests, TypeScript and Svelte); a deployed browser/camera test is still required.
 

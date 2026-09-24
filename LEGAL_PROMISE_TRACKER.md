@@ -82,3 +82,10 @@
 - P-14: immutable account review choices added without granting production consent; guest, pre-account, failed-logging and account-deletion retention limitations retained (engineering).
 - P-17: no new live provider or environment dependency. All 17 pledges retained; P-01/metric labels untouched.
 - Validation: TypeScript passed; Svelte 0 errors/0 warnings; 36 files / 323 tests passed, no skips. Full report: `docs/SECTION_5_REPORT.md`.
+
+## Vercel main-branch sample release (2026-09-24)
+
+- User authorized hosting the sample demo from `main` on Vercel's production URL. `vercel.json` now explicitly selects `LEGAL_RELEASE=sample_demo`, `EVIA_SAMPLE_DEMO=1`, `DEMO_MODE=0` and a visible sample-only banner. This temporary build allowance does not approve any document, change consent authority, enable payments/age verification, or resolve P-01..P-17 gaps.
+- P-04/P-14: **Partially enforced; unchanged.** Draft review records remain demo-only. The normal public_web/consent_flow/subscriptions release checks still reject unapproved wording. **Owner: engineering + legal + manager.** Remove the sample release profile and obtain approval before real-user launch.
+- P-17: Vercel runtime sample registration/review is explicitly enabled without publishing known seeded credentials. A sample Postgres database and provider secrets still require dashboard configuration; missing-provider fallbacks remain. **Owner: engineering.**
+- The visible sample-only notice is a disclosure, not an access restriction. No real-user launch or completed live-provider verification is claimed.

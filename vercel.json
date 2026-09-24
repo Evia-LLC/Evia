@@ -3,6 +3,18 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": null,
+  "env": {
+    "EVIA_SAMPLE_DEMO": "1",
+    "DEMO_MODE": "0"
+  },
+  "build": {
+    "env": {
+      "LEGAL_RELEASE": "sample_demo",
+      "EVIA_SAMPLE_DEMO": "1",
+      "DEMO_MODE": "0",
+      "VITE_SAMPLE_DEMO": "1"
+    }
+  },
   "functions": {
     "api/index.js": {
       "includeFiles": "server/db/migrations/**",

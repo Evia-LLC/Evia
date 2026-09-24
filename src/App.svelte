@@ -223,3 +223,25 @@
 </div>
 
 <CookieBanner />
+
+{#if import.meta.env.VITE_SAMPLE_DEMO === '1'}
+  <aside class="sample-demo-notice" aria-label="Demo notice">
+    Pre-launch demo · Sample data only · No real users, payments or verified age checks.
+  </aside>
+{/if}
+
+<style>
+  .sample-demo-notice {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    padding: 3px 8px;
+    background: #201b18;
+    color: #fff4db;
+    font: 11px/1.3 system-ui, sans-serif;
+    text-align: center;
+    pointer-events: none;
+  }
+</style>
