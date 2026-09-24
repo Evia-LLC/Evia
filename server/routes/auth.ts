@@ -1,3 +1,5 @@
+import { AGE_FLOW_COPY, ageOnDate, REGISTRATION_TERMS_VERSION } from '../../shared/age-flow.ts';
+import { sampleDemoEnabled } from '../ai/perfectcorp.ts';
 import { type Request, type Response, type NextFunction } from 'express';
 import { asyncRouter } from '../lib/async-router.ts';
 import * as users from '../db/users.ts';
@@ -27,7 +29,7 @@ function setSessionCookie(res: Response, token: string) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
-    `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${30 * 86400}${secure}`,
+    `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/${secure}`,
   );
 }
 
@@ -66,7 +68,18 @@ export async function requireAuth(
 }
 
 authRouter.post('/register', registerLimiter, async (req, res) => {
-  const { email, password, displayName } = req.body ?? {};
+  const { email, password, displayName, dateOfBirth, termsAccepted, termsVersion } = req.body ?? {};
+  const age = typeof dateOfBirth === 'string' ? ageOnDate(dateOfBirth) : null;
+  if (age === null) { res.status(400).json({ error: 'A valid date of birth is required.' }); return; }
+  // Reject before any account/session/event writes; never log blocked attempt data.
+  if (age < 16) { res.status(403).json({ error: AGE_FLOW_COPY.under16 }); return; }
+  if (age < 18) { res.status(403).json({ error: AGE_FLOW_COPY.guardianHeading, guardianRequired: true }); return; }
+  if (termsAccepted !== true || termsVersion !== REGISTRATION_TERMS_VERSION) {
+    res.status(400).json({ error: 'The separate Terms checkbox and current wording version are required.' }); return;
+  }
+  if (!sampleDemoEnabled()) {
+    res.status(403).json({ error: 'Registration wording is awaiting approval. Only the sample-data demo is available.' }); return;
+  }
   if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email)) {
     res.status(400).json({ error: 'A valid email is required.' });
     return;
@@ -76,7 +89,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     return;
   }
   try {
-    const userId = await users.createUser(email, password, String(displayName ?? '').trim());
+    const userId = await users.createUser(email, password, String(displayName ?? '').trim(), { dateOfBirth, ip: req.ip });
     const token = await users.createSession(userId);
     setSessionCookie(res, token);
     log.info('auth', 'registered user', { userId });

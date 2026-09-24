@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   /**
    * Body readings over time.
    *
@@ -115,6 +116,7 @@
     await refreshBodyScans();
   }
 </script>
+<AIDisclosure result />
 
 {#if latest}
   <h2 style="margin-top:20px">Your body over time</h2>

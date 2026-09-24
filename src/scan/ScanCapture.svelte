@@ -549,7 +549,7 @@
         <div class="capture__stage" class:capture__stage--locked={framed}>{framedCopy}</div>
       {:else}
         <div class="capture__stage">
-          Even light, face in the oval, hold still. Everything is measured on your device.
+          Even light, face in the oval, hold still. Your selected analysis provider will read the capture.
         </div>
       {/if}
     </div>
@@ -621,7 +621,7 @@
       </p>
     {:else}
       <p class="capture__aside">
-        One frame, read on your device …or
+        One frame, analysed after your consent …or
         <button class="linkish" onclick={notNow} disabled={running}>not now</button>.
       </p>
     {/if}

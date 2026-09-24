@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "data": {
+    "task_status": "success",
+    "results": { "output": [
+      { "type": "moisture", "raw_score": 61.5, "ui_score": 78 },
+      { "type": "oiliness", "raw_score": 70, "ui_score": 85 },
+      { "type": "redness", "raw_score": 82, "ui_score": 90 },
+      { "type": "texture", "raw_score": 68, "ui_score": 80 },
+      { "type": "pore", "raw_score": 74, "ui_score": 85 },
+      { "type": "age_spot", "raw_score": 91, "ui_score": 95 },
+      { "type": "radiance", "raw_score": 65, "ui_score": 78 },
+      { "type": "dark_circle_v2", "raw_score": 55, "ui_score": 72 },
+      { "type": "acne", "raw_score": 87, "ui_score": 92 },
+      { "type": "skin_age", "raw_score": 32 },
+      { "type": "all", "raw_score": 75 }
+    ] }
+  }
+}

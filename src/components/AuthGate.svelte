@@ -22,7 +22,9 @@
   import { register, signIn } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
   import { enterGuestMode } from '@/state/controller.ts';
-  import { link } from '@/router/router.svelte.ts';
+  import AgeGuardianFlow from '@/components/legal/AgeGuardianFlow.svelte';
+  import { AGE_FLOW_COPY, ageOnDate } from '@shared/age-flow.ts';
+  import { link, router } from '@/router/router.svelte.ts';
 
   /**
    * Six of the nine metrics the analysis pipeline actually produces, in its own
@@ -31,6 +33,11 @@
    */
   const READS = ['hydration', 'texture', 'redness', 'pores', 'evenness', 'under-eye'];
 
+  let dateOfBirth = $state('');
+  let termsAccepted = $state(false);
+  let lockedPreview = $state(false);
+  let ageBlocked = $state(false);
+  const signupAge = $derived(ageOnDate(dateOfBirth));
   let mode = $state<'login' | 'register'>('login');
   let email = $state('');
   let password = $state('');
@@ -53,7 +60,19 @@
     error = null;
     try {
       if (mode === 'login') await signIn(email, password);
-      else await register(email, password, displayName);
+      else {
+        const age = ageOnDate(dateOfBirth);
+        if (age === null) throw new Error('A valid date of birth is required.');
+        if (age < 16) {
+          email = ''; password = ''; displayName = ''; dateOfBirth = ''; termsAccepted = false;
+          ageBlocked = true;
+          throw new Error(AGE_FLOW_COPY.under16);
+        }
+        if (age < 18) { password = ''; displayName = ''; termsAccepted = false; lockedPreview = true; return; }
+        if (!termsAccepted) throw new Error('Please make the separate Terms choice before continuing.');
+        await register(email, password, displayName, dateOfBirth, termsAccepted);
+        router.go('/legal/age-assurance');
+      }
       leaving = true;
     } catch (err) {
       error = err instanceof Error ? err.message : 'That did not work.';
@@ -210,6 +229,9 @@
         {/if}
       </div>
 
+      {#if lockedPreview}
+        <div class="auth__form"><AgeGuardianFlow initialStep={3} initialEmail={email} initialDOB={dateOfBirth} /><button type="button" onclick={() => { lockedPreview = false; email = ''; dateOfBirth = ''; }}>Close preview</button></div>
+      {:else}
       <form class="auth__form" onsubmit={submit}>
         <div class="auth__rail" role="group" aria-label="Sign in or create an account">
           <button
@@ -238,6 +260,13 @@
              would come out as "Password Show". Uniform across all three so
              there is one field shape, not two. -->
         {#if mode === 'register'}
+          <div class="auth__field">
+            <label class="auth__label" for="auth-dob">Date of birth</label>
+            <input id="auth-dob" class="auth__input" type="date" bind:value={dateOfBirth} required />
+            <p>{AGE_FLOW_COPY.eligibility}</p>
+          </div>
+        {/if}
+        {#if mode === 'register' && (signupAge ?? 0) >= 18}
           <div class="auth__field auth__field--name" transition:makeRoom>
             <label class="auth__label" for="auth-name">What should I call you?</label>
             <input
@@ -262,6 +291,7 @@
           />
         </div>
 
+        {#if mode === 'login' || (signupAge ?? 0) >= 18}
         <div class="auth__field auth__field--password">
           <label class="auth__label" for="auth-password">Password</label>
           <!-- Not `bind:value`: a two-way binding forbids a dynamic `type`, and
@@ -287,12 +317,15 @@
           </button>
         </div>
 
-        {#if mode === 'register'}
-          <!-- Planning boundary only. A later approved flow can mount decisions
-               here after credentials; creating an account does not accept them. -->
-          <div class="auth__legal-step" data-future-legal-step>
-            <span>Legal review step (not active)</span>
-            <small>No agreement is collected on this screen.</small>
+        {/if}
+        {#if mode === 'register' && (signupAge ?? 0) >= 18}
+          <div class="auth__legal-step">
+            <p>Sample-data registration. Legal wording is for review and is not approved for production.</p>
+            <label><input type="checkbox" bind:checked={termsAccepted} required /> {AGE_FLOW_COPY.terms}</label>
+            <a href="/legal/terms" use:link>Terms of Service</a>
+            <a href="/legal/privacy" use:link>Privacy Policy</a>
+            <details><summary>Health, Wellness and AI Disclaimer | Cookie Policy</summary><p>Full notice publication is pending. These notices are not additional contracts or bundled consent.</p></details>
+            <button type="button" onclick={() => { termsAccepted = false; setMode('login'); }}>Not now</button>
           </div>
         {/if}
 
@@ -355,7 +388,7 @@
           from the parts that genuinely do. What it costs is stated on the
           button rather than discovered afterwards.
         -->
-        <button type="button" class="auth__guest" onclick={enterGuestMode}>
+        <button type="button" class="auth__guest" disabled={ageBlocked} onclick={enterGuestMode}>
           Look around without an account
           <small>
             {#if session.guestVoice}
@@ -369,11 +402,13 @@
         <p class="auth__promise">
           Skin scans are analysed on your device. The photo never leaves it unless you say so.
         </p>
+        <p><a href="/legal/age-assurance" use:link>Preview age and guardian approval</a></p>
         <p class="auth__legal-links">
           Review the placeholder <a href="/legal/terms" use:link>Terms</a> and
-          <a href="/legal/privacy" use:link>Privacy Policy</a>. These drafts are not accepted by signing in or creating an account.
+          <a href="/legal/privacy" use:link>Privacy Policy</a>. Signing in does not accept these drafts. Sample registration records the separate Terms choice without approving the drafts.
         </p>
       </form>
+      {/if}
     </div>
   </div>
 </div>

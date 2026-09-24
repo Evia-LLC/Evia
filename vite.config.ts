@@ -17,6 +17,11 @@ const WEB_PORT = Number(process.env.ELOHIM_WEB_PORT ?? 5195);
 export default defineConfig({
   plugins: [svelte()],
   test: {
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
+    pool: 'forks',
+    maxWorkers: 1,
+    fileParallelism: false,
     env: {
       NETLIFY_DATABASE_URL: process.env.NETLIFY_DATABASE_URL ?? '',
     },

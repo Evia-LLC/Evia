@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   /**
    * The analysis, for anyone who cannot see it.
    *
@@ -75,5 +76,5 @@
       {/each}
     </ul>
   {/if}
-  <p>Appearance analysis, not a medical diagnosis. Ingredients, not brands.</p>
+  <AIDisclosure result />
 </section>

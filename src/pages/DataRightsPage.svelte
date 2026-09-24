@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ACCOUNT_COPY } from '@shared/legal-screen-copy.ts';
+  import { recordLegalReview } from '@/lib/legal-review.ts';
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { deleteAccount, downloadDataExport } from '@/state/controller.ts';
@@ -14,6 +16,12 @@
   const phrase = 'DELETE';
   const typedCorrectly = $derived(typed.trim() === phrase);
 
+  async function exportData() {
+    try { await recordLegalReview('account-controls', 'attempted', session.guest ? undefined : session.user?.id, { action: 'export' }); }
+    catch { deletionError = 'The review event could not be recorded. Export is still available.'; }
+    await downloadDataExport();
+  }
+
   function continueDeletion() {
     if (!typedCorrectly || deleting) return;
     secondConfirmation = true;
@@ -24,6 +32,8 @@
     deleting = true;
     deletionError = null;
     try {
+      // Audit availability must not prevent the existing account deletion right.
+      try { await recordLegalReview('account-controls', 'attempted', session.user?.id, { action: 'delete_account' }); } catch { /* Account deletion still proceeds; retention gap is disclosed below. */ }
       await deleteAccount();
     } catch (err) {
       deletionError = err instanceof Error ? err.message : 'Your account could not be deleted.';
@@ -39,14 +49,14 @@
   lede="Download a structured copy of what is attached to your account, or permanently delete the account."
 >
   <section class="sec" aria-labelledby="export-title">
-    <div class="sec__head"><h2 class="sec__title" id="export-title">Export my data</h2></div>
+    <div class="sec__head"><h2 class="sec__title" id="export-title">{ACCOUNT_COPY.download}</h2></div>
     <div class="card">
       <p class="card__text">{DATA_EXPORT_NOTICE_PLACEHOLDER.text}</p>
       {#if import.meta.env.DEV && DATA_EXPORT_NOTICE_PLACEHOLDER.placeholder}
         <p class="placeholder">Placeholder legal text · {DATA_EXPORT_NOTICE_PLACEHOLDER.id}</p>
       {/if}
       <div class="actions">
-        <button class="btn" type="button" onclick={downloadDataExport} disabled={session.guest || session.dataExport.status === 'exporting'}>
+        <button class="btn" type="button" onclick={exportData} disabled={session.guest || session.dataExport.status === 'exporting'}>
           {session.dataExport.status === 'exporting' ? 'Preparing export…' : 'Download JSON export'}
         </button>
         <div aria-live="polite">
@@ -61,9 +71,10 @@
   </section>
 
   <section class="sec" aria-labelledby="delete-title">
-    <div class="sec__head"><h2 class="sec__title" id="delete-title">Delete my account</h2></div>
+    <div class="sec__head"><h2 class="sec__title" id="delete-title">{ACCOUNT_COPY.delete}</h2></div>
     <div class="card card--warm">
       <p class="card__text">{ACCOUNT_DELETION_NOTICE_PLACEHOLDER.text}</p>
+      <p>Retention gap: the guide requires consent/destruction records for duration of consent +5 years and backup rotation within 35 days. The current demo deletes account-linked consent records; a legal retention exception and provider/backup deletion are not implemented.</p>
       {#if import.meta.env.DEV && ACCOUNT_DELETION_NOTICE_PLACEHOLDER.placeholder}
         <p class="placeholder">Placeholder legal text · {ACCOUNT_DELETION_NOTICE_PLACEHOLDER.id}</p>
       {/if}

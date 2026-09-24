@@ -60,6 +60,7 @@ export async function assembleDataExport(userId: string, repos: DataExportReposi
       email: account.email,
       displayName: account.displayName,
       createdAt: account.createdAt,
+      dateOfBirth: account.dateOfBirth ?? null,
       profile: account.profile,
     },
     preferences: account.preferences,

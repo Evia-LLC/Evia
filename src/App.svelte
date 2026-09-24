@@ -1,9 +1,11 @@
 <script lang="ts">
+  import CookieBanner from '@/components/legal/CookieBanner.svelte';
   import { onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
   import { bootstrap, discardPendingCapture, enterScanPage, initVoice, leaveScanPage, refreshVoice } from '@/state/controller.ts';
   import { isLegalRoute, router } from '@/router/router.svelte.ts';
   import ElohimStage from '@/components/ElohimStage.svelte';
+  import AgeAssurancePage from '@/pages/legal/AgeAssurancePage.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
   import HoloPanel from '@/components/HoloPanel.svelte';
   import Nav from '@/components/Nav.svelte';
@@ -167,7 +169,8 @@
     <div class="auth"><div class="auth__mark">Elohim</div></div>
   {:else if isLegalRoute(router.id)}
     {#key router.id}
-      {#if router.is('legal-terms')}<TermsPage />
+      {#if router.is('legal-age-assurance')}<AgeAssurancePage />
+      {:else if router.is('legal-terms')}<TermsPage />
       {:else if router.is('legal-privacy')}<PrivacyPolicyPage />
       {:else if router.is('legal-facial-scan')}<FacialScanConsentPage />
       {:else if router.is('legal-health')}<HealthConsentPage />
@@ -218,3 +221,5 @@
     {/if}
   {/if}
 </div>
+
+<CookieBanner />

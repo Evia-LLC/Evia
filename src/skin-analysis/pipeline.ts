@@ -3,9 +3,8 @@
  *
  *   frame -> quality gate -> face ROI -> canonical crop -> normalise -> metrics
  *
- * Runs entirely on the device. The image only ever leaves the browser if the
- * user separately consented to storing it, and the metrics that get uploaded are
- * numbers, not pixels.
+ * Local measurement stays on device. A separate consent-gated provider adapter
+ * may upload the frozen selfie through the server; canonical pixels remain local.
  *
  * Progress is reported from the real stages, because the scan-line sweep in the
  * clinical room is driven by this and a progress bar that is secretly a timer is
@@ -55,6 +54,8 @@ export class CaptureRejected extends Error {
 
 export interface AnalysisResult {
   analysis: SkinAnalysis;
+  /** Frozen, unnormalised selfie meeting provider SD dimensions; never persisted. */
+  providerImageBase64: string | null;
   /** JPEG of the canonical crop, base64, for optional consented storage. */
   imageBase64: string;
   /**
@@ -66,11 +67,19 @@ export interface AnalysisResult {
 
 let cachedProvider: RoiProvider | null = null;
 
+// DEPRECATED-BUT-RETAINED for rollback/outage/credits
 export async function analyseFace(
   source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
   onProgress: ProgressFn = () => {},
 ): Promise<AnalysisResult> {
   onProgress(0.04, 'reading the frame');
+  // Freeze once: provider and local measurements must refer to the same capture.
+  const dimensions = sourceSize(source);
+  const frozen = drawScaled(source, Math.max(dimensions.width, dimensions.height));
+  source = frozen;
+  const providerFrame = drawScaled(frozen, 1280);
+  const providerImageBase64 = Math.min(providerFrame.width, providerFrame.height) >= 480
+    ? providerFrame.toDataURL('image/jpeg', 0.9).split(',')[1] : null;
 
   const detectCanvas = drawScaled(source, DETECT_LONG_EDGE);
   const detectCtx = context2d(detectCanvas);
@@ -139,6 +148,7 @@ export async function analyseFace(
   onProgress(1, 'done');
 
   return {
+    providerImageBase64,
     analysis: {
       capturedAt: new Date().toISOString(),
       metrics,

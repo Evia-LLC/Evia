@@ -7,6 +7,8 @@ data/*.db-wal
 data/blobs/
 .env
 .env.local
+.env.*
+!.env.example
 *.log
 shots/
 
@@ -30,6 +32,9 @@ data/pglite/
 .secrets/
 
 .vercel
+
+# Manager-provided legal docs — confidential, never committed
+Manager/
 
 
 # The retired 3D-model era (Meshy GLBs and bakes, ~95MB): the painted sprite

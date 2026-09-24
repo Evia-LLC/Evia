@@ -17,7 +17,7 @@
 
 export type RouteId =
   | 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy' | 'data'
-  | 'legal-terms' | 'legal-privacy' | 'legal-facial-scan' | 'legal-health'
+  | 'legal-age-assurance' | 'legal-terms' | 'legal-privacy' | 'legal-facial-scan' | 'legal-health'
   | 'legal-safety-lifestyle' | 'legal-progress-photo' | 'legal-subscription' | 'legal-cancellation';
 
 export interface Route {
@@ -39,6 +39,7 @@ export const ROUTES: readonly Route[] = [
   { id: 'profile', path: '/profile', label: 'You', title: 'You — Elohim', nav: true },
   { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Elohim', nav: false },
   { id: 'data', path: '/settings/data', label: 'Your data', title: 'Your data — Elohim', nav: false },
+  { id: 'legal-age-assurance', path: '/legal/age-assurance', label: 'Age and guardian approval', title: 'Age and guardian approval — Evia', nav: false },
   // Review-only shells: addresses and rendering, with no feature activation.
   { id: 'legal-terms', path: '/legal/terms', label: 'Terms', title: 'Terms of Use — Elohim', nav: false },
   { id: 'legal-privacy', path: '/legal/privacy', label: 'Privacy policy', title: 'Privacy Policy — Elohim', nav: false },

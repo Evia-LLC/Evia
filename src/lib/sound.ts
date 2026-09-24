@@ -1,3 +1,4 @@
+import { functionalStorageAllowed } from './cookie-preferences.ts';
 /**
  * Sound.
  *
@@ -38,7 +39,7 @@ let enabled: boolean | null = null;
 function readSetting(): boolean {
   if (enabled !== null) return enabled;
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = functionalStorageAllowed() ? localStorage.getItem(STORAGE_KEY) : null;
     enabled = stored === null ? true : stored === '1';
   } catch {
     enabled = true;
@@ -53,7 +54,7 @@ export function soundEnabled(): boolean {
 export function setSoundEnabled(on: boolean): void {
   enabled = on;
   try {
-    localStorage.setItem(STORAGE_KEY, on ? '1' : '0');
+    if (functionalStorageAllowed()) localStorage.setItem(STORAGE_KEY, on ? '1' : '0');
   } catch {
     // Storage may be unavailable; the setting still holds for the session.
   }

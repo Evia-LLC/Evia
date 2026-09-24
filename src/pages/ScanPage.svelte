@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   /**
    * The clinic, as a page.
    *
@@ -32,6 +33,7 @@
    */
   import { onDestroy } from 'svelte';
   import Page from '@/components/Page.svelte';
+  import FacialScanConsent from '@/components/legal/FacialScanConsent.svelte';
   import ScanCapture from '@/scan/ScanCapture.svelte';
   import Picks from '@/products/Picks.svelte';
   import { session } from '@/state/session.svelte.ts';
@@ -130,6 +132,7 @@
     }
   }
 
+  let facialAccepted = $state(false);
   const capturing = $derived(session.scanActive);
   const hasReading = $derived(!capturing && scan !== null && session.sceneMode !== 'lounge');
 
@@ -138,7 +141,7 @@
   );
   const lede = $derived(
     capturing
-      ? 'Your face is measured here, in this browser. I get nine numbers and, unless you have said otherwise, nothing else.'
+      ? 'After your consent, Perfect Corp can analyse your capture through Evia. Local analysis is available as a backup.'
       : 'Nine readings, all from your own camera, all compared with the last time I looked.',
   );
 </script>
@@ -146,6 +149,7 @@
 {#if hasReading}
   <div class="reading" in:arrive={{ direction: router.direction }} out:depart>
     <div class="reading__dock">
+      <AIDisclosure consultation />
       <div class="reading__head">
         <p class="reading__eyebrow">
           {session.panelMode === 'routine' ? 'What I would do about it' : 'What I see'}
@@ -189,6 +193,10 @@
         </div>
       </div>
 
+      {#if session.scanKind === 'face'}
+        <p role="status">{session.analysisNotice || (scan?.modelVersion === 'perfectcorp-v2.1' ? 'Perfect Corp analysis' : 'Local analysis')}</p>
+        {#if scan?.modelVersion === 'perfectcorp-v2.1'}<p>{scan.notes}</p>{/if}
+      {/if}
       <div class="reading__words" aria-live="polite">
         {#if session.thinking}
           <span class="thinking" aria-label="Elohim is thinking">Thinking</span>
@@ -264,10 +272,7 @@
         </div>
       {/if}
 
-      <p class="legal reading__legal">
-        Appearance analysis, not a medical diagnosis. Anything that changes fast, hurts, bleeds
-        or spreads is a question for a dermatologist, not for me.
-      </p>
+      <AIDisclosure result />
     </div>
 
     {#if session.picks.length && session.scanKind === 'face' && !session.thinking}
@@ -280,15 +285,18 @@
   <Page eyebrow="Scan" {title} {lede} wide side="right">
     {#if capturing}
       <section class="sec" aria-label="Capture">
-        <ScanCapture />
+        {#if facialAccepted}
+          <ScanCapture />
+        {:else}
+          <FacialScanConsent onAccepted={() => { facialAccepted = true; }} onDeclined={() => router.go('/')} />
+        {/if}
       </section>
     {:else}
       <section class="sec">
         <div class="card">
           <p class="card__title">Ready when you are.</p>
           <p class="card__text">
-            Even light, face in the oval, hold still. The whole thing takes a few seconds and
-            the photo never leaves this device unless you have told me to keep it.
+            Even light, face in the oval, hold still. Your capture is sent to Perfect Corp only after your consent. Local backup analysis is available.
           </p>
           <div class="card__actions">
             <button class="cta" type="button" onclick={() => startScanFlow('face')}>Read my skin</button>
@@ -297,11 +305,7 @@
       </section>
     {/if}
 
-    <p class="legal">
-      The photo is read here, in this browser, and discarded unless you have asked me to keep
-      it. Appearance analysis, not a medical diagnosis: anything that changes fast, hurts,
-      bleeds or spreads is a question for a dermatologist, not for me.
-    </p>
+    <AIDisclosure consultation result />
   </Page>
 {/if}
 

@@ -1,3 +1,4 @@
+import { REGISTRATION_TERMS_VERSION, REGISTRATION_DOCUMENT_VERSIONS } from '../../shared/age-flow.ts';
 import { row, run, transaction } from './index.ts';
 import { currentConsents } from './consents.ts';
 import { newId, newToken, nowIso } from '../lib/ids.ts';
@@ -20,12 +21,14 @@ interface UserRow {
   password_hash: string;
   password_salt: string;
   created_at: string;
+  date_of_birth?: string | null;
 }
 
 export async function createUser(
   email: string,
   password: string,
   displayName: string,
+  registration?: { dateOfBirth: string; ip?: string },
 ): Promise<string> {
   const normalised = email.trim().toLowerCase();
   const existing = await row('SELECT id FROM users WHERE email = ?', normalised);
@@ -50,6 +53,19 @@ export async function createUser(
       salt,
       now,
     );
+
+    if (registration) {
+      await tx.run('UPDATE users SET date_of_birth = ? WHERE id = ?', registration.dateOfBirth, id);
+      await tx.run(
+        `INSERT INTO consent_events (id, user_id, consent_type, wording_version_id, state, recorded_at,
+          actor_type, actor_id, metadata_json, idempotency_key)
+         VALUES (?, ?, 'registration_terms', ?, 'granted', ?, 'account', ?, ?::JSONB, ?)`,
+        newId(), id, REGISTRATION_TERMS_VERSION, now, id,
+        JSON.stringify({ choice: 'accepted', source: 'registration', demoOnly: true, wordingStatus: 'placeholder',
+          documentVersions: REGISTRATION_DOCUMENT_VERSIONS, ip: registration.ip ?? null }),
+        `registration:${id}`,
+      );
+    }
 
     await tx.run(
       `INSERT INTO skin_profiles (user_id, skin_type, updated_at) VALUES (?, 'unknown', ?)`,
@@ -240,6 +256,7 @@ export async function getUserSummary(userId: string): Promise<UserSummary | null
     email: found.email,
     displayName: found.display_name,
     createdAt: found.created_at,
+    dateOfBirth: found.date_of_birth ?? null,
     profile,
     preferences,
     consents,

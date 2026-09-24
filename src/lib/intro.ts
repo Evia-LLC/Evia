@@ -1,3 +1,4 @@
+import { functionalStorageAllowed } from './cookie-preferences.ts';
 /**
  * The first thirty seconds.
  *
@@ -86,7 +87,7 @@ export const INTRO_BEATS: IntroBeat[] = [
 
 export function introSeen(): boolean {
   try {
-    return localStorage.getItem(STORAGE_KEY) === '1';
+    return functionalStorageAllowed() && localStorage.getItem(STORAGE_KEY) === '1';
   } catch {
     return true;
   }
@@ -94,7 +95,7 @@ export function introSeen(): boolean {
 
 export function markIntroSeen(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, '1');
+    if (functionalStorageAllowed()) localStorage.setItem(STORAGE_KEY, '1');
   } catch {
     // Nothing to remember it in; it will play again, which is harmless.
   }

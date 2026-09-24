@@ -96,7 +96,8 @@
   lede="This is what I work from. I update some of it myself as we talk — correct anything I have wrong, and I will use the correction from the next sentence on."
 >
   {#snippet actions()}
-    <a class="cta cta--quiet" href="/privacy" use:link>Where your data goes</a>
+    <a class="cta cta--quiet" href="/privacy" use:link>Account controls and consent</a>
+    <a class="cta cta--quiet" href="/legal/safety-lifestyle-consent" use:link>Optional safety and lifestyle consent</a>
   {/snippet}
 
   <section class="sec" aria-labelledby="skin">

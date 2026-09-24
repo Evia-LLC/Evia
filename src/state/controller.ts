@@ -1,3 +1,4 @@
+import { selectAnalysis } from '@/skin-analysis/provider.ts';
 /**
  * Application glue.
  *
@@ -311,8 +312,10 @@ export async function register(
   email: string,
   password: string,
   displayName: string,
+  dateOfBirth: string,
+  termsAccepted: boolean,
 ): Promise<void> {
-  const { token, user } = await api.register(email, password, displayName);
+  const { token, user } = await api.register(email, password, displayName, dateOfBirth, termsAccepted);
   setToken(token);
   session.user = user;
   await loadUserData();
@@ -947,12 +950,21 @@ export async function runAnalysis(
     return;
   }
 
-  const previous: SkinAnalysis | null = session.latestScan;
+  let previous: SkinAnalysis | null = session.latestScan;
 
   try {
-    const { analysis, imageBase64 } = await analyseFace(source, (progress, stage) => {
+    const localResult = await analyseFace(source, (progress, stage) => {
       director?.setScanProgress(progress, stage);
     });
+
+    const { imageBase64 } = localResult;
+    director?.setScanProgress(0.95, 'checking the analysis provider');
+    const selected = await selectAnalysis(localResult.analysis, localResult.providerImageBase64, !session.guest && Boolean(session.user));
+    localResult.providerImageBase64 = null;
+    const analysis = selected.analysis;
+    session.analysisNotice = selected.notice;
+    // No narrated or hologram deltas across provider/formula versions.
+    if (previous?.modelVersion !== analysis.modelVersion) previous = null;
 
     session.pendingCapture = {
       imageBase64,
@@ -964,8 +976,7 @@ export async function runAnalysis(
     /*
      * A guest keeps the reading in memory and nowhere else.
      *
-     * The measurement itself is identical — it was computed on this device
-     * either way — so what is shown on the cards is the real thing. What a
+     * Guest measurement is local; signed-in sample accounts can use Perfect Corp — so what is shown on the cards is the real thing. What a
      * guest does not get is the summary, because a longitudinal summary of one
      * scan that will not survive the tab closing is not a summary of anything.
      */

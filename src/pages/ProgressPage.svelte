@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   /**
    * Progress. Everything here is read from stored scans — there is no
    * illustrative data on this page (brief §18, §33).
@@ -97,6 +98,7 @@
           />
         {/each}
       </div>
+      <AIDisclosure result />
       {#if latest}
         <div class="ask">
           <button class="cta cta--quiet" type="button" onclick={() => askElohim(`Tell me about my ${METRIC_LABELS[plotted].toLowerCase()}.`)}>

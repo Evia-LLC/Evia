@@ -1,3 +1,4 @@
+import { REGISTRATION_TERMS_VERSION } from '../../shared/age-flow.ts';
 /**
  * The only place the client talks to the server.
  *
@@ -82,10 +83,10 @@ export const api = {
       '/health',
     ),
 
-  register: (email: string, password: string, displayName: string) =>
+  register: (email: string, password: string, displayName: string, dateOfBirth: string, termsAccepted: boolean) =>
     request<{ token: string; user: UserSummary }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, displayName }),
+      body: JSON.stringify({ email, password, displayName, dateOfBirth, termsAccepted, termsVersion: REGISTRATION_TERMS_VERSION }),
     }),
 
   login: (email: string, password: string) =>
@@ -109,6 +110,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+
+  consentHistory: () => request<{ decisions: ConsentDecision[] }>('/me/consents/history'),
 
   consents: () => request<{ consents: ConsentSummaries }>('/me/consents'),
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { AI_COPY } from '@shared/legal-screen-copy.ts';
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   /**
    * The conversation. Not a sidebar of features — the interface.
    *
@@ -257,6 +259,7 @@
   data-sheet={sheet}
   data-dragging={dragging ? 'true' : null}
 >
+  <AIDisclosure consultation />
   <button
     class="sheet-grip"
     type="button"
@@ -291,6 +294,7 @@
           {message.content}
         </div>
       {/if}
+      {#if message.role === 'elohim'}<p class="legal">{AI_COPY.result}</p>{/if}
     {/each}
 
     {#if session.thinking}
