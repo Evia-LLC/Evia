@@ -40,13 +40,14 @@
 <style>
   .ev-sample {
     position: fixed;
-    top: max(8px, var(--safe-t));
+    /* 6px + 28px keeps it clear of a top bar pill that starts at 36px. */
+    top: max(6px, var(--safe-t));
     left: 50%;
     z-index: var(--z-badge);
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    height: 30px;
+    height: 28px;
     padding: 0 4px 0 12px;
     transform: translateX(-50%);
     border-radius: var(--r-pill);

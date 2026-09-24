@@ -182,10 +182,12 @@
   }
   /* Small buttons stay small to the eye but not to the thumb. */
   @media (pointer: coarse) {
+    /* The box is measured inside the 1px border, so 5px each way makes the
+       36px button a 44px target. */
     .ev-btn--sm::before {
       content: '';
       position: absolute;
-      inset: -4px 0;
+      inset: -5px 0;
     }
   }
 

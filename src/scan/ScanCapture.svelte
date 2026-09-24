@@ -16,7 +16,7 @@
    * on the face and drawn as light, locks when the framing is good, and sweeps
    * while the measurement runs. See `face-mesh.ts` for what it is and is not.
    */
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
   import { runAnalysis } from '@/state/controller.ts';
   import { router } from '@/router/router.svelte.ts';
@@ -30,6 +30,23 @@
     type MeshFrame,
   } from './face-mesh.ts';
   import { CaptureGuide, type GuideVerdict } from './capture-guide.ts';
+  import { captureStatus } from './capture-status.svelte.ts';
+  import Button from '@/ui/Button.svelte';
+  import ProgressBar from '@/ui/ProgressBar.svelte';
+  import SegmentedTabs from '@/ui/SegmentedTabs.svelte';
+
+  interface Props {
+    /**
+     * How the Scan page is composed: 'desk' and 'tablet' put the camera frame
+     * on the pedestal with the guidance beside or under it; 'phone' is the
+     * sequential flow's full-screen capture (BUILD-PLAN decision 7).
+     */
+    layout?: 'desk' | 'tablet' | 'phone';
+    /** Shown at the foot of the guidance panel (the page's AI disclosure). */
+    children?: Snippet;
+  }
+
+  const { layout = 'desk', children }: Props = $props();
 
   let video = $state<HTMLVideoElement | null>(null);
   let stream = $state<MediaStream | null>(null);
@@ -50,6 +67,19 @@
    * have to be copied at the moment they are captured.
    */
   let frontFrame = $state<HTMLCanvasElement | null>(null);
+
+  // The page's header reads what the camera is doing (capture-status.svelte.ts).
+  $effect(() => {
+    captureStatus.camera = uploaded
+      ? 'photo'
+      : cameraError
+        ? 'blocked'
+        : starting
+          ? 'starting'
+          : stream
+            ? 'live'
+            : 'idle';
+  });
 
   const isBody = $derived(session.scanKind === 'body');
   const onSideStep = $derived(isBody && session.bodyScanStep === 'side');
@@ -436,6 +466,7 @@
   }
 
   onDestroy(() => {
+    captureStatus.camera = 'idle';
     stopMeshLoop();
     mesh.dispose();
     stopCamera();
@@ -457,253 +488,230 @@
   /** Where in the three beats this capture is. */
   const step = $derived(running ? 2 : framed || (ready && (isBody || meshAvailable === false)) ? 1 : 0);
 </script>
-
-<div class="capture">
-  <ol class="beats" aria-label="Steps">
-    <li class="beat" data-state={step > 0 ? 'done' : 'now'}>
-      <span class="beat__n">1</span><span class="beat__t">Frame</span>
-    </li>
-    <li class="beat" data-state={step > 1 ? 'done' : step === 1 ? 'now' : null}>
-      <span class="beat__n">2</span><span class="beat__t">Hold</span>
-    </li>
-    <li class="beat" data-state={step === 2 ? 'now' : null}>
-      <span class="beat__n">3</span><span class="beat__t">Read</span>
-    </li>
-  </ol>
-
-  <div class="card card--plane capture__card">
+<!--
+  The capture, in the consult room: the camera frame stands on the pedestal
+  where the hologram will appear, lit like the room's glass, with the three
+  beats, what she can see, and the controls beside it (under it on a tablet;
+  over it, full-screen, on a phone). Every behaviour above is unchanged: the
+  camera opens only on this page, the mesh is drawn as light and handed over
+  at the shutter, nothing is kept.
+-->
+<div class="cap" data-layout={layout} class:is-body={isBody}>
+  <div
+    class="cap__frame"
+    class:cap__frame--tall={isBody}
+    class:is-locked={framed && !running}
+    class:is-reading={running}
+    bind:this={viewport}
+  >
+    {#if uploadUrl}
+      <img src={uploadUrl} alt="Your selected capture, framed for analysis" />
+    {:else}
+      <!-- svelte-ignore a11y_media_has_caption -->
+      <video bind:this={video} playsinline muted></video>
+    {/if}
+    {#if !isBody}
+      <canvas class="mesh" bind:this={meshCanvas} aria-hidden="true"></canvas>
+    {/if}
     <div
-      class="scan__viewport capture__viewport"
-      class:scan__viewport--tall={isBody}
-      class:capture__viewport--locked={framed && !running}
-      class:capture__viewport--reading={running}
-      bind:this={viewport}
-    >
-      {#if uploadUrl}
-        <img src={uploadUrl} alt="Your selected capture, framed for analysis" />
-      {:else}
-        <!-- svelte-ignore a11y_media_has_caption -->
-        <video bind:this={video} playsinline muted></video>
-      {/if}
-      {#if !isBody}
-        <canvas class="mesh" bind:this={meshCanvas} aria-hidden="true"></canvas>
-      {/if}
-      <div
-        class="scan__guide"
-        class:scan__guide--body={isBody && !onSideStep}
-        class:scan__guide--profile={onSideStep}
-        class:scan__guide--hidden={faceFound && !isBody}
-      ></div>
-      {#if isBody}
-        <div class="scan__step">{onSideStep ? 'Frame 2 of 2' : 'Frame 1 of 2'}</div>
-      {/if}
-      {#if framed && !running}
-        <div class="locked" aria-hidden="true">Locked</div>
-      {/if}
-      {#if countdown > 0}
-        {#key countdown}
-          <div class="countdown" aria-live="assertive">{countdown}</div>
-        {/key}
-      {/if}
-      {#if verdict && !running && !isBody && faceFound}
-        <div class="guide" aria-label="Capture conditions">
-          <span class="guide__item" data-ok={verdict.light === 'ok'}>
-            <i></i>{verdict.light === 'ok' ? 'Light' : verdict.light === 'dark' ? 'More light' : 'Less light'}
-          </span>
-          <span class="guide__item" data-ok={verdict.distance === 'ok'}>
-            <i></i>{verdict.distance === 'ok' ? 'Distance' : verdict.distance === 'far' ? 'Closer' : 'Further'}
-          </span>
-          {#if verdict.reference}
-            <span class="guide__ref">vs last scan</span>
-          {/if}
-        </div>
-      {/if}
-
-      {#if !uploadUrl && !stream && !running}
-        <button class="scan__enable" type="button" onclick={retryCamera} disabled={starting}>
-          {starting ? 'Starting the camera…' : cameraError ? 'Try again' : 'Turn on the camera'}
-        </button>
-      {/if}
-    </div>
-
-    <div class="capture__status" aria-live="polite">
-      {#if running}
-        <div class="bar capture__bar"><i style="width:{session.scanProgress * 100}%"></i></div>
-        <div class="capture__stage">{session.scanStage || 'Measuring…'}</div>
-      {:else if session.chatError}
-        <!-- A rejected capture. The controller put the reason here and she has
-             said it out loud; the live region makes it readable too. -->
-        <div class="capture__stage capture__stage--rejected">{session.chatError}</div>
-      {:else if cameraError && !uploaded}
-        <div class="capture__stage">{cameraError}</div>
-      {:else if onSideStep}
-        <div class="capture__stage">
-          Now turn side on, one shoulder toward the camera, and rest both hands on your head.
-          An arm hanging down sits right over the part I need to measure.
-        </div>
-      {:else if isBody}
-        <div class="capture__stage">
-          Stand back so your head and hips are both in shot, arms clear of your sides.
-        </div>
-      {:else if framedCopy}
-        <div class="capture__stage" class:capture__stage--locked={framed}>{framedCopy}</div>
-      {:else}
-        <div class="capture__stage">
-          Even light, face in the oval, hold still. Everything is measured on your device.
-        </div>
-      {/if}
-    </div>
-
-    {#if !onSideStep}
-      <div class="capture__kind" role="radiogroup" aria-label="What to scan">
-        <button
-          class="kind__tab"
-          aria-pressed={session.scanKind === 'face'}
-          data-active={session.scanKind === 'face'}
-          onclick={() => chooseKind('face')}
-          disabled={running}
-        >
-          My face
-        </button>
-        <button
-          class="kind__tab"
-          aria-pressed={session.scanKind === 'body'}
-          data-active={session.scanKind === 'body'}
-          onclick={() => chooseKind('body')}
-          disabled={running}
-        >
-          My body
-        </button>
+      class="cap__guide"
+      class:cap__guide--body={isBody && !onSideStep}
+      class:cap__guide--profile={onSideStep}
+      class:cap__guide--hidden={faceFound && !isBody}
+    ></div>
+    <span class="cap__corner cap__corner--tl" aria-hidden="true"></span>
+    <span class="cap__corner cap__corner--tr" aria-hidden="true"></span>
+    <span class="cap__corner cap__corner--bl" aria-hidden="true"></span>
+    <span class="cap__corner cap__corner--br" aria-hidden="true"></span>
+    {#if isBody}
+      <div class="cap__chip cap__chip--step">{onSideStep ? 'Frame 2 of 2' : 'Frame 1 of 2'}</div>
+    {/if}
+    {#if framed && !running}
+      <div class="cap__chip cap__chip--locked" aria-hidden="true">Locked</div>
+    {/if}
+    {#if countdown > 0}
+      {#key countdown}
+        <div class="cap__count" aria-live="assertive">{countdown}</div>
+      {/key}
+    {/if}
+    {#if verdict && !running && !isBody && faceFound}
+      <div class="cap__guidechips" aria-label="Capture conditions">
+        <span class="cap__gi" data-ok={verdict.light === 'ok'}>
+          <i></i>{verdict.light === 'ok' ? 'Light' : verdict.light === 'dark' ? 'More light' : 'Less light'}
+        </span>
+        <span class="cap__gi" data-ok={verdict.distance === 'ok'}>
+          <i></i>{verdict.distance === 'ok' ? 'Distance' : verdict.distance === 'far' ? 'Closer' : 'Further'}
+        </span>
+        {#if verdict.reference}
+          <span class="cap__gref">vs last scan</span>
+        {/if}
       </div>
     {/if}
 
-    <div class="capture__actions">
-      {#if onSideStep}
-        <button class="cta" onclick={() => finishBody(true)} disabled={!ready || running}>
-          {running ? 'Reading…' : 'Read the side'}
-        </button>
-        <button class="cta cta--quiet" onclick={retakeFront} disabled={running}>Retake front</button>
+    {#if !uploadUrl && !stream && !running}
+      <button class="cap__enable" type="button" onclick={retryCamera} disabled={starting}>
+        {starting ? 'Starting the camera…' : cameraError ? 'Try again' : 'Turn on the camera'}
+      </button>
+    {/if}
+  </div>
+
+  <div class="cap__panel on-holo">
+    <ol class="cap__beats" aria-label="Steps">
+      <li data-state={step > 0 ? 'done' : 'now'}><span>1</span>Frame</li>
+      <li data-state={step > 1 ? 'done' : step === 1 ? 'now' : null}><span>2</span>Hold</li>
+      <li data-state={step === 2 ? 'now' : null}><span>3</span>Read</li>
+    </ol>
+
+    <div class="cap__status" aria-live="polite">
+      {#if running}
+        <ProgressBar value={session.scanProgress * 100} label="Reading progress" hideLabel tone="holo" size="sm" class="cap__bar" />
+        <p class="cap__stage">{session.scanStage || 'Measuring…'}</p>
+      {:else if session.chatError}
+        <!-- A rejected capture. The controller put the reason here and she has
+             said it out loud; the live region makes it readable too. -->
+        <p class="cap__stage cap__stage--rejected">{session.chatError}</p>
+      {:else if cameraError && !uploaded}
+        <p class="cap__stage">{cameraError}</p>
+      {:else if onSideStep}
+        <p class="cap__stage">
+          Now turn side on, one shoulder toward the camera, and rest both hands on your head.
+          An arm hanging down sits right over the part I need to measure.
+        </p>
       {:else if isBody}
-        <button class="cta" onclick={captureFront} disabled={!ready || running}>
-          Read my posture
-        </button>
+        <p class="cap__stage">Stand back so your head and hips are both in shot, arms clear of your sides.</p>
+      {:else if framedCopy}
+        <p class="cap__stage" class:cap__stage--locked={framed}>{framedCopy}</p>
       {:else}
-        <button
-          class="cta"
-          onclick={analyse}
-          disabled={!ready || running || countdown > 0}
-        >
+        <p class="cap__stage">Even light, face in the oval, hold still. Everything is measured on your device.</p>
+      {/if}
+    </div>
+
+    {#if !onSideStep && !running}
+      <SegmentedTabs
+        options={[
+          { id: 'face', label: 'My face' },
+          { id: 'body', label: 'My body' },
+        ]}
+        value={session.scanKind}
+        label="What to scan"
+        tone="holo"
+        size="sm"
+        onchange={(id) => chooseKind(id as 'face' | 'body')}
+        class="cap__kind"
+      />
+    {/if}
+
+    <div class="cap__actions">
+      {#if onSideStep}
+        <Button onclick={() => finishBody(true)} disabled={!ready || running}>
+          {running ? 'Reading…' : 'Read the side'}
+        </Button>
+        <Button variant="ghost" tone="dark" onclick={retakeFront} disabled={running}>Retake front</Button>
+      {:else if isBody}
+        <Button onclick={captureFront} disabled={!ready || running}>Read my posture</Button>
+      {:else}
+        <Button onclick={analyse} disabled={!ready || running || countdown > 0}>
           {running ? 'Reading…' : countdown > 0 ? 'Hold still…' : 'Read my skin'}
-        </button>
+        </Button>
       {/if}
 
-      <label class="cta cta--quiet" style="cursor:pointer">
+      <label class="cap__upload" class:is-disabled={running}>
         Upload a photo
-        <input type="file" accept="image/*" onchange={onFile} hidden />
+        <input type="file" accept="image/*" onchange={onFile} disabled={running} />
       </label>
     </div>
 
     {#if onSideStep}
-      <p class="capture__aside">
+      <p class="cap__aside">
         This is the frame your abdominal profile is measured from — a belly projects forward,
         so a front-on photo cannot see one.
-        <button class="linkish" onclick={() => finishBody(false)} disabled={running}>
-          Skip it
-        </button>
+        <button class="cap__link" onclick={() => finishBody(false)} disabled={running}>Skip it</button>
         and I will read your posture and proportions only …or
-        <button class="linkish" onclick={notNow} disabled={running}>not now</button>.
+        <button class="cap__link" onclick={notNow} disabled={running}>not now</button>.
       </p>
     {:else if isBody}
-      <p class="capture__aside">
+      <p class="cap__aside">
         Two frames: this one for posture and proportions, then a side view for your abdominal
         profile …or
-        <button class="linkish" onclick={notNow} disabled={running}>not now</button>.
+        <button class="cap__link" onclick={notNow} disabled={running}>not now</button>.
       </p>
     {:else}
-      <p class="capture__aside">
+      <p class="cap__aside">
         One frame, read on your device …or
-        <button class="linkish" onclick={notNow} disabled={running}>not now</button>.
+        <button class="cap__link" onclick={notNow} disabled={running}>not now</button>.
       </p>
+    {/if}
+    {#if children}
+      <div class="cap__foot">{@render children()}</div>
     {/if}
   </div>
 </div>
 
 <style>
-  .capture {
+  /* ---- layout ---- */
+  .cap {
     display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(20px, 3vw, 44px);
+    color: var(--holo-ink-body);
+  }
+  .cap[data-layout='tablet'] {
     flex-direction: column;
-    gap: var(--s-4);
+    gap: 18px;
+  }
+  .cap[data-layout='phone'] {
+    position: absolute;
+    inset: 0;
+    display: block;
   }
 
-  /* One line: '1. Frame  2. Hold  3. Read' on a shared hairline. */
-  .beats {
-    display: flex;
-    gap: var(--s-5);
-    margin: 0 0 var(--s-3);
-    padding: 0;
-    list-style: none;
-    border-bottom: var(--hair) solid var(--line);
-  }
-  .beat {
+  /* ---- the camera frame: holo glass on the pedestal ---- */
+  .cap__frame {
     position: relative;
-    display: flex;
-    gap: var(--s-1);
-    padding: 0 0 var(--s-2);
-    margin-bottom: -1px;
-    border: 0;
-    border-bottom: var(--hair) solid transparent;
-    border-radius: 0;
-    background: none;
-    font-size: var(--t-sm);
-    letter-spacing: 0;
-    text-transform: none;
-    color: var(--quiet);
-    transition: color var(--dur-1) var(--ease), border-color var(--dur-2) var(--ease);
+    flex: none;
+    height: var(--cap-h, min(60vh, 560px));
+    aspect-ratio: 3 / 4;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #05070c;
+    box-shadow:
+      0 0 0 1px rgba(142, 176, 242, 0.45),
+      0 0 26px rgba(142, 176, 242, 0.22),
+      0 20px 60px rgba(0, 0, 0, 0.5);
+    transition: box-shadow var(--dur-slow) var(--ease-out);
   }
-  .beat__n {
-    display: inline;
-    width: auto;
+  .cap__frame--tall {
+    aspect-ratio: 9 / 16;
+  }
+  .cap__frame.is-locked {
+    box-shadow:
+      0 0 0 1.5px rgba(224, 162, 179, 0.85),
+      0 0 30px rgba(224, 162, 179, 0.3),
+      0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .cap__frame.is-reading {
+    box-shadow:
+      0 0 0 1.5px rgba(134, 221, 248, 0.9),
+      0 0 34px rgba(134, 221, 248, 0.35),
+      0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  [data-layout='phone'] .cap__frame {
+    position: absolute;
+    inset: 0;
     height: auto;
-    border: 0;
-    background: none;
-    box-shadow: none;
-    font-family: var(--font);
-    font-size: inherit;
-    color: inherit;
-    font-feature-settings: var(--num);
-  }
-  .beat__n::after {
-    content: '.';
-  }
-  .beat[data-state='now'] {
-    color: var(--ink);
-    border-bottom-color: var(--metal);
-  }
-  .beat[data-state='done'] {
-    color: var(--ink-soft);
-  }
-
-  .capture__card {
-    padding: var(--s-3);
-  }
-  .capture__viewport {
-    max-height: 48dvh;
-    margin-bottom: var(--s-3);
-    border-radius: var(--radius);
-    border: var(--hair) solid var(--line-strong);
-    box-shadow: none;
-    transition: border-color var(--dur-2) var(--ease);
-  }
-  .capture__viewport--locked {
-    border-color: var(--metal);
+    aspect-ratio: auto;
+    border-radius: 0;
     box-shadow: none;
   }
-  /* The one permitted cyan hairline: it matches the hologram scanning her. */
-  .capture__viewport--reading {
-    border-color: var(--holo-scene);
-    box-shadow: none;
+  .cap__frame video,
+  .cap__frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* Mirrored so framing feels like a mirror, not a photo of someone else. */
+    transform: scaleX(-1);
   }
-
   /* The mesh sits over the picture and is mirrored with it. */
   .mesh {
     position: absolute;
@@ -714,69 +722,327 @@
     transform: scaleX(-1);
     mix-blend-mode: screen;
   }
-
-  /* Once a face is found, the drawn guide has done its job. */
-  .scan__guide--hidden {
-    opacity: 0;
+  .cap__guide {
+    position: absolute;
+    inset: 12% 20%;
+    border: 1.5px dashed rgba(200, 225, 255, 0.55);
+    border-radius: 50% / 42%;
+    pointer-events: none;
     transition: opacity 0.4s ease;
   }
-
-  .guide {
+  [data-layout='phone'] .cap__guide {
+    inset: 16% 14% 30%;
+  }
+  .cap__guide--body {
+    inset: 4% 18%;
+    border-radius: 14px;
+  }
+  .cap__guide--profile {
+    inset: 4% 30%;
+    border-radius: 14px;
+  }
+  .cap__guide--hidden {
+    opacity: 0;
+  }
+  .cap__corner {
     position: absolute;
-    left: var(--s-2);
-    bottom: var(--s-2);
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    padding: 4px 8px;
-    border: 0;
-    border-radius: var(--radius);
-    background: var(--chip);
-    font-size: var(--t-xs);
-    line-height: 1.3;
-    letter-spacing: 0.02em;
-    text-transform: none;
-    color: var(--quiet);
+    width: 22px;
+    height: 22px;
+    border-color: rgba(166, 208, 240, 0.8);
+    border-style: solid;
+    border-width: 0;
     pointer-events: none;
   }
-  .guide__item {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--quiet);
-    transition: color var(--dur-2) var(--ease);
+  .cap__corner--tl {
+    top: 12px;
+    left: 12px;
+    border-top-width: 2px;
+    border-left-width: 2px;
+    border-top-left-radius: 8px;
   }
-  .guide__item[data-ok='true'] {
-    color: var(--ink);
+  .cap__corner--tr {
+    top: 12px;
+    right: 12px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-top-right-radius: 8px;
   }
-  .guide__item i {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: currentColor;
-    box-shadow: none;
+  .cap__corner--bl {
+    bottom: 12px;
+    left: 12px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+    border-bottom-left-radius: 8px;
   }
-  .guide__ref {
-    color: var(--quiet);
-    letter-spacing: 0;
+  .cap__corner--br {
+    bottom: 12px;
+    right: 12px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-bottom-right-radius: 8px;
   }
-
-  .countdown {
+  [data-layout='phone'] .cap__corner {
+    display: none;
+  }
+  .cap__chip {
+    position: absolute;
+    top: 14px;
+    padding: 5px 10px;
+    border-radius: var(--r-pill);
+    background: rgba(8, 13, 24, 0.8);
+    box-shadow: inset 0 0 0 1px rgba(150, 170, 210, 0.35);
+    font-size: 12px;
+    font-weight: var(--fw-medium);
+    line-height: 1.3;
+    color: #e6f1fc;
+  }
+  .cap__chip--step {
+    left: 14px;
+  }
+  .cap__chip--locked {
+    right: 14px;
+    color: #f3c6d2;
+    box-shadow: inset 0 0 0 1px rgba(224, 162, 179, 0.6);
+    animation: chip-in var(--dur-base) var(--ease-out) both;
+  }
+  [data-layout='phone'] .cap__chip {
+    top: calc(118px + var(--safe-t));
+  }
+  .cap__count {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
-    font-family: var(--font-serif);
-    font-style: normal;
-    font-size: var(--t-count);
-    font-weight: var(--w-regular);
+    font-family: var(--font-sans);
+    font-size: clamp(72px, 12vw, 112px);
+    font-weight: var(--fw-light);
     line-height: 1;
-    color: var(--ink);
+    color: #f2f8ff;
     font-variant-numeric: lining-nums tabular-nums;
-    text-shadow: var(--halo);
+    text-shadow:
+      0 0 24px rgba(134, 221, 248, 0.55),
+      0 2px 12px rgba(0, 0, 0, 0.6);
     pointer-events: none;
-    animation: count 0.7s var(--ease) both;
+    animation: count 0.7s var(--ease-out) both;
   }
+  .cap__guidechips {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    border-radius: var(--r-pill);
+    background: rgba(8, 13, 24, 0.8);
+    font-size: 12px;
+    line-height: 1.3;
+    color: #aab3c3;
+    pointer-events: none;
+  }
+  [data-layout='phone'] .cap__guidechips {
+    left: 16px;
+    bottom: auto;
+    top: calc(158px + var(--safe-t));
+  }
+  .cap__gi {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cap__gi[data-ok='true'] {
+    color: #e6f1fc;
+  }
+  .cap__gi i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .cap__gi[data-ok='true'] i {
+    background: var(--holo-cyan);
+  }
+  .cap__enable {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    min-height: 44px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: rgba(28, 48, 76, 0.85);
+    box-shadow: inset 0 0 0 1.5px rgba(140, 165, 210, 0.6);
+    color: #e6f1fc;
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .cap__enable:disabled {
+    opacity: 0.7;
+    cursor: default;
+  }
+  .cap__enable:focus-visible {
+    outline: var(--focus-width) solid var(--holo-ink);
+    outline-offset: 3px;
+  }
+
+  /* ---- the guidance panel ---- */
+  .cap__panel {
+    display: grid;
+    gap: 14px;
+    width: min(360px, 100%);
+    padding: 18px 20px 16px;
+    border-radius: 16px;
+    background: rgba(8, 13, 24, 0.78);
+    box-shadow:
+      inset 0 0 0 1px rgba(150, 170, 210, 0.28),
+      0 16px 40px rgba(0, 0, 0, 0.35);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  [data-layout='tablet'] .cap__panel {
+    width: min(560px, 100%);
+  }
+  [data-layout='phone'] .cap__panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    gap: 12px;
+    padding: 18px 16px calc(16px + var(--safe-b));
+    border-radius: 22px 22px 0 0;
+    background: linear-gradient(180deg, rgba(8, 13, 24, 0.82), rgba(8, 13, 24, 0.94));
+  }
+  .cap__beats {
+    display: flex;
+    gap: 18px;
+    margin: 0;
+    padding: 0 0 8px;
+    list-style: none;
+    border-bottom: 1px solid rgba(160, 180, 220, 0.18);
+    font-size: 13px;
+    font-weight: var(--fw-medium);
+    color: #9ea8ba;
+  }
+  .cap__beats li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cap__beats span {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px currentColor;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .cap__beats li[data-state='now'] {
+    color: #f2f8ff;
+  }
+  .cap__beats li[data-state='now'] span {
+    background: var(--holo-rose);
+    box-shadow: none;
+    color: var(--holo-rose-ink);
+  }
+  .cap__beats li[data-state='done'] {
+    color: #c9d3e6;
+  }
+  .cap__status {
+    min-height: 44px;
+  }
+  .cap__status :global(.cap__bar) {
+    margin-bottom: 8px;
+  }
+  .cap__stage {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #dfe7f7;
+  }
+  .cap__stage--locked {
+    color: #f3c6d2;
+  }
+  .cap__stage--rejected {
+    color: #f2f8ff;
+  }
+  .cap__panel :global(.cap__kind) {
+    justify-self: start;
+  }
+  .cap__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+  }
+  .cap__upload {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 6px;
+    font-size: 15px;
+    font-weight: var(--fw-medium);
+    color: #dbe6f7;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-color: rgba(200, 215, 240, 0.45);
+    cursor: pointer;
+  }
+  .cap__upload input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    width: 100%;
+    cursor: pointer;
+  }
+  .cap__upload:focus-within {
+    outline: var(--focus-width) solid var(--holo-ink);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  .cap__upload.is-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .cap__aside {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #b7c1d6;
+  }
+  .cap__link {
+    display: inline;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #e6f1fc;
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .cap__link:disabled {
+    opacity: 0.5;
+  }
+  .cap__link:focus-visible {
+    outline: var(--focus-width) solid var(--holo-ink);
+    outline-offset: 2px;
+  }
+
+  .cap__foot {
+    display: flex;
+    justify-content: flex-start;
+  }
+
   @keyframes count {
     from {
       opacity: 0;
@@ -791,110 +1057,16 @@
       transform: scale(0.92);
     }
   }
-
-  .locked {
-    position: absolute;
-    top: var(--s-2);
-    right: var(--s-2);
-    padding: 4px 8px;
-    border: 0;
-    border-radius: var(--radius);
-    background: var(--chip);
-    font-size: var(--t-xs);
-    font-weight: var(--w-medium);
-    letter-spacing: 0.02em;
-    text-transform: none;
-    color: var(--metal);
-    animation: locked-in var(--dur-2) var(--ease) both;
-  }
-  @keyframes locked-in {
+  @keyframes chip-in {
     from {
       opacity: 0;
       transform: translateY(-4px);
     }
   }
-
-  .capture__status {
-    min-height: 40px;
-    text-align: left;
-  }
-  .capture__bar {
-    max-width: 240px;
-    margin: 0 0 var(--s-2);
-  }
-  .capture__stage {
-    font-size: var(--t-md);
-    line-height: var(--lh-body);
-    color: var(--ink-soft);
-    letter-spacing: 0;
-    transition: color var(--dur-2) var(--ease);
-  }
-  .capture__stage--locked {
-    color: var(--metal);
-  }
-  /* A rejection reads in her ink, not an alarm red - it is advice, not danger. */
-  .capture__stage--rejected {
-    color: var(--ink);
-  }
-
-  /* 'My face / My body' as text tabs: the gate's underline indicator, reused. */
-  .capture__kind {
-    display: flex;
-    gap: var(--s-5);
-    margin: var(--s-4) 0 0;
-    border-bottom: var(--hair) solid var(--line);
-  }
-  .kind__tab {
-    position: relative;
-    padding: 0 0 var(--s-2);
-    margin-bottom: -1px;
-    min-height: var(--tap);
-    border: 0;
-    border-bottom: var(--hair) solid transparent;
-    border-radius: 0;
-    background: none;
-    color: var(--quiet);
-    font-size: var(--t-md);
-    font-weight: var(--w-medium);
-    transition: color var(--dur-2) var(--ease-soft), border-color var(--dur-2) var(--ease);
-  }
-  .kind__tab[aria-pressed='true'] {
-    color: var(--ink);
-    border-bottom-color: var(--metal);
-  }
-
-  .capture__actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    align-items: center;
-    gap: var(--s-3) var(--s-5);
-    margin-top: var(--s-4);
-  }
-
-  .capture__aside {
-    margin: var(--s-3) 0 0;
-    max-width: var(--measure);
-    font-size: var(--t-md);
-    line-height: var(--lh-body);
-    text-align: left;
-    color: var(--quiet);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .countdown,
-    .locked {
+    .cap__count,
+    .cap__chip--locked {
       animation: none;
-    }
-  }
-  :global(.shell[data-reduced-motion='true']) .countdown,
-  :global(.shell[data-reduced-motion='true']) .locked {
-    animation: none;
-  }
-
-  @media (max-width: 380px) {
-    .capture__actions .cta {
-      flex: 1 1 100%;
     }
   }
 </style>

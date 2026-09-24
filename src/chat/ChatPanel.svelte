@@ -1,73 +1,85 @@
+<!--
+  The conversation: her words and yours, and the box you answer in.
+
+  It is the body of the chat drawer (ChatDrawer.svelte), drawn on its dark
+  rose-brown glass: her lines on a faint cream tint, yours on the CTA's coral,
+  both in the one type scale. The drawer owns the frame (title, voice switch,
+  disclosure, closing); this owns what happens inside it:
+
+  - the transcript, with her newest line landing at her pace (lib/reveal.ts:
+    following her voice when one speaks it, a reading-pace timer otherwise).
+    Only a line that arrives while this is open animates; history, including
+    a greeting she gave while the drawer was shut, renders whole;
+  - following new lines only when you were already at the bottom, and a
+    "New from Evia" pill when you were reading back;
+  - her thinking, a scan offer, and errors, in the same bubbles and cards;
+  - the composer: typing, the microphone (its live transcript shows in the
+    box while it listens), send, and stopping her mid-line.
+
+  With nothing said yet it offers three general questions to start from.
+
+  The lines come from `shownMessages()` (drawer.svelte.ts), not straight from
+  the session: in sample mode an account's stored transcript is kept out of
+  the designed sample (transcript.ts).
+-->
 <script lang="ts">
-  /**
-   * The conversation. Not a sidebar of features — the interface.
-   *
-   * On a phone this is a sheet rather than a column. It rests at a peek height
-   * that shows the tail of what she just said plus the composer, which leaves
-   * Elohim roughly 70% of the screen; dragging or tapping the grip expands it to
-   * about 68% for reading back through the history. She is the interface, so
-   * the transcript is the thing that yields space, not her.
-   */
   import { onDestroy } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
-  import {
-    notifyTyping,
-    sendMessage,
-    startScanFlow,
-    stopSpeaking,
-    toggleListening,
-  } from '@/state/controller.ts';
+  import { notifyTyping, sendMessage, startScanFlow, stopSpeaking, toggleListening } from '@/state/controller.ts';
   import { revealLine, type RevealTicker } from '@/lib/reveal.ts';
+  import Button from '@/ui/Button.svelte';
+  import Icon from '@/ui/Icon.svelte';
+  import ChatGlyph from './ChatGlyph.svelte';
+  import { shownMessages } from './drawer.svelte.ts';
 
-  /** The breakpoint at which the chat stops being a column and becomes a sheet. */
-  const SHEET_QUERY = '(max-width: 860px), (orientation: portrait)';
+  interface Props {
+    /** The message box, for the drawer to focus when it opens. */
+    composer?: HTMLTextAreaElement | null;
+  }
+
+  let { composer = $bindable(null) }: Props = $props();
+
+  /** Starting points when the transcript is empty: general questions, no claims. */
+  const STARTERS = [
+    'What should my evening routine look like?',
+    'How do I choose a sunscreen?',
+    'Can you take a look at my skin?',
+  ];
+
+  const messages = $derived(shownMessages());
 
   let draft = $state('');
   let transcript = $state<HTMLDivElement | null>(null);
-  let composer = $state<HTMLTextAreaElement | null>(null);
-  let chat = $state<HTMLDivElement | null>(null);
-
-  let sheet = $state<'peek' | 'full'>('peek');
-  let compact = $state(false);
-  let dragging = $state(false);
-  /** Live height while a thumb is on the grip; null hands control back to CSS. */
-  let dragHeight = $state<number | null>(null);
 
   // Sending while she thinks is allowed - the message queues for its turn
-  // (see sendMessage). Gating the button on `thinking` made it dead at the
-  // exact moment a new visitor first types: during her arrival greeting.
+  // (see sendMessage) - so the button is never dead during her greeting.
   const canSend = $derived(draft.trim().length > 0 && !session.listening);
 
-  /**
-   * While the mic is open the composer mirrors the live transcript, so you can
-   * see what she is hearing before it is sent. Typing takes over the moment the
-   * mic closes. Not a binding: the field has two sources and only one of them
-   * is the user.
+  /*
+   * While the mic is open the box mirrors the live transcript, so you can see
+   * what she is hearing before it is sent. Not a binding: the field has two
+   * sources and only one of them is the user.
    */
   const shown = $derived(session.listening ? session.voiceDraft : draft);
 
   function onInput(event: Event) {
     if (session.listening) return;
     draft = (event.currentTarget as HTMLTextAreaElement).value;
-    // Typing is a turn-taking signal: she looks up, and stops mid-line once.
     notifyTyping();
     autosize();
   }
 
   /*
-   * Her newest line arrives at her pace.
-   *
-   * The reveal follows her voice when one will speak the line, and a plain
-   * timer otherwise - one mechanism, shared with the scan dock, in
-   * lib/reveal.ts. Only the newest of her messages animates; history renders
-   * whole, and tapping the animating bubble reveals the rest at once.
+   * Her newest line arrives at her pace - but only a line that arrives while
+   * the conversation is open. Whatever was there when it opened is history.
    */
-  let revealId = $state<string | null>(null);
-  let revealChars = $state(0);
+  let revealId = $state<string | null>(shownMessages().at(-1)?.id ?? null);
+  // Whole until a new line starts its reveal.
+  let revealChars = $state(Number.POSITIVE_INFINITY);
   let ticker: RevealTicker | null = null;
 
   $effect(() => {
-    const m = session.messages[session.messages.length - 1];
+    const m = messages[messages.length - 1];
     if (!m || m.role !== 'elohim' || m.id === revealId) return;
     ticker?.stop();
     revealId = m.id;
@@ -81,13 +93,11 @@
   }
 
   /*
-   * Follow new content only when the reader was already at the bottom before
-   * the DOM grew - yanking the view while someone reads back through the
-   * history is worse than not following. Away from the bottom, a new line
-   * from her raises a small pill instead, and tapping it jumps down.
+   * Follow new content only when the reader was at the bottom before the DOM
+   * grew; otherwise raise the pill.
    */
   let nearBottom = true;
-  let seenCount = 0;
+  let seenCount = shownMessages().length;
   let unseen = $state(false);
 
   function onTranscriptScroll() {
@@ -98,13 +108,14 @@
   }
 
   $effect(() => {
-    const count = session.messages.length;
+    const count = messages.length;
     void session.thinking;
     void revealChars;
+    void session.pendingOffer;
+    void session.chatError;
     const el = transcript;
     if (!el) return;
-    // Judged from where the reader was before this growth, not after.
-    const fromHer = count > seenCount && session.messages[count - 1]?.role === 'elohim';
+    const fromHer = count > seenCount && messages[count - 1]?.role === 'elohim';
     seenCount = count;
     queueMicrotask(() => {
       if (nearBottom) el.scrollTop = el.scrollHeight;
@@ -117,61 +128,24 @@
     unseen = false;
   }
 
-  // Which composition is on screen. The same query the stylesheet uses, so the
-  // two can never disagree about whether this is a sheet.
-  $effect(() => {
-    const query = window.matchMedia(SHEET_QUERY);
-    const sync = () => {
-      compact = query.matches;
-      if (!compact) sheet = 'peek';
-    };
-    sync();
-    query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
-  });
-
-  /**
-   * Publish the sheet's real height so anything anchored above it — the
-   * clinical disclaimer — can sit on top of it without knowing whether it is
-   * peeking, expanded, or riding an open keyboard.
-   */
-  $effect(() => {
-    const el = chat;
-    if (!el) return;
-    const publish = () => {
-      const height = Math.round(el.getBoundingClientRect().height);
-      document.documentElement.style.setProperty('--sheet-h', `${height}px`);
-    };
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      document.documentElement.style.removeProperty('--sheet-h');
-    };
-  });
-
   function autosize() {
     if (!composer) return;
     composer.style.height = 'auto';
-    // The ceiling lives in the stylesheet, where it differs between a pointer
-    // and a thumb. Read it rather than keeping a second copy of it here.
+    // The ceiling lives in the stylesheet; read it rather than keep a copy.
     const ceiling = Number.parseFloat(getComputedStyle(composer).maxHeight);
-    composer.style.height = `${Math.min(composer.scrollHeight, ceiling || 110)}px`;
+    composer.style.height = `${Math.min(composer.scrollHeight, ceiling || 140)}px`;
   }
 
   function scrollToEnd() {
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
   }
 
-  /**
-   * Opening the keyboard shrinks the visual viewport under the sheet. The
-   * layout is already sized against it, but the transcript has to be nudged
-   * back to the bottom once the animation settles or the newest message ends up
-   * scrolled out of the shorter box.
+  /*
+   * Focusing the box is the start of a turn. On a phone the keyboard then
+   * shrinks the sheet, so the transcript is nudged back to its end once the
+   * keyboard has settled.
    */
   function onComposerFocus() {
-    // Focusing the composer is the start of a turn, same as the first key.
     notifyTyping();
     queueMicrotask(scrollToEnd);
     setTimeout(scrollToEnd, 320);
@@ -181,139 +155,107 @@
     if (!canSend) return;
     const text = draft;
     draft = '';
-    autosize();
+    queueMicrotask(autosize);
     await sendMessage(text);
   }
 
+  function ask(text: string) {
+    void sendMessage(text);
+  }
+
   function onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       void submit();
     }
   }
-
-  function onWindowKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && sheet === 'full') sheet = 'peek';
-  }
-
-  // --- the grip ------------------------------------------------------------
-
-  let dragPointer: number | null = null;
-  let dragStartY = 0;
-  let dragStartHeight = 0;
-  let dragTravel = 0;
-
-  function onGripDown(event: PointerEvent) {
-    if (!compact || !transcript) return;
-    dragPointer = event.pointerId;
-    dragStartY = event.clientY;
-    dragStartHeight = transcript.offsetHeight;
-    dragTravel = 0;
-    dragging = true;
-    // Capture so the drag survives the thumb sliding off the 44px grip band.
-    if (event.currentTarget instanceof Element) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-  }
-
-  function onGripMove(event: PointerEvent) {
-    if (!dragging || event.pointerId !== dragPointer) return;
-    const dy = event.clientY - dragStartY;
-    dragTravel = Math.max(dragTravel, Math.abs(dy));
-    // Bounds rather than snap points: the sheet follows the thumb, and where it
-    // lands is decided on release.
-    const ceiling = Math.round(window.innerHeight * 0.62);
-    dragHeight = Math.min(ceiling, Math.max(48, dragStartHeight - dy));
-  }
-
-  function onGripUp(event: PointerEvent) {
-    if (!dragging) return;
-    dragging = false;
-    dragPointer = null;
-    dragHeight = null;
-    const dy = event.clientY - dragStartY;
-    if (dragTravel < 6) {
-      sheet = sheet === 'full' ? 'peek' : 'full';
-    } else if (dy < -32) {
-      sheet = 'full';
-    } else if (dy > 32) {
-      sheet = 'peek';
-    }
-  }
-
-  function onGripClick(event: MouseEvent) {
-    // A pointer tap has already been resolved on pointerup. Only keyboard
-    // activation reaches here with no click count behind it.
-    if (event.detail !== 0) return;
-    sheet = sheet === 'full' ? 'peek' : 'full';
-  }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
-
-<div
-  class="chat"
-  bind:this={chat}
-  data-sheet={sheet}
-  data-dragging={dragging ? 'true' : null}
->
-  <button
-    class="sheet-grip"
-    type="button"
-    aria-expanded={sheet === 'full'}
-    aria-controls="elohim-transcript"
-    aria-label={sheet === 'full' ? 'Collapse the conversation' : 'Expand the conversation'}
-    onpointerdown={onGripDown}
-    onpointermove={onGripMove}
-    onpointerup={onGripUp}
-    onpointercancel={onGripUp}
-    onclick={onGripClick}
-  ></button>
-
+<div class="ev-chat">
   <div
-    class="transcript"
-    id="elohim-transcript"
+    class="ev-chat__log"
     bind:this={transcript}
     role="log"
-    aria-label="Conversation with Elohim"
-    style:height={dragHeight === null ? null : `${dragHeight}px`}
+    aria-label="Conversation with Evia"
+    tabindex="-1"
     onscroll={onTranscriptScroll}
   >
-    {#each session.messages as message (message.id)}
-      {#if message.role === 'elohim' && message.id === revealId && revealChars < message.content.length}
-        <!-- Still being said: the words land at her pace, a tap reads the rest. -->
+    {#if messages.length === 0 && !session.thinking}
+      <div class="ev-chat__empty">
+        <p class="ev-chat__empty-lead">Ask me anything about your skin or your routine.</p>
+        <ul class="ev-chat__starters" role="list">
+          {#each STARTERS as starter (starter)}
+            <li>
+              <Button
+                variant="secondary"
+                tone="dark"
+                shape="rounded"
+                iconEnd="arrow-right"
+                spread
+                full
+                class="ev-chat__starter"
+                onclick={() => ask(starter)}>{starter}</Button
+              >
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    {#each messages as message (message.id)}
+      {@const hers = message.role === 'elohim'}
+      {#if hers && message.id === revealId && revealChars < message.content.length}
+        <!-- Still being said: the words land at her pace; a tap shows the rest. -->
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="bubble bubble--elohim" onclick={revealAll}>
-          {message.content.slice(0, revealChars)}
+        <div class="ev-chat__bubble ev-chat__bubble--her" onclick={revealAll}>
+          <span class="visually-hidden">Evia: </span>{message.content.slice(0, revealChars)}
         </div>
       {:else}
-        <div class="bubble bubble--{message.role === 'elohim' ? 'elohim' : 'user'}">
-          {message.content}
+        <div class="ev-chat__bubble ev-chat__bubble--{hers ? 'her' : 'you'}">
+          <span class="visually-hidden">{hers ? 'Evia: ' : 'You: '}</span>{message.content}
         </div>
       {/if}
     {/each}
 
     {#if session.thinking}
-      <div class="typing" role="status" aria-label="Elohim is thinking"></div>
+      <div class="ev-chat__bubble ev-chat__bubble--her ev-chat__thinking" role="status">
+        <span class="visually-hidden">Evia is thinking</span>
+        <i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i>
+      </div>
+    {/if}
+
+    {#if session.pendingOffer?.type === 'offer_scan'}
+      <div class="ev-chat__offer">
+        <span>Want me to take a proper look?</span>
+        <Button variant="soft" tone="dark" size="sm" iconStart="camera" onclick={() => startScanFlow()}>Start a scan</Button>
+      </div>
+    {/if}
+
+    {#if session.chatError}
+      <div class="ev-chat__error" role="alert">
+        <Icon name="info" size={18} stroke={1.8} />
+        <span>{session.chatError}</span>
+      </div>
     {/if}
   </div>
 
   {#if unseen}
-    <button class="new-pill" type="button" onclick={jumpToNew}>New from Elohim</button>
-  {/if}
-
-  {#if session.pendingOffer?.type === 'offer_scan'}
-    <div class="offer">
-      <span>Want me to take a proper look?</span>
-      <button onclick={() => startScanFlow()}>Start scan</button>
+    <div class="ev-chat__newpill">
+      <Button variant="soft" size="sm" iconEnd="chevron-down" onclick={jumpToNew}>New from Evia</Button>
     </div>
   {/if}
 
-  {#if session.chatError}
-    <div class="error" role="alert">{session.chatError}</div>
+  {#if session.speaking}
+    <div class="ev-chat__speaking">
+      <span class="ev-chat__wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span>Evia is speaking</span>
+      <Button variant="secondary" tone="dark" size="sm" class="ev-chat__stop" onclick={() => stopSpeaking()}>
+        <ChatGlyph name="stop" size={16} filled />Stop
+      </Button>
+    </div>
   {/if}
 
-  <div class="composer" class:composer--listening={session.listening}>
+  <div class="ev-chat__composer" class:is-listening={session.listening}>
     <textarea
       bind:this={composer}
       value={shown}
@@ -322,36 +264,352 @@
       onfocus={onComposerFocus}
       rows="1"
       readonly={session.listening}
-      placeholder={session.listening ? 'Listening…' : 'Talk to Elohim…'}
-      aria-label="Message Elohim"
+      placeholder={session.listening ? 'Listening…' : 'Message Evia…'}
+      aria-label="Message Evia"
+      maxlength="4000"
     ></textarea>
 
     {#if session.canListen}
       <button
-        class="mic"
-        class:mic--on={session.listening}
+        type="button"
+        class="ev-chat__mic"
+        class:is-on={session.listening}
         onclick={() => toggleListening()}
-        aria-label={session.listening ? 'Stop listening' : 'Speak to Elohim'}
+        aria-label={session.listening ? 'Stop listening' : 'Speak to Evia'}
         aria-pressed={session.listening}
+        title={session.listening ? 'Stop listening' : 'Speak to Evia'}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <rect x="9" y="2" width="6" height="11" rx="3" />
-          <path d="M5 11a7 7 0 0 0 14 0M12 18v4" />
-        </svg>
+        <ChatGlyph name="mic" size={22} />
       </button>
     {/if}
 
-    <button class="send" onclick={submit} disabled={!canSend} aria-label="Send message">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <path d="M5 12h13M12 5l7 7-7 7" />
-      </svg>
+    <button type="button" class="ev-chat__send" onclick={submit} disabled={!canSend} aria-label="Send message" title="Send">
+      <Icon name="arrow-right" size={22} stroke={2} />
     </button>
   </div>
-
-  {#if session.speaking}
-    <button class="speaking-stop" onclick={() => stopSpeaking()}>
-      <span class="speaking-stop__wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-      Tap to stop her
-    </button>
-  {/if}
 </div>
+
+<style>
+  .ev-chat {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .ev-chat__log {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 20px 20px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-on-dark-strong) transparent;
+  }
+  .ev-chat__log:focus {
+    outline: none;
+  }
+  /* The first line sits at the bottom of a short conversation, as in any chat. */
+  .ev-chat__log > :first-child {
+    margin-top: auto;
+  }
+
+  .ev-chat__bubble {
+    max-width: min(86%, 34em);
+    padding: 11px 15px;
+    font-size: var(--fs-body);
+    line-height: var(--lh-normal);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .ev-chat__bubble--her {
+    align-self: flex-start;
+    border-radius: 18px 18px 18px 6px;
+    background: var(--tint-press-dark);
+    box-shadow: inset 0 0 0 1px var(--glass-dark-rim);
+    color: var(--text-on-dark-strong);
+  }
+  .ev-chat__bubble--you {
+    align-self: flex-end;
+    border-radius: 18px 18px 6px 18px;
+    background: linear-gradient(120deg, var(--cta-from), var(--cta-to));
+    box-shadow: inset 0 0 0 1px var(--cta-rim);
+    color: var(--cta-ink);
+  }
+  /* Consecutive lines from the same side read as one turn. */
+  .ev-chat__bubble--her + .ev-chat__bubble--her,
+  .ev-chat__bubble--you + .ev-chat__bubble--you {
+    margin-top: -4px;
+  }
+
+  .ev-chat__thinking {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    padding: 15px 16px;
+  }
+  .ev-chat__thinking i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-on-dark);
+    animation: ev-chat-dot 1.2s var(--ease-in-out) infinite;
+  }
+  .ev-chat__thinking i:nth-of-type(2) {
+    animation-delay: 0.15s;
+  }
+  .ev-chat__thinking i:nth-of-type(3) {
+    animation-delay: 0.3s;
+  }
+  @keyframes ev-chat-dot {
+    0%,
+    80%,
+    100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-3px);
+    }
+  }
+
+  .ev-chat__empty {
+    display: grid;
+    gap: 14px;
+    padding: 4px 0 8px;
+  }
+  .ev-chat__empty-lead {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: var(--fs-title-sm);
+    line-height: var(--lh-snug);
+    color: var(--text-on-dark-strong);
+  }
+  .ev-chat__starters {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /*
+   * The shared outline button, allowed to wrap: a starter is a sentence, and
+   * a narrow phone must show all of it rather than an ellipsis.
+   */
+  .ev-chat__starters :global(.ev-chat__starter) {
+    --btn-h: 48px;
+    --btn-px: 16px;
+    --btn-fs: var(--fs-body-sm);
+    padding-block: 10px;
+    padding-right: 14px;
+    font-weight: var(--fw-regular);
+    line-height: 1.35;
+    text-align: left;
+    white-space: normal;
+  }
+  .ev-chat__starters :global(.ev-chat__starter .ev-btn__label) {
+    overflow: visible;
+  }
+
+  .ev-chat__offer {
+    align-self: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 12px 12px 12px 16px;
+    border-radius: var(--r-lg);
+    background: var(--tint-hover-dark);
+    box-shadow: inset 0 0 0 1px var(--border-on-dark-strong);
+    color: var(--text-on-dark-strong);
+    font-size: var(--fs-body-sm);
+  }
+
+  .ev-chat__error {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--r-lg);
+    background: rgba(154, 47, 63, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 190, 190, 0.45);
+    color: var(--text-on-dark-strong);
+    font-size: var(--fs-body-sm);
+    line-height: 1.4;
+  }
+  .ev-chat__error :global(.icon) {
+    margin-top: 1px;
+  }
+
+  /* Floats over the end of the transcript; the button is the shared one. */
+  .ev-chat__newpill {
+    position: absolute;
+    left: 50%;
+    bottom: 88px;
+    transform: translateX(-50%);
+    border-radius: var(--r-pill);
+    box-shadow: var(--shadow-md);
+  }
+
+  .ev-chat__speaking {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 20px 8px;
+    padding: 4px 4px 4px 14px;
+    border-radius: var(--r-pill);
+    background: var(--tint-hover-dark);
+    color: var(--text-on-dark);
+    font-size: var(--fs-small);
+  }
+  .ev-chat__wave {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 14px;
+  }
+  .ev-chat__wave i {
+    width: 3px;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--cta-from);
+    animation: ev-chat-wave 0.9s var(--ease-in-out) infinite alternate;
+  }
+  .ev-chat__wave i:nth-child(2) {
+    animation-delay: -0.3s;
+  }
+  .ev-chat__wave i:nth-child(3) {
+    animation-delay: -0.6s;
+  }
+  .ev-chat__wave i:nth-child(4) {
+    animation-delay: -0.15s;
+  }
+  @keyframes ev-chat-wave {
+    from {
+      transform: scaleY(0.3);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+  .ev-chat__speaking :global(.ev-chat__stop) {
+    margin-left: auto;
+    padding-left: 10px;
+    padding-right: 14px;
+  }
+  .ev-chat__speaking :global(.ev-chat__stop .ev-btn__label) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ev-chat__composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin: 0 16px max(16px, var(--safe-b));
+    padding: 6px 6px 6px 18px;
+    border-radius: 26px;
+    background: var(--cream-0);
+    box-shadow:
+      inset 0 0 0 1px var(--blush-200),
+      var(--shadow-md);
+  }
+  .ev-chat__composer:focus-within {
+    box-shadow:
+      0 0 0 2px var(--focus-ring-on-dark),
+      var(--shadow-md);
+  }
+  .ev-chat__composer.is-listening {
+    box-shadow:
+      0 0 0 2px var(--cta-from),
+      var(--shadow-md);
+  }
+  .ev-chat__composer textarea {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    max-height: 140px;
+    padding: 11px 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-strong);
+    font-family: var(--font-sans);
+    /* 16px, so iOS does not zoom the page on focus. */
+    font-size: var(--fs-label);
+    line-height: 1.4;
+    resize: none;
+    outline: none;
+  }
+  .ev-chat__composer textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 1;
+  }
+
+  .ev-chat__mic,
+  .ev-chat__send {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      opacity var(--dur-base) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+  .ev-chat__mic:focus-visible,
+  .ev-chat__send:focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+  .ev-chat__mic {
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .ev-chat__mic.is-on {
+    background: var(--rose-300);
+    color: var(--chip-selected-icon);
+  }
+  @media (hover: hover) {
+    .ev-chat__mic:hover:not(.is-on) {
+      background: var(--tint-hover);
+      color: var(--text-strong);
+    }
+  }
+  .ev-chat__send {
+    background: linear-gradient(135deg, var(--cta-from), var(--cta-to));
+    box-shadow: inset 0 0 0 1px var(--cta-rim);
+    color: var(--cta-ink);
+  }
+  .ev-chat__send:disabled {
+    background: var(--surface-sunken);
+    box-shadow: none;
+    color: var(--text-muted);
+    cursor: default;
+  }
+  .ev-chat__send:active:not(:disabled),
+  .ev-chat__mic:active {
+    transform: scale(0.95);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ev-chat__thinking i,
+    .ev-chat__wave i {
+      animation: none;
+    }
+  }
+  :global([data-reduced-motion='true']) .ev-chat__thinking i,
+  :global([data-reduced-motion='true']) .ev-chat__wave i {
+    animation: none;
+  }
+</style>

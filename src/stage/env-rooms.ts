@@ -10,4 +10,17 @@
 
 import type { RoomId } from './room-anchors.ts';
 
-export const PUBLISHED_ROOMS: readonly RoomId[] = [];
+/*
+ * lounge: public/env/lounge (home-2560.webp, the Blender job's final Home
+ * plate). Its anchors.json is in Room's format, with the Blender job's own
+ * camera anchors kept alongside under `cameras`.
+ *
+ * lounge-strip-window: public/env/lounge-strip-window/anchors.json only; its
+ * plates are the L3 sidebar strip in public/env/lounge (strip-window-640.webp
+ * as the base, strip-window-soft-320.webp as the `blur` plate the sidebar's
+ * <Room blurred> shows), referenced by absolute src.
+ *
+ * products-hero: public/env/products-hero (hero-2552.webp, lossless, the L5
+ * backdrop; points.hero_ref_tl/br mark ref3's hero frame inside the plate).
+ */
+export const PUBLISHED_ROOMS: readonly RoomId[] = ['lounge', 'lounge-strip-window', 'products-hero'];

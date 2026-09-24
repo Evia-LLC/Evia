@@ -11,7 +11,9 @@ import { asyncRouter } from '../lib/async-router.ts';
 import { rateLimit } from '../lib/rate-limit.ts';
 import { buildRoutinePlan } from '../skin/recommend.ts';
 import { pickProducts } from '../catalogue/picks.ts';
+import { tagPicks } from '../catalogue/offers.ts';
 import { catalogueStatus } from '../catalogue/store.ts';
+import { ingredientGlossary } from '../skin/glossary.ts';
 import {
   PREGNANCY_STATUSES,
   SKIN_METRIC_KEYS,
@@ -32,6 +34,16 @@ const picksLimiter = rateLimit({
 
 publicRouter.get('/catalogue/status', async (_req, res) => {
   res.json({ status: await catalogueStatus() });
+});
+
+/**
+ * The ingredient glossary for the Learn page: reference text from the
+ * knowledge base (label, family, irritation risk, note) and nothing about
+ * anyone. It changes only with a deploy, so it may be cached for a while.
+ */
+publicRouter.get('/ingredients', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json(ingredientGlossary());
 });
 
 /** Rebuilds a profile from untrusted JSON, keeping only what is known. */
@@ -79,6 +91,7 @@ publicRouter.post('/picks', picksLimiter, async (req, res) => {
   const confidence =
     typeof req.body?.confidence === 'number' ? Math.max(0, Math.min(1, req.body.confidence)) : 1;
   const plan = buildRoutinePlan(metrics, guestProfile(req.body?.profile), [], confidence);
-  const picks = await pickProducts(plan, guestProfile(req.body?.profile), { web: true });
+  /* Shop links carry the retailer's affiliate tag, as an account's do (and nothing else). */
+  const picks = tagPicks(await pickProducts(plan, guestProfile(req.body?.profile), { web: true }));
   res.json({ plan, picks });
 });

@@ -59,6 +59,8 @@ uniform float uScanY;
 uniform float uScanOn;
 uniform float uTopY;      // world y of the face's top edge
 uniform float uFaceH;
+uniform vec2 uFaceC;      // world x, y of the face's bounding-box centre
+uniform float uFaceW;
 varying vec3 vN;
 varying vec3 vWorld;
 varying vec2 vUv;
@@ -78,8 +80,8 @@ void main() {
   // with a light wrap so surfaces facing down (under the nose, the jaw) stay mauve
   // instead of dropping to navy.
   float wrap = clamp((dot(N, L) + 0.45) / 1.45, 0.0, 1.0);
-  vec3 shade = vec3(0.36, 0.27, 0.33);
-  vec3 skin = vec3(0.72, 0.56, 0.59);
+  vec3 shade = vec3(0.45, 0.35, 0.42);
+  vec3 skin = vec3(0.86, 0.70, 0.74);
   vec3 col = mix(shade, skin, pow(wrap, 1.2));
   col *= 1.0 - 0.28 * vCavity;
   col = mix(col, vec3(0.66, 0.42, 0.52) * (0.6 + 0.5 * wrap), feat.r * 0.7);
@@ -88,7 +90,7 @@ void main() {
   col = mix(col, vec3(0.22, 0.13, 0.19), clamp(vMouth * 1.6, 0.0, 1.0));
   // Blue-violet overlay (multiply #8fa6e8, lightly) and a small screen lift.
   col = mix(col, col * vec3(0.56, 0.65, 0.91), 0.16);
-  col = 1.0 - (1.0 - col) * (1.0 - 0.08 * vec3(0.62, 0.70, 0.95));
+  col = 1.0 - (1.0 - col) * (1.0 - 0.12 * vec3(0.62, 0.70, 0.95));
   vec3 H = normalize(L + V);
   col += pow(max(dot(N, H), 0.0), 36.0) * 0.18 * vec3(0.95, 0.9, 1.0);
 
@@ -116,9 +118,13 @@ void main() {
   emit += uScanOn * (exp(-dy * dy / 90.0) * 0.07 + exp(-dy * dy / 5.0) * 0.12) * vec3(0.78, 0.92, 1.0);
 
   // Coverage: about 0.95 facing, 0.75 at grazing angles; fades out on the silhouette
-  // and over the last few px of the top edge, where the head shell takes over.
+  // and, over the upper face, along a dome that follows the outline: the forehead
+  // dissolves into the lattice over its last tenth or so instead of stopping at a
+  // flat hairline cut, so the face floats free rather than sitting in a hood.
   // Zone light is added on top (it is light, not skin) and survives more of the top fade.
-  float top = 1.0 - smoothstep(uTopY - uFaceH * 0.12, uTopY, vWorld.y);
+  vec2 e = vec2((vWorld.x - uFaceC.x) / (uFaceW * 0.5), (vWorld.y - uFaceC.y) / (uFaceH * 0.5));
+  float upper = smoothstep(0.2, 0.6, e.y);
+  float top = (1.0 - upper * smoothstep(0.8, 1.02, length(e))) * (1.0 - smoothstep(uTopY - uFaceH * 0.03, uTopY, vWorld.y));
   float topNarrow = 1.0 - smoothstep(uTopY - uFaceH * 0.04, uTopY, vWorld.y);
   float edge = smoothstep(0.0, 0.3, vEdge);
   float alpha = mix(0.78, 0.95, ndv) * edge * top * uPresence;
@@ -419,14 +425,18 @@ void main() {
   vec3 N = normalize(vN);
   vec3 V = normalize(cameraPosition - vWorld);
   float ndv = abs(dot(N, V));
-  float fr = pow(1.0 - ndv, 2.0);
   float body = smoothstep(0.0, 0.05, vS) * vSide;
-  // Pure light (it never darkens the room behind it): a faint blue body that
-  // thickens toward the outline, and a light rim on the outline itself.
-  vec3 fill = vec3(0.282, 0.404, 0.635) * (0.06 + 0.5 * fr);         // #4867a2
-  vec3 rim = mix(vec3(0.42, 0.58, 0.95), vec3(0.80, 0.95, 1.0), fr * fr) * fr * fr * 0.7;
-  // Just above the face the skin's light scatters up into the shell and fades out.
-  vec3 scatter = vec3(0.52, 0.44, 0.58) * exp(-vS * 5.0) * 0.4;
+  // Pure light, and hardly any: no fill at all, only a hairline on the outline
+  // that fades out toward the crown and is broken into soft lengths, so it reads
+  // as the edge of a hologram (with the particles and arcs) rather than a cap
+  // over the head. A short breath of the skin's light rises off the forehead.
+  float g = 1.0 - ndv;
+  float edge = pow(g, 12.0);
+  float fade = 1.0 - 0.75 * smoothstep(0.2, 0.95, vS);
+  float breaks = 0.35 + 0.65 * smoothstep(0.25, 0.75, 0.5 + 0.5 * sin(vWorld.x * 0.09 + vWorld.y * 0.05 + 1.3 * sin(vWorld.y * 0.03)));
+  vec3 fill = vec3(0.0);
+  vec3 rim = mix(vec3(0.42, 0.58, 0.95), vec3(0.80, 0.95, 1.0), edge) * edge * 0.3 * fade * breaks;
+  vec3 scatter = vec3(0.52, 0.44, 0.58) * exp(-vS * 18.0) * 0.08;
   gl_FragColor = light((fill + rim + scatter) * body * uPresence);
 }
 `;

@@ -1,443 +1,140 @@
+<!--
+  Routine (ref1): the plan, step by step.
+
+  >= 1200px  the mockup's composition: Home stays in the room behind, inert,
+             and the Routine panel is docked on the right at 536/1536 of the
+             window (never under 480px). The back chevron closes it (to /).
+  < 1200px   Routine is its own full-width page on the light wash: one column
+             on a phone, the card beside the list when there is room. On the
+             icon-rail width the lounge still sits behind the rail's glass,
+             as it does on Home.
+
+  What is shown comes from the view model alone (src/view/routine.ts): the
+  mockup's sample when sample mode is on, otherwise the real plan. The server
+  is only asked for an account's own data - never for a guest's (there is no
+  account to answer for) and never in sample mode (which writes and reads
+  nothing).
+-->
 <script lang="ts">
-  /**
-   * Routine: what is in use, whether it is working, and the deterministic
-   * ingredient read (Phase 5).
-   *
-   * The assessment is honest about its own coverage — it names how many
-   * ingredients it did not recognise rather than implying a complete read, and
-   * `wrong_way` is never softened into a neutral colour.
-   */
-  import Page from '@/components/Page.svelte';
-  import LabelScanner from '@/products/LabelScanner.svelte';
-  import Picks from '@/products/Picks.svelte';
-  import { api } from '@/lib/api.ts';
-  import { link } from '@/router/router.svelte.ts';
+  import { MediaQuery } from 'svelte/reactivity';
+  import { untrack } from 'svelte';
+  import HomePage from '@/pages/HomePage.svelte';
+  import Room from '@/stage/Room.svelte';
+  import { sample } from '@/sample/mode.svelte.ts';
+  import { SAMPLE_ROUTINE } from '@/sample/fixtures/routine.ts';
   import { session } from '@/state/session.svelte.ts';
-  import { refreshPicks } from '@/state/controller.ts';
-  import type {
-    Product,
-    ProductAssessment,
-    ProductUsage,
-    RoutineOutcome,
-    RoutineReview,
-  } from '@shared/types.ts';
+  import { routineView } from '@/view/routine.ts';
+  import RoutinePanel from './routine/RoutinePanel.svelte';
+  import { RoutineData } from './routine/routine-data.svelte.ts';
 
-  let usage = $state<ProductUsage[]>([]);
-  let review = $state<RoutineReview | null>(null);
-  let outcomes = $state<RoutineOutcome[]>([]);
-  let scanning = $state(false);
-  let query = $state('');
-  let results = $state<Product[]>([]);
-  let assessment = $state<ProductAssessment | null>(null);
-  let busy = $state(false);
-  let loaded = $state(false);
+  /* The same breakpoints as the shell: sidebar at 1200, icon rail from 820. */
+  const docked = new MediaQuery('min-width: 1200px', true);
+  const railed = new MediaQuery('min-width: 820px', true);
 
-  let newName = $state('');
-  let newBrand = $state('');
-  let newIngredients = $state('');
+  const data = new RoutineData();
 
-  const inUse = $derived(usage.filter((u) => !u.endedAt));
-
-  const title = $derived.by(() => {
-    if (!loaded) return 'Your routine.';
-    if (inUse.length === 0) return 'Tell me what you put on your face.';
-    return 'What you use, and whether it is earning its place.';
-  });
-
-  const lede = $derived.by(() => {
-    if (inUse.length === 0) {
-      return 'Once I know what is in your routine, I can line each product up against the reading it is meant to move — and say so when one is not moving it.';
-    }
-    const n = inUse.length;
-    return `${n} product${n === 1 ? '' : 's'} in use. I read the overlap between these and your scans when I talk about what changed.`;
-  });
-
-  const VERDICT_LABEL: Record<ProductAssessment['verdict'], string> = {
-    good_fit: 'Looks like a good fit',
-    probably_fine: 'Probably fine',
-    be_cautious: 'Be cautious',
-    not_now: 'Not right now',
-  };
-
-  const VERDICT: Record<RoutineOutcome['verdict'], { label: string; tone: string }> = {
-    working: { label: 'Working', tone: 'good' },
-    wrong_way: { label: 'Went the wrong way', tone: 'bad' },
-    no_evidence: { label: 'No evidence', tone: 'flat' },
-    too_early: { label: 'Too early', tone: 'flat' },
-    not_scored: { label: 'Not scored', tone: 'flat' },
-    unrecognised: { label: 'Unknown', tone: 'flat' },
-  };
-
-  async function load() {
-    const result = await api.routine();
-    usage = result.usage;
-    review = result.review;
-    outcomes = (await api.routineOutcomes()).outcomes;
-    loaded = true;
-    void refreshPicks();
-  }
-
-  async function search() {
-    if (!query.trim()) return;
-    results = (await api.searchProducts(query)).products;
-  }
-
-  async function add() {
-    if (!newName.trim()) return;
-    busy = true;
-    try {
-      const { product } = await api.addProduct({
-        name: newName,
-        brand: newBrand || undefined,
-        ingredients: newIngredients
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      });
-      newName = '';
-      newBrand = '';
-      newIngredients = '';
-      results = [product];
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function assess(product: Product) {
-    assessment = (await api.assessProduct(product.id)).assessment;
-  }
-
-  async function start(product: Product) {
-    await api.startRoutine(product.id);
-    await load();
-  }
-
-  async function stop(id: string) {
-    await api.stopRoutine(id);
-    await load();
-  }
-
+  /* Load for the visit that is here now: again when the account changes,
+     never in sample mode. */
   $effect(() => {
-    void load();
+    if (sample.on) return;
+    void session.user?.id;
+    void session.guest;
+    untrack(() => void data.load());
   });
+
+  const view = $derived(
+    routineView(sample.on, SAMPLE_ROUTINE, {
+      plan: data.account ? data.plan : session.plan,
+      status: !data.account || data.planStatus === 'ready' ? 'ready' : data.planStatus === 'error' ? 'error' : 'loading',
+      picks: session.picks,
+      profile: session.user?.profile ?? null,
+      guest: session.guest,
+    }),
+  );
 </script>
 
-<Page eyebrow="Routine" {title} {lede}>
-  {#snippet actions()}
-    <button class="cta" type="button" onclick={() => (scanning = true)}>Scan a label</button>
-    <a class="cta cta--quiet" href="/progress" use:link>See what changed</a>
-  {/snippet}
+<div class="rt-root">
+{#if docked.current}
+  <!-- Home, as the room behind the panel: seen, not used. -->
+  <div class="rt-behind" inert aria-hidden="true">
+    <HomePage underPanel />
+  </div>
+{:else if railed.current}
+  <Room room="lounge" layout="viewport" blurred />
+{/if}
 
-  {#if session.picks.length}
-    <section class="sec" aria-label="What I would get">
-      <Picks picks={session.picks} title="What I would get for your last reading" />
-    </section>
-  {/if}
-
-  <section class="sec" aria-labelledby="inuse">
-    <div class="sec__head">
-      <h2 class="sec__title" id="inuse">In use</h2>
-      {#if inUse.length}<span class="sec__meta">{inUse.length}</span>{/if}
-    </div>
-    {#if inUse.length}
-      <div class="card">
-        {#each inUse as item (item.id)}
-          <div class="line">
-            <div class="line__main">
-              <span class="line__title">
-                {item.product.brand ? `${item.product.brand} ` : ''}{item.product.name}
-              </span>
-              <span class="line__sub">
-                since {item.startedAt.slice(0, 10)}{item.frequency ? ` · ${item.frequency}` : ''}
-              </span>
-            </div>
-            <div class="line__end">
-              <button
-                class="btn btn--mini"
-                onclick={() => stop(item.id)}
-                aria-label={`Stop using ${item.product.name}`}
-              >
-                Stop using
-              </button>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {:else if loaded}
-      <div class="empty">
-        <p class="empty__title">Nothing tracked yet.</p>
-        <p class="empty__text">
-          Scan a label or search below, then tell me you are using it. From then on I keep
-          the dates, and your scans do the judging.
-        </p>
-      </div>
-    {/if}
-  </section>
-
-  {#if outcomes.length}
-    <section class="sec" aria-labelledby="working">
-      <div class="sec__head">
-        <h2 class="sec__title" id="working">Is it working?</h2>
-      </div>
-      <p class="sec__lede">
-        Each product against the one reading it is meant to move. A change smaller than the
-        measurement noise is reported as no evidence — not as a small win.
-      </p>
-      <div class="outcomes">
-        {#each outcomes as outcome (outcome.productId)}
-          <div class="outcome outcome--{VERDICT[outcome.verdict].tone}">
-            <div class="outcome__head">
-              <span class="outcome__name">{outcome.productName}</span>
-              <span class="tag tag--{VERDICT[outcome.verdict].tone === 'flat' ? '' : VERDICT[outcome.verdict].tone}">
-                {VERDICT[outcome.verdict].label}
-              </span>
-            </div>
-            {#if outcome.metricLabel && outcome.valueAtStart !== null && outcome.valueNow !== null}
-              <div class="outcome__numbers">
-                {outcome.metricLabel}
-                <span class="outcome__range">
-                  {Math.round(outcome.valueAtStart)} → {Math.round(outcome.valueNow)}
-                </span>
-                <span class="outcome__floor">noise floor ±{outcome.noiseFloor}</span>
-              </div>
-            {/if}
-            <p class="outcome__statement">{outcome.statement}</p>
-          </div>
-        {/each}
-      </div>
-    </section>
-  {/if}
-
-  {#if review && (review.stacked.length || review.conflicts.length || review.missing.length)}
-    <section class="sec sec--prose" aria-labelledby="notice">
-      <div class="sec__head">
-        <h2 class="sec__title" id="notice">What I notice</h2>
-      </div>
-      <div class="aside">
-        {#each review.stacked as stack (stack.family)}
-          <p><strong>Two things doing the same job</strong> — {stack.label}: {stack.products.join(', ')}.</p>
-        {/each}
-        {#each review.conflicts as conflict (conflict)}
-          <p>{conflict}</p>
-        {/each}
-        {#each review.missing as gap (gap)}
-          <p>Nothing here covers <strong>{gap}</strong>.</p>
-        {/each}
-        {#if review.unrecognisedCount}
-          <p class="aside__caveat">
-            {review.unrecognisedCount} ingredient{review.unrecognisedCount === 1 ? '' : 's'} across
-            your routine fall outside what I recognise, so this is a partial read.
-          </p>
-        {/if}
-      </div>
-    </section>
-  {/if}
-
-  <section class="sec" aria-labelledby="check">
-    <div class="sec__head">
-      <h2 class="sec__title" id="check">Check a product</h2>
-    </div>
-    <div class="card">
-      <form class="search" onsubmit={(e) => { e.preventDefault(); void search(); }}>
-        <input
-          class="text-input"
-          bind:value={query}
-          placeholder="Search by name or brand"
-          aria-label="Search products"
-        />
-        <button class="btn" type="submit">Search</button>
-      </form>
-
-      {#each results as product (product.id)}
-        <div class="line">
-          <div class="line__main">
-            <span class="line__title">
-              {product.brand ? `${product.brand} ` : ''}{product.name}
-            </span>
-            <span class="line__sub">
-              {product.ingredients.length} ingredient{product.ingredients.length === 1 ? '' : 's'} on file
-            </span>
-          </div>
-          <div class="line__end">
-            <button class="btn btn--mini" onclick={() => assess(product)}>Assess</button>
-            <button class="btn btn--mini" onclick={() => start(product)}>Using it</button>
-          </div>
-        </div>
-      {/each}
-
-      {#if assessment}
-        <div class="verdict">
-          <strong class="verdict__title">{VERDICT_LABEL[assessment.verdict]}</strong>
-          <p class="verdict__why">{assessment.rationale}</p>
-          {#each assessment.findings as finding (finding.ingredient)}
-            <div class="verdict__finding">
-              <span
-                class="verdict__ingredient"
-                data-severity={finding.severity}
-              >
-                {finding.ingredient}
-              </span>
-              <span class="verdict__reason"> — {finding.reason}</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-  </section>
-
-  <section class="sec" aria-labelledby="add">
-    <div class="sec__head">
-      <h2 class="sec__title" id="add">Add a product</h2>
-      <button class="btn btn--mini" onclick={() => (scanning = !scanning)}>
-        {scanning ? 'Enter it by hand instead' : 'Scan the label'}
-      </button>
-    </div>
-    <div class="card">
-      {#if scanning}
-        <LabelScanner
-          onSaved={() => {
-            scanning = false;
-            void load();
-          }}
-        />
-      {:else}
-        <label class="field">
-          <span>Name</span>
-          <input bind:value={newName} placeholder="Niacinamide 10% + Zinc" />
-        </label>
-        <label class="field">
-          <span>Brand</span>
-          <input bind:value={newBrand} placeholder="The Ordinary" />
-        </label>
-        <label class="field">
-          <span>Ingredients, comma separated</span>
-          <textarea bind:value={newIngredients} rows="3" placeholder="Niacinamide, Zinc PCA, Glycerin"
-          ></textarea>
-        </label>
-        <button class="btn btn--primary" onclick={add} disabled={busy || !newName.trim()}>Add</button>
-      {/if}
-    </div>
-    <p class="legal">
-      Correlation, not proof — I will never tell you a product caused something. Steady means
-      steady; a change smaller than the noise floor is not a change.
-    </p>
-  </section>
-</Page>
+<div class="rt-page" class:is-docked={docked.current}>
+  <div class="rt-scroll">
+    <RoutinePanel {view} data={sample.on ? null : data} docked={docked.current} onretry={() => void data.loadPlan()} />
+  </div>
+</div>
+</div>
 
 <style>
-  .search {
-    display: flex;
-    gap: var(--s-2);
-    margin-bottom: var(--s-1);
-  }
-  .search .text-input {
-    flex: 1;
-  }
-
-  .outcomes {
+  /* Static, so Home's room and the docked panel both place themselves against
+     the shell's content area; it only carries the panel width to both. */
+  .rt-root {
+    --rt-panel-w: max(480px, calc(100vw * 536 / 1536));
     display: flex;
     flex-direction: column;
-    gap: var(--s-4);
+    min-height: 100%;
+  }
+  .rt-behind {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: var(--rt-panel-w);
+    overflow: hidden;
   }
 
-  .outcome {
-    padding: var(--s-3) 0 var(--s-3) var(--s-4);
-    border: 0;
-    /* A colour down the leading edge only. A whole tinted card for a bad result
-       reads as an alarm; a rule reads as a fact. */
-    border-left: 3px solid var(--line-strong);
-    border-radius: 0;
-    background: none;
+  .rt-page {
+    position: relative;
+    flex: 1;
+    background: var(--surface-page-flat) var(--surface-page);
   }
-  .outcome--good {
-    border-left-color: var(--good);
-  }
-  .outcome--bad {
-    border-left-color: var(--bad);
-  }
-  .outcome--flat {
-    border-left-color: var(--line-strong);
+  .rt-scroll {
+    container: routine / inline-size;
+    max-width: 760px;
+    margin: 0 auto;
+    padding-top: var(--sample-space, 0px);
   }
 
-  .outcome__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-2);
+  /* Docked beside Home: a fixed column with its own scroll, and the thin light
+     seam the mockup draws between the two screens. */
+  .rt-page.is-docked {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--rt-panel-w);
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: linear-gradient(180deg, #f5dad8 0%, #f2dcd8 55%, #eed8d4 100%);
+    box-shadow: -5px 0 0 rgba(254, 250, 248, 0.96);
+    /* Above anything Home layers inside its own box. */
+    z-index: calc(var(--z-page) + 1);
+    animation: rt-dock var(--dur-slow) var(--ease-out);
   }
-  .outcome__name {
-    font-size: var(--t-lg);
-    font-weight: var(--w-medium);
-    color: var(--ink);
+  .rt-page.is-docked .rt-scroll {
+    max-width: none;
+    padding-top: 0;
   }
-  .outcome__numbers {
-    margin-top: var(--s-1);
-    font-size: var(--t-sm);
-    color: var(--quiet);
-  }
-  .outcome__range,
-  .outcome__floor {
-    margin-left: var(--s-2);
-    font-family: var(--font);
-    font-feature-settings: var(--num);
-    color: var(--ink-soft);
-  }
-  .outcome__statement {
-    margin: var(--s-2) 0 0;
-    max-width: var(--measure);
-    font-size: var(--t-body);
-    line-height: var(--lh-body);
-    color: var(--ink-soft);
-  }
-
-  .aside p {
-    margin: 0 0 var(--s-2);
-  }
-  .aside p:last-child {
-    margin-bottom: 0;
-  }
-  /* The caveat inside her pull quote drops back to the sans. */
-  .aside__caveat {
-    font-family: var(--font);
-    font-style: normal;
-    font-size: var(--t-md);
-    color: var(--quiet);
+  /* Wide but not docked (the icon rail): room for the card beside the list. */
+  @media (min-width: 820px) and (max-width: 1199px) {
+    .rt-scroll {
+      max-width: 1080px;
+      /* Keeps the room the Sample data badge needs above the title. */
+      padding: calc(8px + var(--sample-space, 0px)) 24px 0;
+    }
   }
 
-  .verdict {
-    margin-top: var(--s-4);
-    padding: var(--s-4) 0 0;
-    border: 0;
-    border-top: var(--hair) solid var(--line);
-    border-radius: 0;
-    background: none;
-  }
-  .verdict__title {
-    font-size: var(--t-lg);
-    font-weight: var(--w-medium);
-  }
-  .verdict__why {
-    margin: var(--s-2) 0 0;
-    max-width: var(--measure);
-    font-size: var(--t-body);
-    line-height: var(--lh-body);
-    color: var(--ink-soft);
-  }
-  .verdict__finding {
-    margin-top: var(--s-2);
-    font-size: var(--t-md);
-    line-height: var(--lh-body);
-  }
-  .verdict__ingredient {
-    color: var(--quiet);
-  }
-  .verdict__ingredient[data-severity='avoid'] {
-    color: var(--bad);
-  }
-  .verdict__ingredient[data-severity='caution'] {
-    color: var(--metal);
-  }
-  .verdict__reason {
-    color: var(--quiet);
+  @keyframes rt-dock {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
   }
 </style>

@@ -27,7 +27,7 @@ import { FACE_REGIONS } from '@shared/types.ts';
 import type { ScanMesh } from '@/scan/mesh.ts';
 import { LATTICE_PITCH, buildCraniumShell, buildFaceSurface, sampleLattice, shellPoint, smoothLoop, type FaceSurface } from './geometry.ts';
 import { BASE, CAMERA_DISTANCE, FACE_SLOT, HOLOGRAM_BOX, fitBox, fovFor, type Fit, type RefBox } from './layout.ts';
-import { ANCHOR_LANDMARK, REGION_NODES, paintFeatures, paintZones, type RegionHighlight } from './regions.ts';
+import { ANCHOR_BLEND, ANCHOR_LANDMARK, REGION_NODES, anchorPoint, paintFeatures, paintZones, type RegionHighlight } from './regions.ts';
 import * as S from './shaders.ts';
 
 export type HologramQuality = 'low' | 'medium' | 'high';
@@ -255,6 +255,8 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
     uScanOn: { value: 0 },
     uTopY: { value: 0 },
     uFaceH: { value: FACE_SLOT.height },
+    uFaceC: { value: new THREE.Vector2(0, 0) },
+    uFaceW: { value: FACE_SLOT.height * 0.75 },
   };
 
   // ---- Static base: rings, orb, specks, glows. Always present. ----------------
@@ -417,7 +419,7 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
 
   // Halo behind the head (a cheap bloom) and the neck column: one quad each, placed per face.
   const unitQuad = own(new THREE.PlaneGeometry(2, 2));
-  const haloU = { ...U, uHalf: { value: new THREE.Vector2(1, 1) }, uColor: { value: rgb(0x2f4a9a) }, uGain: { value: 0.55 }, uFade: U.uPresence };
+  const haloU = { ...U, uHalf: { value: new THREE.Vector2(1, 1) }, uColor: { value: rgb(0x2f4a9a) }, uGain: { value: 0.3 }, uFade: U.uPresence };
   const haloMat = own(additive(new THREE.ShaderMaterial({ vertexShader: S.QUAD_VERT, fragmentShader: S.GLOW_FRAG, uniforms: haloU })));
   haloMat.depthTest = false;
   const halo = new THREE.Mesh(unitQuad, haloMat);
@@ -531,6 +533,8 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
     head.position.set(-cx, -cy, -cz);
     faceU.uTopY.value = maxY;
     faceU.uFaceH.value = faceH;
+    faceU.uFaceC.value.set(cx, cy);
+    faceU.uFaceW.value = faceW;
 
     // Textures in the face's frontal UV space.
     zoneCanvas = makeCanvas(q.tex);
@@ -651,7 +655,7 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
         const node = rnd() < 0.06;
         P.push(pt[0] + pt[3] * out, pt[1] + pt[4] * out, pt[2] + pt[5] * out);
         Sz.push(node ? 1.5 + rnd() : 0.7 + rnd() * 0.7);
-        A.push((node ? 0.55 + rnd() * 0.3 : 0.14 + rnd() * 0.3) * (0.35 + 0.65 * grazing));
+        A.push((node ? 0.5 + rnd() * 0.3 : 0.12 + rnd() * 0.26) * (0.2 + 0.8 * grazing));
         C.push(...(node ? white : blue));
         Sd.push(rnd());
       }
@@ -685,16 +689,16 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
         NC.push(0.875, 0.949, 1);
         ND.push(rnd());
       };
-      // Rings across the shell and meridians up to the crown, each drawn over part of its length.
-      const rings = [0.2, 0.38, 0.56, 0.74].map((w) => ({ w, u0: rnd() * 0.3, u1: 0.7 + rnd() * 0.3 }));
-      const meridians = Array.from({ length: 9 }, (_, m) => ({ u: (m + 0.5) / 9 + (rnd() - 0.5) * 0.04, w0: 0.06 + rnd() * 0.2, w1: 0.82 + rnd() * 0.18 }));
-      for (const r of rings) arc(r.u0, r.u1, r.w, r.w, 1.5, 0.3);
-      for (const m of meridians) arc(m.u, m.u, m.w0, m.w1, 1.5, 0.24);
-      for (const r of rings) for (const m of meridians) if (m.u > r.u0 && m.u < r.u1 && r.w > m.w0 && r.w < m.w1 && rnd() < 0.45) node(m.u, r.w);
+      // A few faint meridians up toward the crown, each over part of its length, with
+      // a node or two on them. No rings across the shell: a latitude grid over the
+      // head read as a swim cap, and the hologram is a face, not a helmet.
+      const meridians = Array.from({ length: 5 }, (_, m) => ({ u: (m + 0.5) / 5 + (rnd() - 0.5) * 0.06, w0: 0.1 + rnd() * 0.25, w1: 0.55 + rnd() * 0.35 }));
+      for (const m of meridians) arc(m.u, m.u, m.w0, m.w1, 2, 0.13);
+      for (const m of meridians) if (rnd() < 0.7) node(m.u, m.w0 + (m.w1 - m.w0) * (0.3 + rnd() * 0.5));
       // A few arcs floating 10-35 px out from the shell, around its outline.
       for (let a = 0; a < 8; a++) {
         const w = 0.15 + rnd() * 0.7, u0 = rnd() * 0.75;
-        arc(u0, Math.min(1, u0 + 0.12 + rnd() * 0.25), w, w + (rnd() - 0.5) * 0.2, 10 + rnd() * 25, 0.45);
+        arc(u0, Math.min(1, u0 + 0.12 + rnd() * 0.25), w, w + (rnd() - 0.5) * 0.2, 10 + rnd() * 25, 0.34);
       }
       const lg = faceOwn(new THREE.BufferGeometry());
       lg.setAttribute('position', new THREE.Float32BufferAttribute(LP, 3));
@@ -707,10 +711,12 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       if (NP.length) points(NP, NS, NA, NC, ND, nodeMat, 7);
     }
 
-    // Halo: centred a little above the face so it takes in the shell.
-    halo.position.set(cx, cy + faceH * 0.15, minZ - 40);
-    halo.scale.set(faceW * 0.8, faceH * 1.05, 1);
-    haloU.uHalf.value.set(faceW * 0.8, faceH * 1.05);
+    // Halo: a faint glow behind the face itself. It used to sit higher, to take in
+    // the shell, and filled the crown with a blue wash bounded by the shell's rim,
+    // which read as a hood; the crown is now left to the rim and the particles.
+    halo.position.set(cx, cy + faceH * 0.02, minZ - 40);
+    halo.scale.set(faceW * 0.72, faceH * 0.78, 1);
+    haloU.uHalf.value.set(faceW * 0.72, faceH * 0.78);
     halo.visible = true;
 
     // Neck: from well under the chin line (the face covers its top) down into ring A.
@@ -805,6 +811,7 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
   const tmpN = new THREE.Vector3();
   const tmpV = new THREE.Vector3();
   const normalMat = new THREE.Matrix3();
+  const anchorXyz: [number, number, number] = [0, 0, 0];
   function computeAnchors(): HologramAnchors {
     const out = emptyAnchors();
     if (!surface || !sized) return out;
@@ -812,8 +819,9 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
     normalMat.getNormalMatrix(head.matrixWorld);
     for (const k of FACE_REGIONS) {
       const i = ANCHOR_LANDMARK[k];
-      if (i >= surface.landmarkCount) continue;
-      tmp.fromArray(surface.positions, i * 3).applyMatrix4(head.matrixWorld);
+      const toward = ANCHOR_BLEND[k]?.toward ?? i;
+      if (i >= surface.landmarkCount || toward >= surface.landmarkCount) continue;
+      tmp.fromArray(anchorPoint(surface.positions, k, anchorXyz)).applyMatrix4(head.matrixWorld);
       tmpN.fromArray(surface.normals, i * 3).applyMatrix3(normalMat).normalize();
       const facing = tmpN.dot(tmpV.copy(camera.position).sub(tmp).normalize());
       tmp.project(camera);

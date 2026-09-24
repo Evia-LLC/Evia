@@ -60,6 +60,28 @@ export const ANCHOR_LANDMARK: Record<FaceRegionKey, number> = {
   chin: 428,
 };
 
+/**
+ * Anchors set part of the way from their landmark toward a second one. The
+ * forehead's 151 sits only about 7% of the face's height under the mesh's top
+ * edge, inside the band where the forehead dissolves into the lattice (the face
+ * shader's dome fade), so its leader seemed to end on the hairline. Half-way to
+ * 9 (mid-forehead) it lands on lit forehead, still inside the forehead zone.
+ */
+export const ANCHOR_BLEND: Partial<Record<FaceRegionKey, { toward: number; t: number }>> = {
+  forehead: { toward: 9, t: 0.5 },
+};
+
+/** A region's anchor point on a flat xyz array (landmark order), with its blend applied. */
+export function anchorPoint(positions: ArrayLike<number>, region: FaceRegionKey, out: [number, number, number]): [number, number, number] {
+  const i = ANCHOR_LANDMARK[region];
+  const b = ANCHOR_BLEND[region];
+  for (let c = 0; c < 3; c++) {
+    const a = positions[i * 3 + c];
+    out[c] = b ? a + (positions[b.toward * 3 + c] - a) * b.t : a;
+  }
+  return out;
+}
+
 /** Whether a region's zone gets its thin outline by default (the mockup's right cheek is a bare dot field). */
 export const REGION_OUTLINE: Record<FaceRegionKey, boolean> = {
   forehead: true,

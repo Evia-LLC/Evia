@@ -30,7 +30,8 @@
     $props();
 
   const shownName = $derived(
-    name ?? (sample.on ? 'Destiny' : (session.user?.displayName ?? (session.guest ? 'Guest' : ''))),
+    // A guest's session name is the greeting word 'there'; the pill says Guest.
+    name ?? (sample.on ? 'Destiny' : session.guest ? 'Guest' : (session.user?.displayName ?? '')),
   );
   const shownMembership = $derived(membership === undefined ? (sample.on ? 'Premium Member' : null) : membership);
   const label = $derived(`Your profile${shownName ? `, ${shownName}` : ''}`);

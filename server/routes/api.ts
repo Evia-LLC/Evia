@@ -17,6 +17,14 @@ import { summarise } from '../skin/longitudinal.ts';
 import { assessProduct, reviewRoutine } from '../skin/ingredients.ts';
 import { buildRoutinePlan } from '../skin/recommend.ts';
 import { pickProducts } from '../catalogue/picks.ts';
+import { tagPicks } from '../catalogue/offers.ts';
+import { getCatalogueProduct, listCatalogue } from '../catalogue/store.ts';
+import {
+  browseCatalogue,
+  containsFor,
+  isCatalogueCategory,
+  listingFor,
+} from '../catalogue/browse.ts';
 import { evaluateRoutine } from '../skin/outcomes.ts';
 import { speakLine, VoiceUnavailable } from '../voice/tts.ts';
 import {
@@ -404,7 +412,9 @@ apiRouter.get('/routine/picks', async (req, res) => {
     (await productsRepo.listUsage(req.userId!)).filter((u) => !u.endedAt),
     latest.confidence,
   );
-  res.json({ picks: await pickProducts(plan, profile, { web: true }) });
+  // Outbound links carry the retailer's affiliate tag (decision 11) and
+  // nothing else; the reasons stay in the body, never in a URL (ADS-01).
+  res.json({ picks: tagPicks(await pickProducts(plan, profile, { web: true })) });
 });
 
 /**
@@ -572,6 +582,59 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
   });
 
   res.json({ scan: stored, summary });
+});
+
+// --- catalogue --------------------------------------------------------------
+
+/**
+ * The shelf, for the Products page: one page of the operator's catalogue,
+ * filtered by a category chip and/or a search, each product with the link its
+ * "Shop at ..." button uses. The catalogue is empty until a storefront sync or
+ * an import fills it, and then this says so with `total: 0` - nothing is
+ * stood in for it.
+ */
+apiRouter.get('/catalogue', async (req, res) => {
+  const category = req.query.category;
+  if (category !== undefined && category !== '' && !isCatalogueCategory(category)) {
+    res.status(400).json({ error: 'Unknown category.' });
+    return;
+  }
+  const page = browseCatalogue(await listCatalogue(5000), {
+    category: isCatalogueCategory(category) ? category : null,
+    q: typeof req.query.q === 'string' ? req.query.q.slice(0, 120) : null,
+    limit: Number(req.query.limit) || undefined,
+    cursor: typeof req.query.cursor === 'string' ? req.query.cursor : null,
+  });
+  res.json({ ...page, products: page.products.map(listingFor) });
+});
+
+/**
+ * One shelf product, with what its ingredient list says it contains and how
+ * it sits with this user's profile and current routine. The assessment is
+ * only made from a published ingredient list: without one there is nothing
+ * to check, and an empty check must not read as an all-clear (SRS §10).
+ */
+apiRouter.get('/catalogue/:id', async (req, res) => {
+  const product = await getCatalogueProduct(req.params.id);
+  if (!product) {
+    res.status(404).json({ error: 'No such product.' });
+    return;
+  }
+  const assessment = product.ingredients.length
+    ? assessProduct(
+        {
+          id: product.id,
+          name: product.name,
+          brand: product.brand,
+          category: product.category,
+          ingredients: product.ingredients,
+          source: 'catalogue',
+        },
+        await users.getProfile(req.userId!),
+        (await productsRepo.listUsage(req.userId!)).filter((u) => !u.endedAt),
+      )
+    : null;
+  res.json({ product: listingFor(product), contains: containsFor(product), assessment });
 });
 
 // --- products ---------------------------------------------------------------

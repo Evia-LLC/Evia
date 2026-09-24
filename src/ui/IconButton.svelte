@@ -117,10 +117,11 @@
     --d: 56px;
   }
   @media (pointer: coarse) {
+    /* Measured inside the 1px border: 5px each way reaches 44px. */
     .ev-iconbtn--sm::before {
       content: '';
       position: absolute;
-      inset: -4px;
+      inset: -5px;
       border-radius: 50%;
     }
   }

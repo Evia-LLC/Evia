@@ -3,9 +3,13 @@
 Draws the ref4 consult-room hologram from the user's own `ScanMesh`: a warm-mauve translucent face
 surface built from the landmark triangles with a cyan Fresnel rim, a dense contour-following dot lattice,
 soft zone tints (pink / lavender / periwinkle) where the reading has something to say, and around it the
-decoration that makes it read as a bust: a faint glass head shell lofted from the face's upper edge (with
-smooth constellation arcs, nodes and drifting particles), a translucent neck column that flares into the
-base, and the emitter rings and glass orb.
+decoration that makes it read as a bust: a head shell lofted from the face's upper edge, drawn as no more
+than a broken hairline on its outline that fades toward the crown (with a few faint arcs, nodes and drifting
+particles; no fill, so it never reads as a cap over the face), a translucent neck column that flares into
+the base, and the emitter rings and glass orb. The forehead dissolves into the lattice along a dome that
+follows the face's outline (the face shader's `top` term) rather than stopping at a flat hairline, and the
+soft glow behind the head sits behind the face only, so the crown stays clear and the head reads as a
+floating face rather than a face in a hood.
 The pedestal itself is in the Blender plate; the canvas is transparent and sits over it.
 
 **Load it lazily.** Everything here pulls in three.js, which must stay out of the first page load:
@@ -55,10 +59,12 @@ need the same mapping (CSS px per ref px = `scale`).
 `anchors()` / `onAnchors` give one point per `FaceRegionKey`, projected from a landmark on the moving
 face every frame, for the DOM leader lines and anchor dots (the dots and lines are UI, not drawn here).
 The landmarks are in `ANCHOR_LANDMARK`: the capture's `MESH_REGION_ANCHORS`, moved where that point is
-off its zone or away from the mockup's callout (forehead 151, cheeks 207 / 427, chin 428). Each anchor
-lies inside its own zone. On the sample mesh they land within 15 px of the mockup's callout anchors,
-except the forehead's, about 30 px lower: the mockup draws its forehead zone above y 155, where the mesh
-has no landmarks, and the zone here stays on measured surface. `visible` is false without a face, while
+off its zone or away from the mockup's callout (forehead 151, cheeks 207 / 427, chin 428). `ANCHOR_BLEND`
+moves an anchor part of the way toward a second landmark: the forehead's goes half-way from 151 to 9,
+since 151 sits inside the band where the forehead dissolves. Each anchor lies inside its own zone. On the
+sample mesh they land within 15 px of the mockup's callout anchors, except the forehead's, about 38 px
+lower: the mockup draws its forehead zone above y 155, where the mesh has no landmarks, and the anchor
+here stays on lit, measured surface. `visible` is false without a face, while
 it builds in, or if the point turns away or leaves the canvas: hide that callout's line then.
 
 ### Wiring it to the director
@@ -86,7 +92,7 @@ its "Scan to see your map" state. Never a stock head.
 - Persist anything. The mesh lives in this object's GPU buffers until `setMesh(null)` / `dispose()`
   (SRS RET-01..03). It does not read `director.hologram.capture` (the photo) at all.
 - Present decoration as data. The head shell is a smooth ellipsoid cap lofted from the face's own upper
-  edge, drawn as faint blue light with smooth geometric arcs and particles, never skin, lattice or hair;
+  edge, drawn as a faint blue hairline with a few geometric arcs and particles, never skin, lattice or hair;
   the neck is a shaded column. Both are placed from the face's size and carry no captured data.
 
 ## Performance

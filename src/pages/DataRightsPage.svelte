@@ -1,11 +1,24 @@
+<!--
+  Your data: download a structured copy of what is attached to the account,
+  or permanently delete the account (SRS section 11, SET-01).
+
+  The two flows are unchanged, only restyled into the dashboard's cards.
+  Deletion takes two separate confirmations: typing DELETE, then a final
+  "cannot be undone" step, and it cannot be submitted twice. The notice text
+  is the centralised placeholder legal copy, marked as such in development.
+  A guest has no account, so both actions are off and the page says why.
+-->
 <script lang="ts">
-  import Page from '@/components/Page.svelte';
+  import { tick } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
   import { deleteAccount, downloadDataExport } from '@/state/controller.ts';
-  import {
-    ACCOUNT_DELETION_NOTICE_PLACEHOLDER,
-    DATA_EXPORT_NOTICE_PLACEHOLDER,
-  } from '@/legal/content.ts';
+  import { ACCOUNT_DELETION_NOTICE_PLACEHOLDER, DATA_EXPORT_NOTICE_PLACEHOLDER } from '@/legal/content.ts';
+  import Card from '@/ui/Card.svelte';
+  import SectionHeader from '@/ui/SectionHeader.svelte';
+  import Button from '@/ui/Button.svelte';
+  import Pill from '@/ui/Pill.svelte';
+  import PageFrame from './frame/PageFrame.svelte';
+  import TextField from './frame/TextField.svelte';
 
   let typed = $state('');
   let secondConfirmation = $state(false);
@@ -14,9 +27,26 @@
   const phrase = 'DELETE';
   const typedCorrectly = $derived(typed.trim() === phrase);
 
-  function continueDeletion() {
+  /*
+   * Each step removes the button that was just pressed, so focus is placed
+   * rather than left to fall to the page: on "Go back" when the final step
+   * opens (the safe choice, and inside the alert a screen reader announces),
+   * and on "Continue" when it closes again.
+   */
+  let finalStep = $state<HTMLElement | null>(null);
+  let continueButton = $state<HTMLButtonElement | null>(null);
+
+  async function continueDeletion() {
     if (!typedCorrectly || deleting) return;
     secondConfirmation = true;
+    await tick();
+    finalStep?.querySelector<HTMLElement>('.go-back')?.focus();
+  }
+
+  async function stepBack() {
+    secondConfirmation = false;
+    await tick();
+    continueButton?.focus();
   }
 
   async function removeAccount() {
@@ -28,76 +58,210 @@
     } catch (err) {
       deletionError = err instanceof Error ? err.message : 'Your account could not be deleted.';
       deleting = false;
-      secondConfirmation = false;
+      await stepBack();
     }
   }
 </script>
 
-<Page
-  eyebrow="Settings · Your data"
-  title="Your data, in your hands."
-  lede="Download a structured copy of what is attached to your account, or permanently delete the account."
+<PageFrame
+  title="Your data"
+  subtitle="Download a structured copy of what is attached to your account, or permanently delete the account."
+  back={{ href: '/settings', label: 'Settings' }}
 >
-  <section class="sec" aria-labelledby="export-title">
-    <div class="sec__head"><h2 class="sec__title" id="export-title">Export my data</h2></div>
-    <div class="card">
-      <p class="card__text">{DATA_EXPORT_NOTICE_PLACEHOLDER.text}</p>
+  {#if session.guest}
+    <p class="guest" role="note">
+      You are looking around without an account, so nothing is stored to download or delete. Both actions work once
+      you sign in.
+    </p>
+  {/if}
+
+  <div class="rights">
+    <Card aria-labelledby="export-title">
+      <SectionHeader id="export-title" title="Export my data" icon="arrow-up-right" />
+      <p class="text">{DATA_EXPORT_NOTICE_PLACEHOLDER.text}</p>
       {#if import.meta.env.DEV && DATA_EXPORT_NOTICE_PLACEHOLDER.placeholder}
         <p class="placeholder">Placeholder legal text · {DATA_EXPORT_NOTICE_PLACEHOLDER.id}</p>
       {/if}
       <div class="actions">
-        <button class="btn" type="button" onclick={downloadDataExport} disabled={session.guest || session.dataExport.status === 'exporting'}>
+        <Button
+          variant="primary"
+          iconStart="arrow-up-right"
+          onclick={downloadDataExport}
+          disabled={session.guest || session.dataExport.status === 'exporting'}
+        >
           {session.dataExport.status === 'exporting' ? 'Preparing export…' : 'Download JSON export'}
-        </button>
+        </Button>
         <div aria-live="polite">
           {#if session.dataExport.status === 'complete'}
-            <span class="tag tag--good">Downloaded {session.dataExport.filename}</span>
+            <Pill tone="sage" dot>Downloaded {session.dataExport.filename}</Pill>
           {:else if session.dataExport.status === 'error'}
             <span class="error">{session.dataExport.error}</span>
           {/if}
         </div>
       </div>
-    </div>
-  </section>
+    </Card>
 
-  <section class="sec" aria-labelledby="delete-title">
-    <div class="sec__head"><h2 class="sec__title" id="delete-title">Delete my account</h2></div>
-    <div class="card card--warm">
-      <p class="card__text">{ACCOUNT_DELETION_NOTICE_PLACEHOLDER.text}</p>
+    <Card tone="rose" aria-labelledby="delete-title">
+      <SectionHeader id="delete-title" title="Delete my account" icon="x" iconStyle="rose" />
+      <p class="text">{ACCOUNT_DELETION_NOTICE_PLACEHOLDER.text}</p>
       {#if import.meta.env.DEV && ACCOUNT_DELETION_NOTICE_PLACEHOLDER.placeholder}
         <p class="placeholder">Placeholder legal text · {ACCOUNT_DELETION_NOTICE_PLACEHOLDER.id}</p>
       {/if}
 
-      <label class="confirm-field">
-        <span>Type <strong>{phrase}</strong> to continue</span>
-        <input bind:value={typed} autocomplete="off" disabled={deleting || secondConfirmation} aria-label="Type DELETE to confirm account deletion" />
-      </label>
+      <TextField
+        class="confirm"
+        label="Type DELETE to continue"
+        ariaLabel="Type DELETE to confirm account deletion"
+        bind:value={typed}
+        autocomplete="off"
+        size="short"
+        disabled={deleting || secondConfirmation || session.guest}
+      />
 
       {#if secondConfirmation}
-        <div class="second-confirm" role="alert">
-          <strong>Final confirmation</strong>
-          <p>This cannot be undone. Delete the account and all attached data now?</p>
+        <div class="final" role="alert" bind:this={finalStep}>
+          <strong class="final__title">Final confirmation</strong>
+          <p class="final__text">This cannot be undone. Delete the account and all attached data now?</p>
           <div class="actions">
-            <button class="btn btn--danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly}>
+            <button class="danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly}>
               {deleting ? 'Deleting account…' : 'Permanently delete my account'}
             </button>
-            <button class="btn" type="button" onclick={() => (secondConfirmation = false)} disabled={deleting}>Go back</button>
+            <Button variant="secondary" class="go-back" onclick={stepBack} disabled={deleting}>Go back</Button>
           </div>
         </div>
       {:else}
-        <button class="btn btn--danger" type="button" onclick={continueDeletion} disabled={!typedCorrectly || deleting || session.guest}>Continue</button>
+        <div class="actions">
+          <button
+            class="danger"
+            type="button"
+            bind:this={continueButton}
+            onclick={continueDeletion}
+            disabled={!typedCorrectly || deleting || session.guest}
+          >
+            Continue
+          </button>
+        </div>
       {/if}
       {#if deletionError}<p class="error" aria-live="assertive">{deletionError}</p>{/if}
-    </div>
-  </section>
-</Page>
+    </Card>
+  </div>
+</PageFrame>
 
 <style>
-  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin-top: var(--s-4); }
-  .placeholder { color: var(--warm); font: 600 var(--t-sm)/1.4 var(--font); text-transform: uppercase; letter-spacing: .08em; }
-  .confirm-field { display: grid; gap: var(--s-2); margin: var(--s-5) 0 var(--s-4); }
-  .confirm-field input { max-width: 22rem; padding: var(--s-3); border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; }
-  .second-confirm { margin-top: var(--s-4); }
-  .second-confirm p { margin: var(--s-2) 0 0; }
-  .error { color: var(--danger, #a43b32); }
+  .guest {
+    margin: 0;
+    padding: 14px 18px;
+    border-radius: var(--r-md);
+    background: var(--amber-100);
+    color: var(--amber-900);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-normal);
+  }
+
+  .rights {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 1023px) {
+    .rights {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .text {
+    margin: 16px 0 0;
+    max-width: 34em; /* about 70-75 characters in this font; see LegalDocument */
+    font-size: var(--fs-body);
+    line-height: var(--lh-relaxed);
+    color: var(--text);
+  }
+  .placeholder {
+    display: inline-block;
+    margin: 12px 0 0;
+    padding: 4px 10px;
+    border-radius: var(--r-sm);
+    background: var(--amber-100);
+    color: var(--amber-900);
+    font-size: var(--fs-micro);
+    font-weight: var(--fw-semibold);
+    letter-spacing: var(--tr-micro);
+    line-height: 1.4;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .rights :global(.confirm) {
+    margin-top: 20px;
+  }
+
+  .final {
+    margin-top: 20px;
+    padding: 16px 18px;
+    border: 1px solid var(--chip-selected-border);
+    border-radius: var(--r-md);
+    background: var(--cream-50);
+  }
+  .final__title {
+    font-size: var(--fs-label);
+    color: var(--text-strong);
+  }
+  .final__text {
+    margin: 6px 0 0;
+    font-size: var(--fs-body);
+    color: var(--text);
+  }
+  .final .actions {
+    margin-top: 14px;
+  }
+
+  /* The one destructive button style: solid raspberry, cream ink (7.1:1). */
+  .danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 22px;
+    border: 1px solid transparent;
+    border-radius: var(--r-pill);
+    background: var(--text-danger);
+    color: var(--cream-0);
+    font-family: var(--font-sans);
+    font-size: var(--fs-label);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+  .danger:focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+  .danger:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  @media (hover: hover) {
+    .danger:hover:not(:disabled) {
+      background: var(--rose-700);
+    }
+  }
+  .danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .error {
+    margin: 12px 0 0;
+    font-size: var(--fs-body-sm);
+    font-weight: var(--fw-medium);
+    color: var(--text-danger);
+  }
 </style>

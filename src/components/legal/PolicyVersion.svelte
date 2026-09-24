@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** The record's wording version and effective date, as quiet meta under the title. */
   import type { LegalContentRecord } from '../../../shared/legal-content.ts';
   let { content }: { content: LegalContentRecord } = $props();
 </script>
@@ -9,6 +10,19 @@
 </p>
 
 <style>
-  .legal-version { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; opacity: .72; font-size: .82rem; }
-  code { font: inherit; overflow-wrap: anywhere; }
+  .legal-version {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin: 0;
+    font-size: var(--fs-meta);
+    line-height: 1.4;
+    color: var(--text-muted);
+  }
+  code {
+    font-family: var(--font-sans);
+    font-weight: var(--fw-medium);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
 </style>

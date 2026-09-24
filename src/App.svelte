@@ -9,6 +9,7 @@
     leaveScanPage,
     refreshVoice,
     registerDirector,
+    sampleModeChanged,
   } from '@/state/controller.ts';
   import { isLegalRoute, router } from '@/router/router.svelte.ts';
   import { director } from '@/stage/director.ts';
@@ -125,6 +126,19 @@
     if (booting || !session.signedIn) return;
     if (router.is('scan')) enterScanPage();
     else leaveScanPage();
+  });
+
+  /**
+   * Sample mode on or off, after boot. The controller keeps a signed-in
+   * account's real conversation off the sample screens and brings it back
+   * afterwards. The first run only records the starting state.
+   */
+  let sampleWas: boolean | null = null;
+  $effect(() => {
+    const on = sample.on;
+    if (booting) return;
+    if (sampleWas !== null && sampleWas !== on) void sampleModeChanged(on);
+    sampleWas = on;
   });
 
   onMount(() => {

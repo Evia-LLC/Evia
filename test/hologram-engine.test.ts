@@ -11,11 +11,11 @@ import * as THREE from 'three';
 import sampleFile from '../src/sample/fixtures/scan-face-mesh.json';
 import { LATTICE_PITCH, boundaryLoops, buildCraniumShell, buildFaceSurface, sampleLattice, trianglesFromEdges } from '../src/hologram/geometry.ts';
 import { FACE_SLOT, HOLOGRAM_BOX, fitBox } from '../src/hologram/layout.ts';
-import { ANCHOR_LANDMARK, regionOutline } from '../src/hologram/regions.ts';
+import { ANCHOR_BLEND, ANCHOR_LANDMARK, regionOutline } from '../src/hologram/regions.ts';
 import { toScanMesh } from '../src/hologram/sample.ts';
 import { FACE_FRAG } from '../src/hologram/shaders.ts';
 import { createHologram, type HologramRenderer } from '../src/hologram/engine.ts';
-import { FACE_REGIONS } from '../shared/types.ts';
+import { FACE_REGIONS, type FaceRegionKey } from '../shared/types.ts';
 
 const mesh = toScanMesh(sampleFile as never);
 
@@ -23,6 +23,15 @@ const mesh = toScanMesh(sampleFile as never);
 function refPoint(i: number): [number, number] {
   const f = sampleFile as { crop: { x: number; y: number; w: number; h: number }; points: number[] };
   return [f.crop.x + f.points[i * 3] * f.crop.w, f.crop.y + f.points[i * 3 + 1] * f.crop.h];
+}
+
+/** A region's anchor in reference px: its landmark, moved by its blend (ANCHOR_BLEND). */
+function anchorRef(k: FaceRegionKey): [number, number] {
+  const [x, y] = refPoint(ANCHOR_LANDMARK[k]);
+  const b = ANCHOR_BLEND[k];
+  if (!b) return [x, y];
+  const [tx, ty] = refPoint(b.toward);
+  return [x + (tx - x) * b.t, y + (ty - y) * b.t];
 }
 
 /** The callout anchors ref4 draws (specs/scan.md 2.2-2.3), in reference px. */
@@ -200,7 +209,7 @@ describe('hologram anchors', () => {
     holo.setMesh(mesh);
     const a = holo.anchors();
     for (const k of FACE_REGIONS) {
-      const [rx, ry] = refPoint(ANCHOR_LANDMARK[k]);
+      const [rx, ry] = anchorRef(k);
       expect(a[k].visible).toBe(true);
       // Canvas px = reference px minus the box origin, at scale 1; perspective moves points by well under 2 px.
       expect(Math.abs(a[k].x - (rx - HOLOGRAM_BOX.x))).toBeLessThan(2);
@@ -220,8 +229,9 @@ describe('hologram anchors', () => {
     expect(dist('cheekLeft')).toBeLessThan(10);
     expect(dist('periorbitalLeft')).toBeLessThan(15);
     expect(dist('chin')).toBeLessThan(15);
-    // The mockup draws its forehead zone above the mesh's top edge (y 155); ours stays on the face, about 30 px lower.
-    expect(dist('forehead')).toBeLessThan(32);
+    // The mockup draws its forehead zone above the mesh's top edge (y 155); ours stays on
+    // lit forehead, under the band where the forehead dissolves: about 38 px lower.
+    expect(dist('forehead')).toBeLessThan(40);
     // Callouts on the same side must not crowd each other.
     expect(Math.hypot(a.cheekLeft.x - a.periorbitalLeft.x, a.cheekLeft.y - a.periorbitalLeft.y)).toBeGreaterThan(45);
     holo.dispose();
@@ -229,14 +239,21 @@ describe('hologram anchors', () => {
     // Each anchor lies inside the zone it points at (face texture space).
     const s = buildFaceSurface(mesh, FACE_SLOT);
     const uv = (i: number): [number, number] => [s.uvs[i * 2] * 1000, (1 - s.uvs[i * 2 + 1]) * 1000];
-    for (const k of FACE_REGIONS) expect(inside(uv(ANCHOR_LANDMARK[k]), regionOutline(k, uv))).toBe(true);
+    const uvAnchor = (k: FaceRegionKey): [number, number] => {
+      const [x, y] = uv(ANCHOR_LANDMARK[k]);
+      const b = ANCHOR_BLEND[k];
+      if (!b) return [x, y];
+      const [tx, ty] = uv(b.toward);
+      return [x + (tx - x) * b.t, y + (ty - y) * b.t];
+    };
+    for (const k of FACE_REGIONS) expect(inside(uvAnchor(k), regionOutline(k, uv))).toBe(true);
   });
 
   it('scales with the canvas and letterboxes like object-fit: contain', () => {
     const { renderer } = fakeRenderer();
     const holo = createHologram(fakeCanvas(1100, 620), { renderer, reducedMotion: true });
     holo.setMesh(mesh);
-    const [rx, ry] = refPoint(ANCHOR_LANDMARK.forehead);
+    const [rx, ry] = anchorRef('forehead');
     const f = fitBox(HOLOGRAM_BOX, 1100, 620, 'contain');
     expect(f.scale).toBe(1);
     const a = holo.anchors().forehead;

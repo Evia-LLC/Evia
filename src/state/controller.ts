@@ -36,6 +36,7 @@ import {
   type CharacterDirective,
   type ElohimAction,
   type ElohimTurn,
+  type ExplanationStyle,
   type SkinAnalysis,
 } from '@shared/types.ts';
 
@@ -383,6 +384,28 @@ export async function signOut(): Promise<void> {
  * conversation or a history, and the interface says so rather than inventing
  * either.
  */
+/**
+ * Sample mode switched on or off while an account is signed in.
+ *
+ * The sample screens are made-up, and anything said during a sample visit is
+ * local and about made-up data. So entering sample mode starts a clean local
+ * conversation, and leaving it brings back the account's own saved history -
+ * the two never sit on one screen. Guests have nothing saved, so nothing to do.
+ */
+export async function sampleModeChanged(on: boolean): Promise<void> {
+  if (!session.user || session.guest) return;
+  if (on) {
+    session.messages = [];
+    return;
+  }
+  try {
+    const { messages } = await api.chatHistory();
+    session.messages = messages;
+  } catch {
+    // Keep what is on screen; the next load refreshes it.
+  }
+}
+
 export function enterGuestMode(): void {
   session.guest = true;
   session.chatError = null;
@@ -446,6 +469,27 @@ export async function setVoiceEnabled(enabled: boolean): Promise<void> {
   }
 }
 
+/**
+ * How she explains things: the Scan page's Detailed / Gen-Z switch.
+ *
+ * Quiet on purpose - a preference, not a chat turn, so choosing a register
+ * does not put a line in the conversation. Guests and sample visits keep the
+ * choice for this visit only; nothing is stored for them.
+ */
+export async function setExplanationStyle(style: ExplanationStyle): Promise<void> {
+  if (!session.user) return;
+  session.user = {
+    ...session.user,
+    preferences: { ...session.user.preferences, explanationStyle: style },
+  };
+  if (localOnly()) return;
+  try {
+    await api.updatePreferences({ explanationStyle: style });
+  } catch {
+    // The switch still holds for the session; it simply was not remembered.
+  }
+}
+
 /** Turns her voice on or off for a guest. Nothing is stored; nothing to store it in. */
 export function setGuestVoice(enabled: boolean): void {
   if (!session.user || !session.guest) return;
@@ -482,7 +526,9 @@ async function loadUserData(): Promise<void> {
     api.bodyScans().catch(() => ({ scans: [] })),
     api.progressPhotos().catch(() => ({ photos: [] })),
   ]);
-  session.messages = history.messages;
+  // Signed in with sample mode already on: the real transcript stays out of the
+  // sample screens until sample mode is turned off (see sampleModeChanged).
+  session.messages = sample.on ? [] : history.messages;
   session.scans = scans.scans;
   session.latestScan = scans.scans[0] ?? null;
   session.summary = summary.summary;

@@ -1,46 +1,92 @@
+<!--
+  Profile: what Evia works from, and what it has remembered.
+
+  The pregnancy question lives here as a real question in sentence case,
+  not as something to be discovered by typing it into the sensitivities
+  box. "Prefer not to say" is not read as a no; Evia stays cautious.
+
+  Everything on the page is the account's own (or, for a guest, the visit's
+  defaults): there is no sample version of a profile. The skin fields and the
+  preferences are saved together by one Save, which sits in a bar that stays
+  in view at the foot of the page; room sound is a device setting and applies
+  at once, as it always has.
+-->
 <script lang="ts">
-  /**
-   * You. What she works from, and what she has remembered.
-   *
-   * The pregnancy question lives here as a real question in sentence case,
-   * not as something to be discovered by typing it into the sensitivities
-   * box. "Prefer not to say" is not read as a no; she stays cautious.
-   */
-  import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { api } from '@/lib/api.ts';
-  import { link } from '@/router/router.svelte.ts';
   import { listVoiceOptions, previewVoice, refreshVoice, signOut } from '@/state/controller.ts';
   import { forgetIntro } from '@/lib/intro.ts';
   import { setSoundEnabled, soundEnabled } from '@/lib/sound.ts';
+  import type { ExplanationStyle, MemoryRecord, SkinType, PregnancyStatus } from '@shared/types.ts';
+  import { PREGNANCY_STATUSES, PREGNANCY_STATUS_LABELS } from '@shared/types.ts';
+  import Card from '@/ui/Card.svelte';
+  import SectionHeader from '@/ui/SectionHeader.svelte';
+  import Toggle from '@/ui/Toggle.svelte';
+  import Button from '@/ui/Button.svelte';
+  import Pill from '@/ui/Pill.svelte';
+  import EmptyState from '@/ui/EmptyState.svelte';
+  import PageFrame from './frame/PageFrame.svelte';
+  import TextField from './frame/TextField.svelte';
+  import SelectField from './frame/SelectField.svelte';
 
   /** Plays the introduction again: forget that it was seen, go home, it plays. */
   function replayIntro() {
     forgetIntro();
     location.assign('/');
   }
-  import type { ExplanationStyle, MemoryRecord, SkinType, PregnancyStatus } from '@shared/types.ts';
-  import { PREGNANCY_STATUSES, PREGNANCY_STATUS_LABELS } from '@shared/types.ts';
 
   let saving = $state(false);
   let saved = $state(false);
+  let saveError = $state<string | null>(null);
   let memories = $state<MemoryRecord[]>([]);
 
   let skinType = $state<SkinType>(session.user?.profile.skinType ?? 'unknown');
   let concerns = $state((session.user?.profile.concerns ?? []).join(', '));
   let sensitivities = $state((session.user?.profile.sensitivities ?? []).join(', '));
-  let pregnancyStatus = $state<PregnancyStatus>(
-    session.user?.profile.pregnancyStatus ?? 'unknown',
-  );
+  let pregnancyStatus = $state<PregnancyStatus>(session.user?.profile.pregnancyStatus ?? 'unknown');
   let style = $state<ExplanationStyle>(session.user?.preferences.explanationStyle ?? 'adaptive');
   let reducedMotion = $state(session.user?.preferences.reducedMotion ?? false);
   let voiceEnabled = $state(session.user?.preferences.voiceEnabled ?? false);
   let voiceURI = $state(session.user?.preferences.voiceURI ?? '');
   let voiceOptions = $state<Array<{ uri: string; name: string; lang: string }>>([]);
+  let sound = $state(soundEnabled());
 
-  // A guest's display name is the word she greets with ('there'), which
-  // made this title read "What I know about there." A guest is 'you'.
-  const name = $derived(session.guest ? 'you' : (session.user?.displayName ?? 'you'));
+  const SKIN_TYPES: Array<{ value: SkinType; label: string }> = [
+    { value: 'unknown', label: 'Not sure yet' },
+    { value: 'dry', label: 'Dry' },
+    { value: 'oily', label: 'Oily' },
+    { value: 'combination', label: 'Combination' },
+    { value: 'normal', label: 'Normal' },
+    { value: 'sensitive', label: 'Sensitive' },
+  ];
+  const STYLES: Array<{ value: ExplanationStyle; label: string }> = [
+    { value: 'adaptive', label: 'Read the room' },
+    { value: 'simple', label: 'Keep it simple' },
+    { value: 'detailed', label: 'Give me the detail' },
+    { value: 'genz', label: 'Gen-Z mode' },
+  ];
+  const PREGNANCY = PREGNANCY_STATUSES.map((status) => ({ value: status, label: PREGNANCY_STATUS_LABELS[status] }));
+  const voiceChoices = $derived([
+    { value: '', label: 'Let Evia pick the best one' },
+    ...voiceOptions.map((option) => ({ value: option.uri, label: option.name })),
+  ]);
+
+  const voiceNote = $derived.by(() => {
+    if (!session.canSpeak) {
+      return 'This browser has no speech synthesis and no licensed voice is configured, so Evia cannot speak here.';
+    }
+    return session.clonedVoice
+      ? "Evia reads its replies aloud in its own licensed voice."
+      : "Evia reads its replies aloud in this device's built-in voice for now.";
+  });
+
+  // The account's own creation date, written as Settings writes it. With no
+  // date on record the line says nothing rather than guessing one.
+  const since = $derived(
+    session.user?.createdAt
+      ? new Date(session.user.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+      : null,
+  );
 
   const split = (value: string) =>
     value
@@ -51,6 +97,7 @@
   async function save() {
     saving = true;
     saved = false;
+    saveError = null;
     try {
       await api.updateProfile({
         skinType,
@@ -69,6 +116,8 @@
       await refreshVoice();
       saved = true;
       setTimeout(() => (saved = false), 2400);
+    } catch (err) {
+      saveError = err instanceof Error ? err.message : 'Your changes could not be saved.';
     } finally {
       saving = false;
     }
@@ -84,241 +133,335 @@
     await loadMemories();
   }
 
+  function setSound(on: boolean) {
+    sound = on;
+    setSoundEnabled(on);
+  }
+
+  const kindLabel = (kind: string) => kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, ' ');
+
   $effect(() => {
     void loadMemories();
     void listVoiceOptions().then((options) => (voiceOptions = options));
   });
 </script>
 
-<Page
-  eyebrow="You"
-  title={`What I know about ${name}.`}
-  lede="This is what I work from. I update some of it myself as we talk — correct anything I have wrong, and I will use the correction from the next sentence on."
+<PageFrame
+  title="Profile"
+  subtitle="What Evia works from. Correct anything that is wrong, and the next answer uses the correction."
+  back={{ href: '/settings', label: 'Settings' }}
+  profile={false}
 >
-  {#snippet actions()}
-    <a class="cta cta--quiet" href="/privacy" use:link>Where your data goes</a>
-  {/snippet}
-
-  <section class="sec" aria-labelledby="skin">
-    <div class="sec__head">
-      <h2 class="sec__title" id="skin">Your skin</h2>
-    </div>
-    <div class="card">
-      <label class="field">
-        <span>Skin type</span>
-        <select bind:value={skinType}>
-          <option value="unknown">Not sure yet</option>
-          <option value="dry">Dry</option>
-          <option value="oily">Oily</option>
-          <option value="combination">Combination</option>
-          <option value="normal">Normal</option>
-          <option value="sensitive">Sensitive</option>
-        </select>
-      </label>
-
-      <label class="field">
-        <span>What do you want to work on?</span>
-        <input bind:value={concerns} placeholder="acne, texture, dark spots" />
-      </label>
-
-      <label class="field">
-        <span>What does your skin not get on with?</span>
-        <input bind:value={sensitivities} placeholder="fragrance, essential oils" />
-      </label>
-    </div>
-  </section>
-
-  <section class="sec sec--prose" aria-labelledby="preg">
-    <div class="sec__head">
-      <h2 class="sec__title" id="preg">One question that changes my advice</h2>
-    </div>
-    <div class="card card--warm">
-      <label class="field field--tight">
-        <small class="field__ask">
-          Are you currently pregnant, trying to become pregnant, or breastfeeding?
-        </small>
-        <select bind:value={pregnancyStatus}>
-          {#each PREGNANCY_STATUSES as status (status)}
-            <option value={status}>{PREGNANCY_STATUS_LABELS[status]}</option>
-          {/each}
-        </select>
-        <small class="field__note">
-          This changes what I will suggest — retinoids in particular. “Prefer not to say” is not
-          read as a no: I stay cautious either way.
-        </small>
-      </label>
-    </div>
-  </section>
-
-  <section class="sec" aria-labelledby="how">
-    <div class="sec__head">
-      <h2 class="sec__title" id="how">How I talk to you</h2>
-    </div>
-    <div class="card">
-      <label class="toggle">
-        <input
-          type="checkbox"
-          checked={soundEnabled()}
-          onchange={(e) => setSoundEnabled((e.currentTarget as HTMLInputElement).checked)}
-        />
-        <div>
-          <strong>Room sound</strong>
-          <small>
-            A low tone under the clinic, a tick for the countdown, one note when a reading
-            lands. Off, and the room is silent.
-          </small>
+  <div class="profile">
+    <div class="profile__col">
+      <Card aria-labelledby="pro-skin">
+        <SectionHeader id="pro-skin" title="Your skin" icon="droplet" />
+        <div class="fields">
+          <SelectField label="Skin type" bind:value={skinType} options={SKIN_TYPES} />
+          <TextField
+            label="What do you want to work on?"
+            bind:value={concerns}
+            placeholder="acne, texture, dark spots"
+            hint="Separate each one with a comma."
+          />
+          <TextField
+            label="What does your skin not get on with?"
+            bind:value={sensitivities}
+            placeholder="fragrance, essential oils"
+            hint="Separate each one with a comma."
+          />
         </div>
-      </label>
+      </Card>
 
-      <label class="toggle">
-        <input type="checkbox" bind:checked={voiceEnabled} disabled={!session.canSpeak} />
-        <div>
-          <strong>Let me speak</strong>
-          <small>
-            {#if session.clonedVoice}
-              I read my replies aloud in my own licensed voice, and my mouth follows the real
-              waveform rather than a guess at it.
-            {:else}
-              I read my replies aloud and my mouth follows the audio — in this device's
-              built-in voice for now, until my own is switched on.
-            {/if}
-            {#if !session.canSpeak}This browser has no speech synthesis and no licensed
-              voice is configured, so I cannot speak here.{/if}
-          </small>
+      <Card tone="rose" aria-labelledby="pro-preg">
+        <SectionHeader id="pro-preg" title="One question that changes the advice" icon="info" iconStyle="rose" />
+        <div class="fields">
+          <SelectField
+            label="Are you currently pregnant, trying to become pregnant, or breastfeeding?"
+            bind:value={pregnancyStatus}
+            options={PREGNANCY}
+            hint="This changes what Evia suggests, retinoids in particular. “Prefer not to say” is not read as a no: Evia stays cautious either way."
+          />
         </div>
-      </label>
+      </Card>
 
-      {#if voiceEnabled && !session.clonedVoice && voiceOptions.length > 1}
-        <label class="field">
-          <span>Which voice</span>
-          <select bind:value={voiceURI}>
-            <option value="">Let me pick the best one</option>
-            {#each voiceOptions as option (option.uri)}
-              <option value={option.uri}>{option.name}</option>
+      <Card aria-labelledby="pro-mem">
+        <SectionHeader
+          id="pro-mem"
+          title="What Evia remembers"
+          icon="lightbulb"
+          subtitle="Durable facts, kept apart from the conversation. Delete anything that is wrong or that you would rather it forgot."
+        >
+          {#snippet action()}
+            {#if memories.length}<Pill size="sm">{memories.length}</Pill>{/if}
+          {/snippet}
+        </SectionHeader>
+        {#if memories.length}
+          <ul class="memories" role="list">
+            {#each memories as memory (memory.id)}
+              <li class="memory">
+                <Pill size="sm" tone="rose">{kindLabel(memory.kind)}</Pill>
+                <span class="memory__value">{memory.value}</span>
+                <Button variant="ghost" size="sm" onclick={() => forget(memory.id)} label={`Forget: ${memory.value}`}>
+                  Forget
+                </Button>
+              </li>
             {/each}
-          </select>
-        </label>
-        <button class="btn btn--mini hear" onclick={() => previewVoice(voiceURI || null)}>
-          Hear it
-        </button>
-      {/if}
-
-      {#if session.clonedVoice}
-        <div class="line">
-          <div class="line__main">
-            <span class="line__title line__title--plain">Hear my voice</span>
-            <span class="line__sub">
-              {session.voiceStatus || 'A short line in my own voice, so you can check this device plays it.'}
-            </span>
-          </div>
-          <div class="line__end">
-            <button class="btn btn--mini" type="button" onclick={() => previewVoice(null)}>Play</button>
-          </div>
-        </div>
-      {/if}
-
-      <label class="field">
-        <span>How should I explain things?</span>
-        <select bind:value={style}>
-          <option value="adaptive">Read the room</option>
-          <option value="simple">Keep it simple</option>
-          <option value="detailed">Give me the detail</option>
-          <option value="genz">Gen-Z mode</option>
-        </select>
-      </label>
-
-      <label class="toggle">
-        <input type="checkbox" bind:checked={reducedMotion} />
-        <div>
-          <strong>Reduced motion</strong>
-          <small>Damps my idle movement, the room transitions, and the way pages arrive.</small>
-        </div>
-      </label>
-
-      <div class="line">
-        <div class="line__main">
-          <span class="line__title line__title--plain">The introduction</span>
-          <span class="line__sub">The twenty seconds you saw when you first arrived.</span>
-        </div>
-        <div class="line__end">
-          <button class="btn btn--mini" type="button" onclick={replayIntro}>Play it again</button>
-        </div>
-      </div>
-
-      <div class="save">
-        <button class="cta" type="button" onclick={save} disabled={saving || session.guest}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {#if saved}<span class="tag tag--good">Saved</span>{/if}
-        {#if session.guest}<span class="legal">Nothing is saved while you are looking around.</span>{/if}
-      </div>
+          </ul>
+        {:else}
+          <EmptyState
+            compact
+            icon="lightbulb"
+            title="Nothing yet"
+            body={session.guest
+              ? 'Nothing is remembered while you are looking around without an account.'
+              : 'As you talk, Evia keeps the things worth keeping — what you use, what flares, what you are working towards. They show up here, and you can strike any of them.'}
+          />
+        {/if}
+      </Card>
     </div>
-  </section>
 
-  <section class="sec" aria-labelledby="mem">
-    <div class="sec__head">
-      <h2 class="sec__title" id="mem">What I remember</h2>
-      {#if memories.length}<span class="sec__meta">{memories.length}</span>{/if}
-    </div>
-    <p class="sec__lede">
-      Durable facts, kept apart from the conversation. Delete anything that is wrong or that you
-      would rather I forgot.
-    </p>
-    {#if memories.length}
-      <div class="card">
-        {#each memories as memory (memory.id)}
+    <div class="profile__col">
+      <Card aria-labelledby="pro-talk">
+        <SectionHeader id="pro-talk" title="How Evia talks to you" icon="messages" />
+        <div class="fields">
+          <!-- A disabled switch dims its own row, so the reason sits beside it. -->
+          <div class="toggle-with-note">
+            <Toggle
+              label="Evia's voice"
+              description={session.canSpeak ? voiceNote : undefined}
+              bind:checked={voiceEnabled}
+              disabled={!session.canSpeak}
+            />
+            {#if !session.canSpeak}<p class="toggle-note">{voiceNote}</p>{/if}
+          </div>
+
+          {#if voiceEnabled && !session.clonedVoice && voiceOptions.length > 1}
+            <div class="inline">
+              <SelectField label="Which voice" bind:value={voiceURI} options={voiceChoices} class="inline__grow" />
+              <Button variant="secondary" size="sm" iconStart="play" onclick={() => previewVoice(voiceURI || null)}>
+                Hear it
+              </Button>
+            </div>
+          {/if}
+
+          {#if session.clonedVoice}
+            <div class="line">
+              <div class="line__text">
+                <span class="line__title">Hear the voice</span>
+                <span class="line__sub">
+                  {session.voiceStatus || 'A short line in Evia’s own voice, so you can check this device plays it.'}
+                </span>
+              </div>
+              <Button variant="secondary" size="sm" iconStart="play" onclick={() => previewVoice(null)}>Play</Button>
+            </div>
+          {/if}
+
+          <SelectField label="How should Evia explain things?" bind:value={style} options={STYLES} />
+
+          <Toggle
+            label="Reduced motion"
+            description="Damps the room's movement, the transitions, and the way pages arrive."
+            bind:checked={reducedMotion}
+          />
+          <Toggle
+            label="Room sound"
+            description="A low tone under the room, a tick for the countdown, one note when a reading lands. Remembered on this device."
+            checked={sound}
+            onchange={setSound}
+          />
+
           <div class="line">
-            <span class="tag">{memory.kind.charAt(0).toUpperCase() + memory.kind.slice(1).replace(/_/g, ' ')}</span>
-            <div class="line__main">
-              <span class="line__title line__title--plain">{memory.value}</span>
+            <div class="line__text">
+              <span class="line__title">The introduction</span>
+              <span class="line__sub">The short introduction you saw when you first arrived.</span>
             </div>
-            <div class="line__end">
-              <button class="btn btn--danger btn--mini" onclick={() => forget(memory.id)}>Forget</button>
-            </div>
+            <Button variant="secondary" size="sm" onclick={replayIntro}>Play it again</Button>
           </div>
-        {/each}
-      </div>
-    {:else}
-      <div class="empty">
-        <p class="empty__title">Nothing yet.</p>
-        <p class="empty__text">
-          As we talk I keep the things worth keeping — what you use, what flares, what you are
-          working towards. They show up here, and you can strike any of them.
-        </p>
-      </div>
-    {/if}
-  </section>
+        </div>
+      </Card>
 
-  <section class="sec">
-    <div class="card">
-      <div class="line">
-        <div class="line__main">
-          <span class="line__title">{session.guest ? 'Looking around' : session.user?.email}</span>
-          <span class="line__sub">{session.guest ? 'No account, nothing saved' : `Since ${new Date(session.user?.createdAt ?? Date.now()).toLocaleDateString()}`}</span>
+      <Card aria-labelledby="pro-account">
+        <SectionHeader id="pro-account" title="Account" icon="user" />
+        <div class="line line--account">
+          <div class="line__text">
+            <span class="line__title line__title--strong">{session.guest ? 'Looking around' : session.user?.email}</span>
+            {#if session.guest}
+              <span class="line__sub">No account, nothing saved</span>
+            {:else if since}
+              <span class="line__sub">Member since {since}</span>
+            {/if}
+          </div>
+          <Button variant="secondary" size="sm" onclick={() => signOut()}>{session.guest ? 'Leave' : 'Sign out'}</Button>
         </div>
-        <div class="line__end">
-          <button class="btn btn--mini" onclick={() => signOut()}>{session.guest ? 'Leave' : 'Sign out'}</button>
-        </div>
-      </div>
+      </Card>
     </div>
-  </section>
-</Page>
+  </div>
+
+  <div class="savebar" role="group" aria-label="Save your profile">
+    <div class="savebar__status" aria-live="polite">
+      {#if saved}
+        <Pill tone="sage" dot>Saved</Pill>
+      {:else if saveError}
+        <span class="savebar__error">{saveError}</span>
+      {:else if session.guest}
+        <span class="savebar__note">Nothing is saved while you are looking around.</span>
+      {:else}
+        <span class="savebar__note">Skin details and how Evia talks are saved together.</span>
+      {/if}
+    </div>
+    <Button variant="primary" onclick={save} disabled={saving || session.guest}>
+      {saving ? 'Saving…' : 'Save changes'}
+    </Button>
+  </div>
+</PageFrame>
 
 <style>
-  .field--tight {
-    margin-bottom: 0;
+  .profile {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
   }
-  .hear {
-    margin: 0 0 var(--s-5);
+  .profile__col {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
   }
-  .line__title--plain {
-    font-weight: var(--w-regular);
+  @media (max-width: 1023px) {
+    .profile {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
-  .save {
+
+  .fields {
+    display: grid;
+    gap: 20px;
+    margin-top: 20px;
+  }
+
+  .toggle-with-note {
+    display: grid;
+    gap: 2px;
+  }
+  .toggle-note {
+    margin: 0;
+    max-width: 52ch;
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-normal);
+    color: var(--text-secondary);
+  }
+
+  .inline {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .inline :global(.inline__grow) {
+    flex: 1;
+  }
+  .inline :global(.ev-btn) {
+    min-height: 48px;
+  }
+
+  .line {
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .line--account {
+    margin-top: 16px;
+  }
+  .line__text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .line__title {
+    font-size: var(--fs-body);
+    font-weight: var(--fw-medium);
+    color: var(--text-strong);
+    overflow-wrap: anywhere;
+  }
+  .line__title--strong {
+    font-size: var(--fs-label);
+    font-weight: var(--fw-semibold);
+  }
+  .line__sub {
+    font-size: var(--fs-body-sm);
+    color: var(--text-muted);
+  }
+
+  .memories {
+    display: grid;
+    margin: 12px 0 0;
+    padding: 0;
+  }
+  .memory {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    list-style: none;
+  }
+  .memory + .memory {
+    border-top: 1px solid var(--divider);
+  }
+  .memory__value {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-body);
+    color: var(--text-strong);
+  }
+
+  /* The save bar stays in view at the foot of the scrolling page. */
+  .savebar {
+    position: sticky;
+    bottom: 16px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px 20px;
     flex-wrap: wrap;
-    gap: var(--s-3) var(--s-5);
-    margin-top: var(--s-4);
+    margin-top: 8px;
+    padding: 12px 12px 12px 20px;
+    border: 1px solid var(--card-rim-raised);
+    border-radius: var(--r-pill);
+    background: var(--glass-light-strong);
+    box-shadow: var(--shadow-md);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  .savebar__status {
+    flex: 1;
+    min-width: 0;
+  }
+  .savebar__note {
+    font-size: var(--fs-body-sm);
+    color: var(--text-secondary);
+  }
+  .savebar__error {
+    font-size: var(--fs-body-sm);
+    font-weight: var(--fw-medium);
+    color: var(--text-danger);
+  }
+  @media (max-width: 819px) {
+    .savebar {
+      bottom: 10px;
+    }
+  }
+  @media (max-width: 559px) {
+    .savebar {
+      border-radius: var(--r-xl);
+      padding: 12px;
+    }
+    .savebar__status {
+      flex-basis: 100%;
+    }
+    .savebar :global(.ev-btn) {
+      width: 100%;
+    }
   }
 </style>

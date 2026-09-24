@@ -20,6 +20,8 @@
   import { session } from '@/state/session.svelte.ts';
   import { api } from '@/lib/api.ts';
   import { refreshBodyScans } from '@/state/controller.ts';
+  import Button from '@/ui/Button.svelte';
+  import { tapSize } from '@/pages/progress/tap.svelte.ts';
   import {
     BODY_METRIC_KEYS,
     BODY_READING_LABELS,
@@ -117,7 +119,7 @@
 </script>
 
 {#if latest}
-  <h2 style="margin-top:20px">Your body over time</h2>
+<div class="bh">
   <p class="lede">
     {scans.length} scan{scans.length === 1 ? '' : 's'}{windowDays
       ? ` across ${windowDays} day${windowDays === 1 ? '' : 's'}`
@@ -229,18 +231,40 @@
         {Math.round(scan.confidence * 100)}%
         {#if scan.hasImage}· photo kept{/if}
       </span>
-      <button
-        class="btn btn--danger"
-        style="padding:4px 10px;font-size:11px"
+      <Button
+        variant="ghost"
+        size={tapSize()}
+        label="Delete the body scan from {dateFormat.format(new Date(scan.capturedAt))}"
         onclick={() => remove(scan.id!)}
       >
         Delete
-      </button>
+      </Button>
     </div>
   {/each}
+</div>
 {/if}
 
 <style>
+  /*
+   * Rendered on a light Progress card now. The shared row, bar and history
+   * rules it uses (app.css) were written for the old dark ground and read the
+   * legacy ink tokens, so those are re-pointed at the light palette here
+   * rather than forking the rules.
+   */
+  .bh {
+    --ink: var(--text-strong);
+    --ink-soft: var(--text);
+    --quiet: var(--text-muted);
+    --line: var(--divider);
+    --line-strong: var(--border);
+    --metal: var(--rose-700);
+    --metal-soft: var(--bar-to);
+    --good: var(--text-success);
+    --bad: var(--text-danger);
+    --t-xs: var(--fs-meta);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
   .lede {
     margin: var(--s-3) 0 0;
     max-width: var(--measure);

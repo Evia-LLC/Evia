@@ -27,6 +27,7 @@
   import Sidebar from './Sidebar.svelte';
   import TabBar from './TabBar.svelte';
   import SampleBadge from './SampleBadge.svelte';
+  import ChatDrawer from '@/chat/ChatDrawer.svelte';
   import { sample } from '@/sample/mode.svelte.ts';
   import { hasRoomBackdrop, isImmersive } from './nav.ts';
 
@@ -84,6 +85,9 @@
   {:else}
     <TabBar {route} />
   {/if}
+
+  <!-- The one conversation drawer; closed until something opens it. -->
+  <ChatDrawer />
 
   <SampleBadge />
 </div>

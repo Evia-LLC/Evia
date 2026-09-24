@@ -16,6 +16,7 @@ import { classifyLocally } from '../../shared/classify-local.ts';
 import { respond, respondToEvent } from '../../server/ai/fallback.ts';
 import type { ElohimContext } from '../../server/ai/context.ts';
 import { session } from '@/state/session.svelte.ts';
+import { sample } from '@/sample/mode.svelte.ts';
 import {
   METRIC_HIGHER_IS_BETTER,
   METRIC_NOISE_FLOOR,
@@ -84,6 +85,32 @@ function guestSummary(scans: SkinAnalysis[]): LongitudinalSummary {
 function guestContext(body?: BodySnapshot, picks: ProductPick[] = []): ElohimContext {
   const user = session.user;
   if (!user) throw new Error('No guest to speak to.');
+  /*
+   * Sample mode puts made-up data on screen. Her replies must not quote the
+   * signed-in account's real name, concerns or readings next to it, so she
+   * speaks from a blank sample profile with no readings at all.
+   */
+  if (sample.on) {
+    return {
+      user: {
+        ...user,
+        displayName: 'Destiny',
+        profile: {
+          skinType: 'unknown',
+          fitzpatrick: null,
+          concerns: [],
+          sensitivities: [],
+          pregnancyStatus: 'unknown',
+          updatedAt: user.profile.updatedAt,
+        },
+        scanCount: 0,
+      },
+      latest: null,
+      summary: guestSummary([]),
+      block: '',
+      picks: [],
+    };
+  }
   return {
     user,
     latest: session.latestScan,

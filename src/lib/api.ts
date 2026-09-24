@@ -18,6 +18,7 @@ import type {
   ProductPick,
   ProductUsage,
   ProgressPhoto,
+  CatalogueProduct,
   CatalogueStatus,
   SkinAppearanceMetrics,
   SkinAnalysis,
@@ -31,6 +32,34 @@ import type {
   ConsentSummaries,
   ConsentSummary,
 } from '@shared/types.ts';
+import type { IngredientGlossary } from '@shared/ingredient-glossary.ts';
+
+/** The Products page's category chips, as the catalogue route filters them. */
+export type CatalogueCategory =
+  | 'cleansers'
+  | 'toners'
+  | 'serums'
+  | 'moisturisers'
+  | 'sunscreens'
+  | 'treatments'
+  | 'makeup';
+
+/**
+ * A shelf product as `/api/catalogue` sends it (server/catalogue/browse.ts):
+ * the stored product, the chips it shows under, and where its "Shop at ..."
+ * button goes - the product URL with that retailer's affiliate tag when one
+ * is configured, and never anything about the user.
+ */
+export interface CatalogueListing extends CatalogueProduct {
+  categories: CatalogueCategory[];
+  shop: { url: string; retailer: string; affiliate: boolean };
+}
+
+export interface CataloguePage {
+  products: CatalogueListing[];
+  nextCursor: string | null;
+  total: number;
+}
 
 let token: string | null = null;
 
@@ -252,6 +281,29 @@ export const api = {
     }),
 
   catalogueStatus: () => request<{ status: CatalogueStatus }>('/public/catalogue/status'),
+
+  /** One page of the shop's catalogue, by chip and/or search. Signed-in only. */
+  catalogue: (query: { category?: CatalogueCategory | null; q?: string; limit?: number; cursor?: string | null } = {}) => {
+    const params = new URLSearchParams();
+    if (query.category) params.set('category', query.category);
+    if (query.q?.trim()) params.set('q', query.q.trim());
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.cursor) params.set('cursor', query.cursor);
+    const qs = params.toString();
+    return request<CataloguePage>(`/catalogue${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * One shelf product, with what its ingredient list says it contains and how
+   * it sits with the user's profile (null when the shop published no list).
+   */
+  catalogueProduct: (id: string) =>
+    request<{ product: CatalogueListing; contains: string[]; assessment: ProductAssessment | null }>(
+      `/catalogue/${encodeURIComponent(id)}`,
+    ),
+
+  /** The ingredient glossary for Learn: reference text only, no account needed. */
+  ingredients: () => request<IngredientGlossary>('/public/ingredients'),
 
   routine: () =>
     request<{ usage: ProductUsage[]; review: RoutineReview }>('/routine'),
