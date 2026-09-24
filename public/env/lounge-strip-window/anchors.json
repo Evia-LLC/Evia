@@ -1,0 +1,20 @@
+{
+ "_note": "Room.svelte format for room id 'lounge-strip-window' (the sidebar backdrop, L3). The pictures live in /env/lounge/ (absolute srcs, which Room.svelte passes through unchanged): the clean strip (base) and a lightly softened copy (kind 'blur', what <Room blurred> shows). The dark rose-brown glass is CSS (--sidebar-glass). Frame = ref2's sidebar (320 x 1024 ref px) at 2x; no overlays. Focus keeps the window side and the ceiling cove when the box crops. See public/env/lounge/README.md.",
+ "frame": {
+  "w": 640,
+  "h": 2048,
+  "focus": [0.75, 0.3]
+ },
+ "plates": [
+  {
+   "src": "/env/lounge/strip-window-640.webp",
+   "kind": "base"
+  },
+  {
+   "src": "/env/lounge/strip-window-soft-320.webp",
+   "kind": "blur"
+  }
+ ],
+ "surfaces": {},
+ "points": {}
+}

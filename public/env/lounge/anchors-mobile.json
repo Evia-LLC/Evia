@@ -1,0 +1,273 @@
+{
+ "_note": "L2 phone-portrait Home plate (Room.svelte format, same conventions as anchors.json): normalised 0..1 of the 1080x2340 plate, origin top-left, quads TL,TR,BR,BL. blurPx = cocPx/4 at the plate width. There is no mockup for this composition, so there is no ref frame. points.character / character_head = the (empty) armchair's seat and head target. The app does not load this file yet: HomeRoom/stage.ts crop the desktop plate on phones; to use this plate instead, load this file and draw mobile-1080.webp (or mobile-720.webp) with object-fit: cover and the same RoomSurface quads. 'cameras.home_mobile' keeps the Blender job's anchors verbatim.",
+ "frame": {
+  "w": 1080,
+  "h": 2340,
+  "focus": [
+   0.5,
+   0.55
+  ]
+ },
+ "plates": [
+  {
+   "src": "mobile-1080.webp",
+   "kind": "base"
+  }
+ ],
+ "surfaces": {
+  "niche_text": {
+   "quad": [
+    [
+     0.79154,
+     0.40029
+    ],
+    [
+     0.89263,
+     0.39696
+    ],
+    [
+     0.8917,
+     0.42806
+    ],
+    [
+     0.79071,
+     0.42975
+    ]
+   ],
+   "blurPx": 1.01,
+   "depthM": 12.647,
+   "cocPx": 4.06
+  },
+  "niche_rule": {
+   "quad": [
+    [
+     0.79154,
+     0.44069
+    ],
+    [
+     0.81519,
+     0.44044
+    ],
+    [
+     0.81519,
+     0.44135
+    ],
+    [
+     0.79154,
+     0.44159
+    ]
+   ],
+   "blurPx": 1.02,
+   "depthM": 12.904,
+   "cocPx": 4.1
+  },
+  "sign_text": {
+   "quad": [
+    [
+     0.64966,
+     0.58278
+    ],
+    [
+     0.72218,
+     0.58884
+    ],
+    [
+     0.72131,
+     0.61595
+    ],
+    [
+     0.64887,
+     0.60863
+    ]
+   ],
+   "blurPx": 0.64,
+   "depthM": 2.716,
+   "cocPx": 2.56
+  },
+  "sign_rule": {
+   "quad": [
+    [
+     0.64808,
+     0.61996
+    ],
+    [
+     0.66552,
+     0.62186
+    ],
+    [
+     0.66552,
+     0.62299
+    ],
+    [
+     0.64808,
+     0.62108
+    ]
+   ],
+   "blurPx": 0.6,
+   "depthM": 2.768,
+   "cocPx": 2.4
+  }
+ },
+ "points": {
+  "character": [
+   0.52634,
+   0.58172
+  ],
+  "character_head": [
+   0.52293,
+   0.43394
+  ]
+ },
+ "ellipses": {
+  "table_top": {
+   "cx": 0.78297,
+   "cy": 0.63257,
+   "rx": 0.2031,
+   "ry": 0.02035
+  }
+ },
+ "cameras": {
+  "home_mobile": {
+   "room": "lounge",
+   "camera": "home_mobile",
+   "plate": {
+    "w": 1080,
+    "h": 2340
+   },
+   "coords": "normalised plate coordinates, origin top-left, x right, y down",
+   "surfaces": {
+    "niche_text": {
+     "quad": [
+      [
+       0.79154,
+       0.40029
+      ],
+      [
+       0.89263,
+       0.39696
+      ],
+      [
+       0.8917,
+       0.42806
+      ],
+      [
+       0.79071,
+       0.42975
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 12.647,
+     "cocPx": 4.06
+    },
+    "niche_rule": {
+     "quad": [
+      [
+       0.79154,
+       0.44069
+      ],
+      [
+       0.81519,
+       0.44044
+      ],
+      [
+       0.81519,
+       0.44135
+      ],
+      [
+       0.79154,
+       0.44159
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 12.904,
+     "cocPx": 4.1
+    },
+    "sign_text": {
+     "quad": [
+      [
+       0.64966,
+       0.58278
+      ],
+      [
+       0.72218,
+       0.58884
+      ],
+      [
+       0.72131,
+       0.61595
+      ],
+      [
+       0.64887,
+       0.60863
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 2.716,
+     "cocPx": 2.56
+    },
+    "sign_rule": {
+     "quad": [
+      [
+       0.64808,
+       0.61996
+      ],
+      [
+       0.66552,
+       0.62186
+      ],
+      [
+       0.66552,
+       0.62299
+      ],
+      [
+       0.64808,
+       0.62108
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 2.768,
+     "cocPx": 2.4
+    }
+   },
+   "ellipses": {
+    "table_top": {
+     "cx": 0.78297,
+     "cy": 0.63257,
+     "rx": 0.2031,
+     "ry": 0.02035
+    }
+   },
+   "character": {
+    "note": "slot for a person seated in the armchair; the plate renders the chair empty",
+    "seatAnchor": [
+     0.52634,
+     0.58172
+    ],
+    "headTarget": [
+     0.52293,
+     0.43394
+    ],
+    "depthM": 3.898,
+    "bbox": [
+     0.34102,
+     0.40988,
+     0.63461,
+     0.70878
+    ],
+    "bboxOrder": "x0,y0,x1,y1",
+    "pxPerMetre": 453.4,
+    "cocPx": 0.0
+   },
+   "layers": {
+    "plate": {
+     "depthM": "mixed"
+    },
+    "fg": {
+     "depthM": 2.879,
+     "note": "marble table + acrylic sign, drawn over the character"
+    }
+   },
+   "note": "L2 phone-portrait Home plate; no reference frame exists (composition is new)"
+  }
+ }
+}

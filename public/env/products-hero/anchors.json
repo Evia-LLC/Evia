@@ -1,0 +1,111 @@
+{
+ "_note": "Room.svelte format for room id 'products-hero' (L5, the Products hero backdrop). Normalised 0..1 of the plate, origin top-left. points.hero_ref_tl/br = where ref3's hero (screen x 160..1222, y 0..311) sits inside the plate: the plate adds a ~10 % safe margin on every side, so a box of the hero's own shape shows the room ~17 % smaller than the mockup unless it is scaled to that frame (see README). points.character = bottom-centre of the (empty) character slot; the slot is kept clean. surfaces.quote = axis-aligned box of the handwritten quote over the window (rotate the text -10 deg inside it). 'cameras.products_hero' keeps the Blender job's anchors verbatim.",
+ "frame": {
+  "w": 2552,
+  "h": 748,
+  "focus": [
+   0.62,
+   0.5
+  ]
+ },
+ "plates": [
+  {
+   "src": "hero-2552.webp",
+   "kind": "base"
+  }
+ ],
+ "surfaces": {
+  "quote": {
+   "quad": [
+    [
+     0.779,
+     0.35963
+    ],
+    [
+     0.89342,
+     0.35963
+    ],
+    [
+     0.89342,
+     0.68583
+    ],
+    [
+     0.779,
+     0.68583
+    ]
+   ]
+  }
+ },
+ "points": {
+  "hero_ref_tl": [
+   0.08386,
+   0.08422
+  ],
+  "hero_ref_br": [
+   0.91615,
+   0.91577
+  ],
+  "character": [
+   0.58738,
+   0.91578
+  ]
+ },
+ "ellipses": {},
+ "cameras": {
+  "products_hero": {
+   "room": "products-hero",
+   "camera": "products_hero",
+   "plate": {
+    "w": 2552,
+    "h": 748
+   },
+   "coords": "normalised plate coordinates (0..1), origin top-left, x right, y down",
+   "refFrame": {
+    "x": 0.08386,
+    "y": 0.08422,
+    "w": 0.83229,
+    "h": 0.83155,
+    "refPx": [
+     1062,
+     311
+    ],
+    "note": "ref3 hero (screen x 160..1222, y 0..311) inside this plate"
+   },
+   "character": {
+    "bbox": [
+     0.46003,
+     0.08422,
+     0.71473,
+     0.91578
+    ],
+    "bboxOrder": "x0,y0,x1,y1",
+    "note": "kept clean for the SVG character holding the jar (ref3 screen x 640..965)"
+   },
+   "surfaces": {
+    "quote": {
+     "quad": [
+      [
+       0.779,
+       0.35963
+      ],
+      [
+       0.89342,
+       0.35963
+      ],
+      [
+       0.89342,
+       0.68583
+      ],
+      [
+       0.779,
+       0.68583
+      ]
+     ],
+     "rotateDeg": -10,
+     "order": "TL,TR,BR,BL",
+     "note": "axis-aligned bbox of the quote block; rotate -10deg"
+    }
+   }
+  }
+ }
+}
