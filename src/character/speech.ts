@@ -11,9 +11,18 @@
  *   It measures the real cadence as it goes instead of assuming one.
  *
  * Both emit the same `MouthState`, so the avatar never learns which is playing.
+ *
+ * The only survivor of the old three.js character folder, because none of it
+ * ever needed a renderer: the stage director (`stage/director.svelte.ts`)
+ * advances these tracks each frame and publishes the viseme for the SVG
+ * figure to draw.
  */
 import type { Viseme } from '@shared/types.ts';
 import { clamp } from '@/lib/math.ts';
+
+/** The mouth vocabulary the tracks emit, re-exported so a mouth chart can cover it. */
+export { VISEMES } from '@shared/types.ts';
+export type { Viseme } from '@shared/types.ts';
 
 export interface MouthState {
   viseme: Viseme;
@@ -38,9 +47,8 @@ const SILENT: MouthState = { viseme: 'sil', weight: 0, level: 0 };
 
 /**
  * How long the mouth has to be quiet before the quiet counts as a phrase
- * boundary rather than an articulation gap. The same length as the mouth
- * hold in the sprite rig, for the same reason: anything shorter than this
- * is inside a word, not between thoughts.
+ * boundary rather than an articulation gap. Anything shorter than this is
+ * inside a word, not between thoughts.
  */
 const PHRASE_GAP_SECONDS = 0.13;
 

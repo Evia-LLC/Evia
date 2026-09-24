@@ -1,13 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
-  import { bootstrap, discardPendingCapture, enterScanPage, initVoice, leaveScanPage, refreshVoice } from '@/state/controller.ts';
+  import {
+    bootstrap,
+    discardPendingCapture,
+    enterScanPage,
+    initVoice,
+    leaveScanPage,
+    refreshVoice,
+    registerDirector,
+  } from '@/state/controller.ts';
   import { isLegalRoute, router } from '@/router/router.svelte.ts';
-  import ElohimStage from '@/components/ElohimStage.svelte';
+  import { director } from '@/stage/director.ts';
+  import { sample } from '@/sample/mode.svelte.ts';
+  import Shell from '@/shell/Shell.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
-  import HoloPanel from '@/components/HoloPanel.svelte';
-  import Nav from '@/components/Nav.svelte';
   import Intro from '@/components/Intro.svelte';
+  import HoloPanel from '@/components/HoloPanel.svelte';
   import { primeSound } from '@/lib/sound.ts';
   import { primeSynthesis } from '@/voice/synthesis.ts';
   import { introSeen } from '@/lib/intro.ts';
@@ -15,6 +24,9 @@
   import ScanPage from '@/pages/ScanPage.svelte';
   import ProgressPage from '@/pages/ProgressPage.svelte';
   import RoutinePage from '@/pages/RoutinePage.svelte';
+  import ProductsPage from '@/pages/ProductsPage.svelte';
+  import LearnPage from '@/pages/LearnPage.svelte';
+  import SettingsPage from '@/pages/SettingsPage.svelte';
   import ProfilePage from '@/pages/ProfilePage.svelte';
   import PrivacyPage from '@/pages/PrivacyPage.svelte';
   import DataRightsPage from '@/pages/DataRightsPage.svelte';
@@ -43,11 +55,24 @@
     intro = !introSeen();
   });
 
-  /**
-   * Frame counters are a developer tool, not part of the product. Opt in with
-   * `#stats`.
+  /*
+   * The stage director, registered before anything can direct her.
+   *
+   * It draws nothing - the SVG figure and the scan page read its state - so
+   * it needs no element and nothing from the network, and registering it
+   * first means the intro, the greeting and the voice all find it there.
    */
-  const devStats = import.meta.env.DEV && location.hash.includes('stats');
+  registerDirector(director);
+  onMount(() => () => {
+    registerDirector(null);
+    director.dispose();
+  });
+
+  // A handle for development: the director, the store and the sample switch
+  // from the console, where a throttled pane makes timing hard to judge.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __evia?: unknown }).__evia = { director, session, sample, router };
+  }
 
   onMount(async () => {
     /*
@@ -114,10 +139,6 @@
    * keeps its full height while a third of it is covered. `--vvh` is what the
    * user can actually see and `--kb` is what the keyboard is covering, so the
    * UI layer can size and lift itself against the truth.
-   *
-   * The 3D canvas is deliberately left out of this. Resizing a WebGL drawing
-   * buffer on every keyboard open would cost a reallocation for a change the
-   * user is about to undo.
    */
   $effect(() => {
     const root = document.documentElement;
@@ -154,17 +175,11 @@
   class="shell"
   data-scene={session.sceneMode}
   data-route={router.id}
+  data-sample={sample.on ? 'true' : null}
   data-reduced-motion={session.user?.preferences.reducedMotion ? 'true' : null}
 >
-  <!-- The stage mounts once and stays mounted; signing out must not tear down
-       the GPU context and rebuild it. Mounted immediately, before bootstrap's
-       network round trip resolves: she is the product, and on a cold server
-       the old gate held a blank screen for as long as the function took to
-       wake. The room needs nothing from the network to exist. -->
-  <ElohimStage />
-
   {#if booting}
-    <div class="auth"><div class="auth__mark">Elohim</div></div>
+    <div class="auth"><div class="auth__mark">Evia</div></div>
   {:else if isLegalRoute(router.id)}
     {#key router.id}
       {#if router.is('legal-terms')}<TermsPage />
@@ -183,38 +198,38 @@
     {#if intro}
       <Intro onDone={() => (intro = false)} />
     {/if}
-    <Nav />
 
-    <!-- Keyed on the address so a page leaves as the next one arrives. -->
-    {#key router.id}
-      {#if router.is('home')}
-        <HomePage />
-      {:else if router.is('scan')}
-        <ScanPage />
-      {:else if router.is('progress')}
-        <ProgressPage />
-      {:else if router.is('routine')}
-        <RoutinePage />
-      {:else if router.is('profile')}
-        <ProfilePage />
-      {:else if router.is('privacy')}
-        <PrivacyPage />
-      {:else if router.is('data')}
-        <DataRightsPage />
-      {/if}
-    {/key}
+    <Shell route={router.id}>
+      <!-- Keyed on the address so a page leaves as the next one arrives. -->
+      {#key router.id}
+        {#if router.is('home')}
+          <HomePage />
+        {:else if router.is('scan')}
+          <ScanPage />
+        {:else if router.is('routine')}
+          <RoutinePage />
+        {:else if router.is('progress')}
+          <ProgressPage />
+        {:else if router.is('products')}
+          <ProductsPage />
+        {:else if router.is('learn')}
+          <LearnPage />
+        {:else if router.is('settings')}
+          <SettingsPage />
+        {:else if router.is('profile')}
+          <ProfilePage />
+        {:else if router.is('privacy')}
+          <PrivacyPage />
+        {:else if router.is('data')}
+          <DataRightsPage />
+        {/if}
+      {/key}
+    </Shell>
 
-    <!-- The reading, for assistive technology. Only in the clinic, because
-         that is the only place there is a reading to describe. -->
+    <!-- The reading and the routine plan in words, for assistive technology
+         only, while she is out of the lounge. -->
     {#if session.sceneMode !== 'lounge'}
       <HoloPanel />
-    {/if}
-
-    {#if devStats && session.devStats}
-      <div class="devstats">
-        {session.devStats.calls} draws · {session.devStats.triangles} tris ·
-        {session.devStats.frameMs} ms · tier {session.qualityTier}
-      </div>
     {/if}
   {/if}
 </div>

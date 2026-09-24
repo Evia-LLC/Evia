@@ -42,7 +42,8 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       output: {
-        // Keep the clinical environment out of the initial bundle (ARCHITECTURE §9).
+        // three.js stays out of the initial bundle: only the Scan page's
+        // hologram uses it, and it loads it with a dynamic import.
         manualChunks(id) {
           if (id.includes('node_modules/three')) return 'three';
         },

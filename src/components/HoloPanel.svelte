@@ -2,15 +2,18 @@
   /**
    * The analysis, for anyone who cannot see it.
    *
-   * The readouts themselves are now floating in the room — canvas-textured
-   * panels arranged around Elohim, drawn by the hologram rig. That is the right
-   * answer for the look and the wrong one for accessibility: a texture on a quad
-   * is invisible to a screen reader, unreachable by keyboard, and unselectable.
+   * The readouts are drawn in the consult room - once by the old three.js rig,
+   * next by the scan page's hologram and its callouts. A drawing is the right
+   * answer for the look and the wrong one for accessibility: a texture or a
+   * canvas is invisible to a screen reader, unreachable by keyboard, and
+   * unselectable.
    *
    * So this stays, carrying exactly the same numbers from exactly the same
    * stored scan, and renders only to assistive technology. It is not a fallback
    * or a duplicate source of truth — both views read `session.latestScan`, so
-   * they cannot disagree.
+   * they cannot disagree. Mounted by `App.svelte` while she is out of the
+   * lounge; retire it only once the scan page puts every one of these values
+   * and the routine plan in the DOM itself.
    */
   import { session } from '@/state/session.svelte.ts';
   import { selectPresented } from '@/holograms/presented.ts';

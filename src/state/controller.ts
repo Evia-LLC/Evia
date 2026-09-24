@@ -1,13 +1,15 @@
 /**
  * Application glue.
  *
- * Sits between the API, the store and the scene director so that no Svelte
- * component ever calls the API directly and no component ever touches three.js.
- * Components render state and call these functions; everything else happens here.
+ * Sits between the API, the store and the stage director so that no Svelte
+ * component ever calls the API directly and no component drives the character
+ * or the hologram itself. Components render state and call these functions;
+ * everything else happens here.
  */
 import { api, ApiError, setToken } from '@/lib/api.ts';
 import { session, type ScanKind } from './session.svelte.ts';
-import type { SessionDirector } from '@/scene/director.ts';
+import type { Director } from '@/stage/director.ts';
+import { sample, setSample } from '@/sample/mode.svelte.ts';
 import { analyseFace, CaptureRejected } from '@/skin-analysis/pipeline.ts';
 import {
   analyseBody,
@@ -37,7 +39,7 @@ import {
   type SkinAnalysis,
 } from '@shared/types.ts';
 
-let director: SessionDirector | null = null;
+let director: Director | null = null;
 
 /*
  * Poke pacing. The lines themselves live in lib/lines.ts with everything else
@@ -62,18 +64,45 @@ let longThinkSaid = false;
 let userSpokeFirst = false;
 
 /**
- * The live director, for dev tooling only.
- *
- * Pairs with `stepHeadless` and `captureFrame`, which exist because the host
- * pane throttles rAF to a couple of frames a second and anything time-based —
- * a cross-fade, a gesture, a settle — cannot be judged from what it draws.
- * Reaching them needed a handle, and there was not one.
+ * The per-visit memory above, forgotten when the visit ends. Kept, someone
+ * who signed out and back in within the same tab was never greeted again:
+ * the new visit inherited "they spoke first" from the old one.
  */
-export function devDirector(): SessionDirector | null {
+function forgetVisit(): void {
+  userSpokeFirst = false;
+  longThinkSaid = false;
+}
+
+/**
+ * Whether what happens in this visit stays in the browser.
+ *
+ * A guest has no account to write to. Sample mode may have one - a signed-in
+ * account can turn it on - but what is on screen then is the designed sample,
+ * not the account's own history, and nothing said or measured beside it may
+ * end up in that history. So it takes the guest's paths for everything a
+ * visit produces: the conversation runs on the local engine, a scan's reading
+ * stays in memory, the shelf is built for the reading on screen, and nothing
+ * is saved. That is the "sample mode never writes to the server" rule.
+ *
+ * Account housekeeping is not held back: consent decisions, preferences, the
+ * export, deletion and signing out are the person acting on their real
+ * account, whatever the pages are showing.
+ */
+function localOnly(): boolean {
+  return session.guest || sample.on;
+}
+
+/** The live director, for dev tooling only. */
+export function devDirector(): Director | null {
   return director;
 }
 
-export function registerDirector(instance: SessionDirector | null): void {
+/**
+ * Hands the controller its director - the 2D stage in `stage/director.svelte.ts`,
+ * registered once at boot by `App.svelte` - and installs the hooks through
+ * which a tap on her, a picked metric and a long think come back here.
+ */
+export function registerDirector(instance: Director | null): void {
   director = instance;
   voice.attach(instance);
 
@@ -303,6 +332,8 @@ export async function bootstrap(): Promise<void> {
 export async function signIn(email: string, password: string): Promise<void> {
   const { token, user } = await api.login(email, password);
   setToken(token);
+  // A real account is never a guest, whatever this tab was doing before.
+  session.guest = false;
   session.user = user;
   await loadUserData();
 }
@@ -314,6 +345,7 @@ export async function register(
 ): Promise<void> {
   const { token, user } = await api.register(email, password, displayName);
   setToken(token);
+  session.guest = false;
   session.user = user;
   await loadUserData();
 }
@@ -322,11 +354,18 @@ export async function signOut(): Promise<void> {
   voice.dispose();
   session.clearScanArtifacts();
   director?.setFaceMesh(null);
+  const wasGuest = session.guest;
   // A guest was never signed in, so there is no session to end and no server
   // to tell. Asking would only produce an error about a thing that never was.
-  if (!session.guest) await api.logout();
+  if (!wasGuest) await api.logout();
   setToken(null);
   session.reset();
+  forgetVisit();
+  // The capture, the reading on display and her mood go with the session.
+  director?.reset();
+  // A sample preview was the guest visit; it ends with it. An account that
+  // chose sample data keeps the choice.
+  if (wasGuest) setSample(false);
 }
 
 /**
@@ -379,6 +418,17 @@ export function enterGuestMode(): void {
    * for the introduction so it answers her narration instead of racing it.
    */
   void openConversation();
+}
+
+/**
+ * Preview with sample data: look around without an account, with every page
+ * showing the designed sample instead of an empty history. The same guest
+ * visit as above - nothing is stored - plus sample mode, whose badge stays on
+ * screen the whole time.
+ */
+export function enterSamplePreview(): void {
+  setSample(true);
+  enterGuestMode();
 }
 
 /** Turns her voice on or off for an account, and remembers it. */
@@ -501,11 +551,15 @@ export async function raiseEvent(
   extras?: { spokenNarration?: string; introSkipped?: boolean },
 ): Promise<void> {
   // A guest talks to the local engine, in the browser. Same engine the server
-  // falls back to, same label, same real numbers - just no server.
-  if (session.guest) {
+  // falls back to, same label, same real numbers - just no server. So does a
+  // sample visit, whose greeting must not land in an account's transcript.
+  if (localOnly()) {
     session.thinking = true;
     director?.userSubmitted();
     await pause(500);
+    // The visit ended while she was thinking - signed out, left. There is no
+    // one to answer, and `session.reset` has already put her thinking down.
+    if (!session.user) return;
     // A greeting that was already in flight when the user beat it to the
     // first word is abandoned, not delivered late over their turn.
     if (event === 'opened' && userSpokeFirst) {
@@ -623,10 +677,11 @@ export async function sendMessage(text: string): Promise<void> {
   session.thinking = true;
   director?.userSubmitted();
 
-  if (session.guest) {
+  if (localOnly()) {
     // A beat to think, as the server would take. Instant answers read as
     // canned even when they are not.
     await pause(450 + Math.min(900, trimmed.length * 12));
+    if (!session.user) return;
     absorbTurn(guestTurn(trimmed));
     session.thinking = false;
     return;
@@ -833,7 +888,7 @@ async function runBodyAnalysis(
     let scan = analysis;
     let storedPrevious = previous;
 
-    if (!session.guest) {
+    if (!localOnly()) {
       const saved = await api.saveBodyScan(analysis);
       scan = saved.scan;
       storedPrevious = saved.previous;
@@ -968,8 +1023,10 @@ export async function runAnalysis(
      * either way — so what is shown on the cards is the real thing. What a
      * guest does not get is the summary, because a longitudinal summary of one
      * scan that will not survive the tab closing is not a summary of anything.
+     * A sample visit is kept the same way, so its capture is never offered
+     * for saving either: that needs a stored scan to attach to.
      */
-    if (session.guest) {
+    if (localOnly()) {
       session.scans = [analysis, ...session.scans];
       session.latestScan = analysis;
     } else {
@@ -1108,7 +1165,9 @@ function speakRejection(reason: string): void {
 async function loadPicks(analysis: SkinAnalysis): Promise<void> {
   session.picks = [];
   try {
-    if (session.guest) {
+    // A reading that was not stored has no plan on the server; its numbers
+    // go up with the request instead, and nothing is kept.
+    if (localOnly()) {
       const profile = session.user?.profile;
       const { plan, picks } = await api.publicPicks(analysis.metrics, analysis.confidence, {
         skinType: profile?.skinType,
@@ -1176,6 +1235,8 @@ export async function deleteAccount(): Promise<{ blobsShredded: number; blobsFai
   // server response clears the in-memory token and local session.
   setToken(null);
   session.reset();
+  forgetVisit();
+  director?.reset();
   return { blobsShredded, blobsFailed };
 }
 

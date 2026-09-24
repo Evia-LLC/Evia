@@ -6,8 +6,8 @@
  *                          synthesis -> word boundaries -> lip-sync + expression
  *
  * This module owns the microphone and the speaker. It does not own the
- * character — it hands the scene director a mouth track and lets the character
- * engine decide what to do with it, which is what keeps §23's boundary intact.
+ * character — it hands the stage director a mouth track and lets the director
+ * decide what to do with it, which is what keeps §23's boundary intact.
  */
 import { Listener, recognitionAvailable, type RecognitionErrorKind } from './recognition.ts';
 import {
@@ -22,7 +22,7 @@ import { AudioLockedSpeechTrack, SpeechTrack } from '@/character/speech.ts';
 import { VOICE_PREVIEW_LINE } from '@/lib/lines.ts';
 import { audioContext } from '@/lib/sound.ts';
 import { session } from '@/state/session.svelte.ts';
-import type { SessionDirector } from '@/scene/director.ts';
+import type { Director } from '@/stage/director.ts';
 
 /** 'running', 'suspended', 'closed', or 'absent' - for the status line. */
 function audioStateLabel(): string {
@@ -49,14 +49,14 @@ export class VoiceController {
    * does not.
    */
   private cloned = new ClonedSpeaker();
-  private director: SessionDirector | null = null;
+  private director: Director | null = null;
 
   /** Set by the UI so a transcript can be sent as a normal message. */
   onTranscript: ((text: string) => void) | null = null;
   onInterim: ((text: string) => void) | null = null;
   onError: ((message: string) => void) | null = null;
 
-  attach(director: SessionDirector | null): void {
+  attach(director: Director | null): void {
     this.director = director;
   }
 

@@ -2,13 +2,9 @@
   /**
    * The entry screen.
    *
-   * This is the only screen a stranger ever sees, and the product it is selling
-   * is standing right behind it: `ElohimStage` mounts before this does, so by
-   * the time the gate paints, she is already in the lounge breathing and
-   * blinking. So the gate does not cover the canvas — it grades it. The type
-   * sits on the part of the frame that is nearly opaque and she keeps the part
-   * that is not, which is the whole pitch in one image: there is a person in
-   * here, and she is looking back.
+   * This is the only screen a stranger ever sees. (It used to grade the live
+   * 3D room standing behind it; that stage is gone and the redesigned gate
+   * belongs to the page rebuild.)
    *
    * Nothing on this screen is decorative. There is no third-party sign-in, no
    * password reset, no counts and no logos, because none of that exists on the
@@ -21,7 +17,7 @@
   import { fly } from 'svelte/transition';
   import { register, signIn } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
-  import { enterGuestMode } from '@/state/controller.ts';
+  import { enterGuestMode, enterSamplePreview } from '@/state/controller.ts';
   import { link } from '@/router/router.svelte.ts';
 
   /**
@@ -364,6 +360,14 @@
               she talks, scans and reads — nothing is saved when you leave
             {/if}
           </small>
+        </button>
+
+        <!-- Every screen as designed, with the mockups' own sample data and a
+             "Sample data" badge on screen the whole time. Same guest visit as
+             above: nothing is saved. -->
+        <button type="button" class="auth__guest" onclick={enterSamplePreview}>
+          Preview with sample data
+          <small>see every screen filled in with clearly labelled sample data</small>
         </button>
 
         <p class="auth__promise">

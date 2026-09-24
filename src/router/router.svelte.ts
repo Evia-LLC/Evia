@@ -11,12 +11,15 @@
  * unknown path to `index.html` (netlify.toml), and Vite does the same in dev,
  * so `/progress` is a real address on both.
  *
- * Deliberately tiny. There are six pages, none of them take parameters, and a
- * dependency for that would be a dependency for a `switch`.
+ * Deliberately tiny. None of the pages take parameters, and a dependency for
+ * that would be a dependency for a `switch`. There is no query support either:
+ * the one query the app reads (`?sample=1`, see `sample/mode.svelte.ts`) is
+ * taken and stripped before anything routes.
  */
 
 export type RouteId =
-  | 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy' | 'data'
+  | 'home' | 'scan' | 'routine' | 'progress' | 'products' | 'learn' | 'settings'
+  | 'profile' | 'privacy' | 'data'
   | 'legal-terms' | 'legal-privacy' | 'legal-facial-scan' | 'legal-health'
   | 'legal-safety-lifestyle' | 'legal-progress-photo' | 'legal-subscription' | 'legal-cancellation';
 
@@ -31,23 +34,31 @@ export interface Route {
   nav: boolean;
 }
 
+/**
+ * Every address, in navigation order. The `nav` entries are the sidebar,
+ * exactly as the mockups list it; the rest are reached from Settings (and the
+ * legal pages from wherever they are linked).
+ */
 export const ROUTES: readonly Route[] = [
-  { id: 'home', path: '/', label: 'Talk', title: 'Elohim', nav: true },
-  { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Elohim', nav: true },
-  { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Elohim', nav: true },
-  { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Elohim', nav: true },
-  { id: 'profile', path: '/profile', label: 'You', title: 'You — Elohim', nav: true },
-  { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Elohim', nav: false },
-  { id: 'data', path: '/settings/data', label: 'Your data', title: 'Your data — Elohim', nav: false },
+  { id: 'home', path: '/', label: 'Home', title: 'Evia', nav: true },
+  { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Evia', nav: true },
+  { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Evia', nav: true },
+  { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Evia', nav: true },
+  { id: 'products', path: '/products', label: 'Products', title: 'Products — Evia', nav: true },
+  { id: 'learn', path: '/learn', label: 'Learn', title: 'Learn — Evia', nav: true },
+  { id: 'settings', path: '/settings', label: 'Settings', title: 'Settings — Evia', nav: true },
+  { id: 'profile', path: '/profile', label: 'Profile', title: 'Profile — Evia', nav: false },
+  { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Evia', nav: false },
+  { id: 'data', path: '/settings/data', label: 'Your data', title: 'Your data — Evia', nav: false },
   // Review-only shells: addresses and rendering, with no feature activation.
-  { id: 'legal-terms', path: '/legal/terms', label: 'Terms', title: 'Terms of Use — Elohim', nav: false },
-  { id: 'legal-privacy', path: '/legal/privacy', label: 'Privacy policy', title: 'Privacy Policy — Elohim', nav: false },
-  { id: 'legal-facial-scan', path: '/legal/facial-scan-consent', label: 'Facial scan consent', title: 'Facial Scan Consent — Elohim', nav: false },
-  { id: 'legal-health', path: '/legal/health-consent', label: 'Health consent', title: 'Health Consent — Elohim', nav: false },
-  { id: 'legal-safety-lifestyle', path: '/legal/safety-lifestyle-consent', label: 'Safety consent', title: 'Safety and Lifestyle Consent — Elohim', nav: false },
-  { id: 'legal-progress-photo', path: '/legal/progress-photo-consent', label: 'Progress photo consent', title: 'Progress Photo Consent — Elohim', nav: false },
-  { id: 'legal-subscription', path: '/legal/subscription', label: 'Subscription', title: 'Subscription Disclosure — Elohim', nav: false },
-  { id: 'legal-cancellation', path: '/legal/cancellation', label: 'Cancellation', title: 'Cancellation — Elohim', nav: false },
+  { id: 'legal-terms', path: '/legal/terms', label: 'Terms', title: 'Terms of Use — Evia', nav: false },
+  { id: 'legal-privacy', path: '/legal/privacy', label: 'Privacy policy', title: 'Privacy Policy — Evia', nav: false },
+  { id: 'legal-facial-scan', path: '/legal/facial-scan-consent', label: 'Facial scan consent', title: 'Facial Scan Consent — Evia', nav: false },
+  { id: 'legal-health', path: '/legal/health-consent', label: 'Health consent', title: 'Health Consent — Evia', nav: false },
+  { id: 'legal-safety-lifestyle', path: '/legal/safety-lifestyle-consent', label: 'Safety consent', title: 'Safety and Lifestyle Consent — Evia', nav: false },
+  { id: 'legal-progress-photo', path: '/legal/progress-photo-consent', label: 'Progress photo consent', title: 'Progress Photo Consent — Evia', nav: false },
+  { id: 'legal-subscription', path: '/legal/subscription', label: 'Subscription', title: 'Subscription Disclosure — Evia', nav: false },
+  { id: 'legal-cancellation', path: '/legal/cancellation', label: 'Cancellation', title: 'Cancellation — Evia', nav: false },
 ];
 
 export function isLegalRoute(id: RouteId): boolean {

@@ -211,18 +211,14 @@ describe('metric direction table', () => {
   });
 });
 
-describe('the painted mouth chart', () => {
+describe('the drawn mouth chart', () => {
   it('has a mouth for every viseme the speech engine can emit', async () => {
-    // The sprite avatar quantises continuous visemes onto painted mouths. A
-    // viseme with no entry would throw at runtime mid-sentence.
-    const { readFileSync } = await import('node:fs');
-    const source = readFileSync('src/character/sprite-avatar.ts', 'utf8');
-    const block = source.slice(
-      source.indexOf('const VISEME_MOUTH'),
-      source.indexOf('};', source.indexOf('const VISEME_MOUTH')),
-    );
+    // The SVG figure quantises continuous visemes onto a few drawn mouths. A
+    // viseme with no entry would leave her with no mouth to draw mid-sentence.
+    const { VISEME_MOUTH, MOUTH_SHAPES } = await import('../src/character-svg/mouth-chart.ts');
+    const shapes: readonly string[] = MOUTH_SHAPES;
     for (const viseme of VISEMES) {
-      expect(block).toMatch(new RegExp(`\\b${viseme}\\s*:`));
+      expect(shapes).toContain(VISEME_MOUTH[viseme]);
     }
   });
 });

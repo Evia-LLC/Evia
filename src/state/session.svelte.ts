@@ -2,10 +2,11 @@
  * Application state, as Svelte 5 runes.
  *
  * This is the client-side model. It holds no rendering objects and no three.js
- * types — the scene director subscribes to it, never the other way round.
+ * types — the stage director (`stage/director.svelte.ts`) writes the few
+ * presentation fields below and reads the rest, never the other way round.
  */
 import type { BodyAnalysis } from '@/body-analysis/pipeline.ts';
-import type { ScanMesh } from '@/holograms/face-mesh-3d.ts';
+import type { ScanMesh } from '@/scan/mesh.ts';
 import type {
   ChatMessage,
   ProductPick,
@@ -89,6 +90,11 @@ class SessionState {
    */
   guest = $state(false);
 
+  /**
+   * Where she is: the lounge, walking between rooms, or the consult room.
+   * Written by the stage director's `enterClinical`/`exitClinical` and by
+   * `reset`; the scan page shows its reading only outside the lounge.
+   */
   sceneMode = $state<SceneMode>('lounge');
 
   scans = $state<SkinAnalysis[]>([]);
@@ -120,7 +126,7 @@ class SessionState {
    *
    * Presentation, not measurement - the numbers come from the skin pipeline.
    * The mesh is never added to a scan or sent to the server, and every scan
-   * exit path clears it. See `holograms/face-mesh-3d.ts`.
+   * exit path clears it. See `scan/mesh.ts`.
    */
   lastMesh = $state<ScanMesh | null>(null);
 
@@ -179,9 +185,6 @@ class SessionState {
   /** True while the introduction is on screen: it owns her voice until it ends. */
   introPlaying = $state(false);
 
-  qualityTier = $state<'low' | 'medium' | 'high'>('high');
-  devStats = $state<{ calls: number; triangles: number; frameMs: number } | null>(null);
-
   get signedIn(): boolean {
     return this.user !== null;
   }
@@ -202,7 +205,18 @@ class SessionState {
   reset(): void {
     this.clearScanArtifacts();
     this.user = null;
+    /*
+     * Guest mode ends with the session it belonged to. Left set, a guest who
+     * left and then signed in to a real account in the same tab stayed on
+     * the guest paths - the local engine for chat, nothing saved.
+     */
+    this.guest = false;
     this.messages = [];
+    /*
+     * A turn in flight belongs to the visit that asked for it. Left set, the
+     * next visit's first message waited out the old think and was dropped.
+     */
+    this.thinking = false;
     this.scans = [];
     this.progressPhotos = [];
     this.pendingCapture = null;
@@ -215,6 +229,16 @@ class SessionState {
     this.plan = null;
     this.picks = [];
     this.panelMode = 'scan';
+    /*
+     * A scan in flight ends with the session too. Left set, someone who
+     * signed out mid-capture and back in on /scan found the page believing a
+     * capture was already open: it never walked into the consult room, and
+     * the reading, when it came, was thrown away by the capture restarting.
+     */
+    this.scanActive = false;
+    this.scanKind = 'face';
+    this.scanProgress = 0;
+    this.scanStage = '';
     this.bodyScanStep = 'front';
     this.listening = false;
     this.speaking = false;
