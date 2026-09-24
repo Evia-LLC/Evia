@@ -1,0 +1,291 @@
+{
+ "_note": "Room.svelte format (src/stage/room-anchors.ts): frame/plates/surfaces/points/ellipses, normalised 0..1 of the plate. blurPx = cocPx/4 at the plate width (half the depth-of-field radius, so the overlaid decor text stays crisp enough to read). points.home_ref_tl/br = ref1's Home panel inside the plate (refFrame). 'cameras.home' keeps the Blender job's own anchors (lounge_post.py) verbatim; the parser ignores it.",
+ "frame": {
+  "w": 2560,
+  "h": 1440,
+  "focus": [
+   1,
+   0.5
+  ]
+ },
+ "plates": [
+  {
+   "src": "home-2560.webp",
+   "kind": "base"
+  }
+ ],
+ "surfaces": {
+  "niche_text": {
+   "quad": [
+    [
+     0.8895,
+     0.27702
+    ],
+    [
+     0.94591,
+     0.26867
+    ],
+    [
+     0.94539,
+     0.32956
+    ],
+    [
+     0.88904,
+     0.33398
+    ]
+   ],
+   "blurPx": 1.09,
+   "depthM": 12.04,
+   "cocPx": 4.36
+  },
+  "niche_rule": {
+   "quad": [
+    [
+     0.8895,
+     0.35514
+    ],
+    [
+     0.90257,
+     0.35445
+    ],
+    [
+     0.90257,
+     0.35622
+    ],
+    [
+     0.8895,
+     0.35688
+    ]
+   ],
+   "blurPx": 1.1,
+   "depthM": 12.339,
+   "cocPx": 4.41
+  },
+  "sign_text": {
+   "quad": [
+    [
+     0.91055,
+     0.59359
+    ],
+    [
+     0.95274,
+     0.60429
+    ],
+    [
+     0.95223,
+     0.65321
+    ],
+    [
+     0.9101,
+     0.63997
+    ]
+   ],
+   "blurPx": 0.7,
+   "depthM": 2.795,
+   "cocPx": 2.81
+  },
+  "sign_rule": {
+   "quad": [
+    [
+     0.90964,
+     0.66032
+    ],
+    [
+     0.91974,
+     0.66376
+    ],
+    [
+     0.91974,
+     0.6658
+    ],
+    [
+     0.90964,
+     0.66232
+    ]
+   ],
+   "blurPx": 0.66,
+   "depthM": 2.854,
+   "cocPx": 2.62
+  }
+ },
+ "points": {
+  "character": [
+   0.81533,
+   0.59992
+  ],
+  "character_head": [
+   0.81407,
+   0.3332
+  ],
+  "home_ref_tl": [
+   0.49948,
+   0.08333
+  ],
+  "home_ref_br": [
+   0.9545,
+   0.91666
+  ]
+ },
+ "ellipses": {
+  "table_top": {
+   "cx": 0.97837,
+   "cy": 0.68857,
+   "rx": 0.10795,
+   "ry": 0.03384
+  }
+ },
+ "cameras": {
+  "home": {
+   "room": "lounge",
+   "camera": "home",
+   "plate": {
+    "w": 2560,
+    "h": 1440
+   },
+   "coords": "normalised plate coordinates, origin top-left, x right, y down",
+   "surfaces": {
+    "niche_text": {
+     "quad": [
+      [
+       0.8895,
+       0.27702
+      ],
+      [
+       0.94591,
+       0.26867
+      ],
+      [
+       0.94539,
+       0.32956
+      ],
+      [
+       0.88904,
+       0.33398
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 12.04,
+     "cocPx": 4.36
+    },
+    "niche_rule": {
+     "quad": [
+      [
+       0.8895,
+       0.35514
+      ],
+      [
+       0.90257,
+       0.35445
+      ],
+      [
+       0.90257,
+       0.35622
+      ],
+      [
+       0.8895,
+       0.35688
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 12.339,
+     "cocPx": 4.41
+    },
+    "sign_text": {
+     "quad": [
+      [
+       0.91055,
+       0.59359
+      ],
+      [
+       0.95274,
+       0.60429
+      ],
+      [
+       0.95223,
+       0.65321
+      ],
+      [
+       0.9101,
+       0.63997
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 2.795,
+     "cocPx": 2.81
+    },
+    "sign_rule": {
+     "quad": [
+      [
+       0.90964,
+       0.66032
+      ],
+      [
+       0.91974,
+       0.66376
+      ],
+      [
+       0.91974,
+       0.6658
+      ],
+      [
+       0.90964,
+       0.66232
+      ]
+     ],
+     "order": "TL,TR,BR,BL",
+     "depthM": 2.854,
+     "cocPx": 2.62
+    }
+   },
+   "ellipses": {
+    "table_top": {
+     "cx": 0.97837,
+     "cy": 0.68857,
+     "rx": 0.10795,
+     "ry": 0.03384
+    }
+   },
+   "character": {
+    "note": "slot for a person seated in the armchair; the plate renders the chair empty",
+    "seatAnchor": [
+     0.81533,
+     0.59992
+    ],
+    "headTarget": [
+     0.81407,
+     0.3332
+    ],
+    "depthM": 4.0,
+    "bbox": [
+     0.73726,
+     0.28981,
+     0.87422,
+     0.81846
+    ],
+    "bboxOrder": "x0,y0,x1,y1",
+    "pxPerMetre": 571.3,
+    "cocPx": 0.0
+   },
+   "layers": {
+    "plate": {
+     "depthM": "mixed"
+    },
+    "fg": {
+     "depthM": 2.917,
+     "note": "marble table + acrylic sign, drawn over the character"
+    }
+   },
+   "refFrame": {
+    "x": 0.49948,
+    "y": 0.08333,
+    "w": 0.45502,
+    "h": 0.83333,
+    "refPx": [
+     994,
+     1024
+    ],
+    "note": "ref1 Home panel (x0..993, y0..1023 of ref1.png) inside this plate; the rest is safe margin/extension for other aspect ratios"
+   }
+  }
+ }
+}
