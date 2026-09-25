@@ -9,7 +9,7 @@ export const PERFECTCORP_MAPPING: Record<SkinMetricKey, string> = {
   pores: 'pore', darkSpots: 'age_spot', evenness: 'radiance',
   underEye: 'dark_circle_v2', acneIndicators: 'acne',
 };
-export const PERFECTCORP_NOTE = 'Perfect Corp SD appearance scores. Tone evenness uses radiance as a proxy; Under-eye uses dark circles only. These scores are not equivalent to local measurements.';
+export const PERFECTCORP_NOTE = 'Perfect Corp SD appearance scores. Tone evenness uses radiance as a proxy; Under-eye uses dark circles only. These scores are not equivalent to local measurements. Evia renders the face mesh locally.';
 export class PerfectCorpUnavailable extends Error {
   reason: string;
   constructor(reason: string) { super(reason); this.reason = reason; }
