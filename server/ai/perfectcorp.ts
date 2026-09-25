@@ -80,7 +80,11 @@ export async function analyseWithPerfectCorp(
       Object.entries(upload.headers ?? {}).filter(([name]) => /^(content-type|content-length)$/i.test(name)),
     );
     const uploaded = await request(url, {
-      method: 'PUT', headers: { ...uploadHeaders, 'Content-Length': String(image.byteLength) },
+      method: 'PUT', headers: {
+        'Content-Type': 'image/jpeg',
+        ...uploadHeaders,
+        'Content-Length': String(image.byteLength),
+      },
       body: new Uint8Array(image), signal, redirect: 'error',
     });
     if (!uploaded.ok) throw new PerfectCorpUnavailable('upload_failed');
@@ -103,7 +107,13 @@ export async function analyseWithPerfectCorp(
       const status = await api(`task/skin-analysis/${encodeURIComponent(task.task_id)}`);
       if (status.task_status === 'success') {
         const mapped = mapPerfectCorpOutput(status.results?.output);
-        await request(`${ORIGIN}/s2s/v2.0/task/delete`, { method: 'POST', headers, body: JSON.stringify({ task_id: task.task_id }), signal }).catch(() => {});
+        try {
+          await request(`${ORIGIN}/s2s/v2.0/task/delete`, {
+            method: 'POST', headers, body: JSON.stringify({ task_id: task.task_id }), signal,
+          });
+        } catch {
+          // Result delivery must not fail because best-effort retention cleanup did.
+        }
         return mapped;
       }
       if (status.task_status === 'error') throw new PerfectCorpUnavailable('analysis_failed');
