@@ -5,7 +5,8 @@
  * Two promises are tested here. Ingredients come out of a description only
  * when there is an ingredients panel in it - never from the marketing copy.
  * And the price line is written from what was actually fetched: one price is
- * a price, not a comparison, and a search link never counts.
+ * a price, not a comparison, and a search link never counts - and it names
+ * the shop that sells the product, never a house name.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CatalogueProduct, SkinProfile } from '../shared/types.ts';
@@ -18,12 +19,14 @@ vi.mock(import('../server/catalogue/store.ts'), async (importOriginal) => {
   return {
     ...actual,
     listCatalogue: vi.fn(async () => shelf),
-    storeName: () => 'Ese',
-    storeUrl: () => 'https://ese.example',
+    // No store name is configured: every product is named by its own retailer.
+    storeName: () => null,
+    storeUrl: () => null,
   };
 });
 
-vi.mock('../server/catalogue/offers.ts', () => ({
+vi.mock(import('../server/catalogue/offers.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
   comparisonAvailable: () => false,
   ebayOffers: vi.fn(async () => []),
   webOffers: vi.fn(async (query: string) => [
@@ -32,21 +35,21 @@ vi.mock('../server/catalogue/offers.ts', () => ({
 }));
 
 const { extractIngredients } = await import('../server/catalogue/store.ts');
-const { pickProducts } = await import('../server/catalogue/picks.ts');
+const { pickProducts, renderPicks } = await import('../server/catalogue/picks.ts');
 
 function product(partial: Partial<CatalogueProduct> & { name: string }): CatalogueProduct {
   return {
     id: partial.name.toLowerCase().replace(/\s+/g, '-'),
     source: 'import',
     sku: null,
-    brand: 'Ese',
+    brand: 'Calmwell',
     category: null,
     description: '',
     ingredients: [],
     tags: [],
     priceCents: 3000,
     currency: 'USD',
-    url: `https://ese.example/products/${partial.name.toLowerCase().replace(/\s+/g, '-')}`,
+    url: `https://calmwell.example/products/${partial.name.toLowerCase().replace(/\s+/g, '-')}`,
     imageUrl: null,
     inStock: true,
     updatedAt: '2026-09-05T00:00:00.000Z',
@@ -114,8 +117,31 @@ describe('pickProducts', () => {
     expect(picks[0].product?.name).toBe('Calm Cica Serum');
     expect(picks[0].matched).toContain('Centella Asiatica Extract');
     expect(picks[0].compared).toBe(1);
-    expect(picks[0].priceNote).toContain('$32.00 on the Ese shelf');
+    expect(picks[0].priceNote).toContain('$32.00 at Calmwell');
     expect(picks[0].priceNote).toContain('not compared');
+    // The brand's own site sells it, so the pick is "from" the brand.
+    expect(picks[0].from).toBe('Calmwell');
+  });
+
+  it('names each shelf product by its own retailer, never a house name', async () => {
+    shelf.push(
+      product({ name: 'Calm Cica Serum', ingredients: ['Centella Asiatica Extract'], url: 'https://www.sephora.com/product/cica-P1' }),
+    );
+    const [fromSephora] = await pickProducts(plan, profile, { web: false });
+    expect(fromSephora.from).toBe('Sephora');
+    expect(fromSephora.priceNote).toBe('$30.00 at Sephora. I have not compared other shops.');
+
+    shelf.length = 0;
+    shelf.push(product({ name: 'Calm Cica Serum', ingredients: ['Centella Asiatica Extract'], retailer: 'Cult Beauty' }));
+    const [named] = await pickProducts(plan, profile, { web: false });
+    expect(named.from).toBe('Cult Beauty');
+
+    const said = renderPicks([fromSephora, named]);
+    expect(said).toContain('sold by Sephora');
+    expect(said).toContain('sold by Cult Beauty');
+    expect(said).not.toMatch(/\bEse\b/);
+    expect(said).not.toContain('The shop behind you is');
+    expect(JSON.stringify([fromSephora, named])).not.toMatch(/\bEse\b/);
   });
 
   it('matches on the name when the shelf carries no ingredient lists', async () => {

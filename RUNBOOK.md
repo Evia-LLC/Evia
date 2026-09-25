@@ -22,7 +22,7 @@ Optional, with sensible defaults:
 - `ELOHIM_MODEL` (default `claude-sonnet-5`) — set `claude-opus-5` for the top model.
 - `ELOHIM_USER_DAILY_TURNS` / `ELOHIM_DAILY_TURNS` / `ELOHIM_DAILY_TOKENS` — spend caps. Over a cap she answers from the local engine and says so. `/api/health` reports today's spend against them.
 - `ELOHIM_GUEST_VOICE` (default on) — set `0` to keep the cloned voice for accounts only.
-- `ELOHIM_STORE_NAME` (default `Ese`), `ELOHIM_STORE_CURRENCY` (default `USD`, only for storefronts that do not state one).
+- `ELOHIM_STORE_NAME` (no default) — the name on "Shop at …" for products synced from `ELOHIM_STORE_URL`. Unset, every product is named by its own retailer, worked out from its link. `ELOHIM_STORE_CURRENCY` (default `USD`, only for storefronts that do not state one).
 - `EBAY_CLIENT_ID` + `EBAY_CLIENT_SECRET` — real, priced marketplace offers for comparison. Without them she links to searches and says she has not compared.
 - `ELOHIM_AMAZON_TAG` / `ELOHIM_AMAZON_DOMAIN` — affiliate tag and marketplace for the Amazon search links.
 
@@ -212,7 +212,7 @@ whenever the shop changes (a daily schedule is a one-line addition).
 curl -X POST https://elohim-consultant.netlify.app/api/admin/catalogue/import -H "X-Admin-Token: $ELOHIM_ADMIN_TOKEN" -H "Content-Type: application/json" --data-binary @catalogue.json
 ```
 
-with `catalogue.json` shaped as `{ "products": [ { "id", "name", "brand", "category", "price", "currency", "url", "image", "ingredients", "inStock" } ] }` — `price` in major units, `ingredients` either an array or a comma-separated string. `.sc/sample-catalogue.json` in the repo is a worked example.
+with `catalogue.json` shaped as `{ "products": [ { "id", "name", "brand", "category", "price", "currency", "url", "image", "ingredients", "inStock", "retailer" } ] }` — `price` in major units, `ingredients` either an array or a comma-separated string, `retailer` (optional) the shop that sells it ("Sephora"). Without `retailer` the Products page names the shop from the link: a known retailer (Amazon, Sephora, Ulta Beauty, Boots, Target, Walmart, LOOKFANTASTIC, Cult Beauty, YesStyle, Stylevana, eBay), the brand when the link is the brand's own site, or else the site's address ("cerave.com"). Never a house name. `.sc/sample-catalogue.json` in the repo is a worked example.
 
 Check what is on the shelf at any time: `GET /api/public/catalogue/status`.
 
@@ -220,8 +220,8 @@ Check what is on the shelf at any time: `GET /api/public/catalogue/status`.
 
 The price line on every pick is written from what was actually fetched:
 
-- one price (the shelf) → "$32.00 on the Ese shelf. I have not compared other shops."
-- two or more priced sources (the shelf plus marketplace offers) → "Best price of the 3 I checked: …" or, honestly, "Cheapest of the 3 I checked is eBay at …; the Ese shelf has it at …"
+- one price (the shelf) → "$32.00 at Sephora. I have not compared other shops." (named by the shop that sells that product)
+- two or more priced sources (the shelf plus marketplace offers) → "Best price of the 3 I checked: …" or, honestly, "Cheapest of the 3 I checked is eBay at …; Sephora has it at …"
 
 She never claims a comparison that was not made. Search links (Amazon, Google
 Shopping) are offered as places to look, never counted as prices.

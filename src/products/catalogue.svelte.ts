@@ -35,8 +35,11 @@ export const shelf = $state({
   loadingMore: false,
   /** Saved shelf products by catalogue id; null = no longer on the shelf. */
   savedItems: {} as Record<string, CatalogueListing | null>,
-  /** From the public status route; null until it answers. */
-  storeName: 'Ese',
+  /**
+   * From the public status route: the configured store's name, only when the
+   * whole shelf came from that store's sync. Null otherwise (no default name).
+   */
+  storeName: null as string | null,
   shelfCount: null as number | null,
   extras: {} as Record<string, CatalogueExtra>,
 });
@@ -46,13 +49,13 @@ let statusAsked = false;
 /** The query the current list answers, for "Show more". */
 let current: { category: CatalogueCategory | null; q: string; limit: number } | null = null;
 
-/** The shop's name and size, once per visit (public: guests too). */
+/** The shelf's store name (if any) and size, once per visit (public: guests too). */
 export async function loadShelfStatus(): Promise<void> {
   if (statusAsked) return;
   statusAsked = true;
   try {
     const { status } = await api.catalogueStatus();
-    shelf.storeName = status.storeName || 'Ese';
+    shelf.storeName = status.storeName?.trim() || null;
     shelf.shelfCount = status.products;
   } catch {
     statusAsked = false;

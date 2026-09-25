@@ -17,6 +17,7 @@ import { row, rows, run } from '../db/index.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import { log } from '../lib/log.ts';
 import type { CatalogueProduct, CatalogueStatus } from '../../shared/types.ts';
+import { cleanRetailerName } from '../../shared/retailer.ts';
 
 export type CatalogueSource = 'shopify' | 'woocommerce' | 'import' | 'manual';
 
@@ -37,6 +38,8 @@ interface CatalogueRow {
   image_url: string | null;
   in_stock: number | boolean;
   updated_at: string;
+  /** From migration 016; absent on a database that has not run it yet. */
+  retailer?: string | null;
 }
 
 function hydrate(r: CatalogueRow): CatalogueProduct {
@@ -56,11 +59,19 @@ function hydrate(r: CatalogueRow): CatalogueProduct {
     imageUrl: r.image_url,
     inStock: Boolean(r.in_stock),
     updatedAt: r.updated_at,
+    retailer: r.retailer ?? null,
   };
 }
 
-export function storeName(): string {
-  return process.env.ELOHIM_STORE_NAME?.trim() || 'Ese';
+/**
+ * The configured store's name: only when a store is configured to sync from
+ * (ELOHIM_STORE_URL) and a name is set for it (ELOHIM_STORE_NAME). There is
+ * no default - a product that did not come from that store is named by its
+ * own retailer (shared/retailer.ts), never by a house name.
+ */
+export function storeName(): string | null {
+  const name = process.env.ELOHIM_STORE_NAME?.trim();
+  return name && storeUrl() ? name : null;
 }
 
 export function storeUrl(): string | null {
@@ -83,6 +94,8 @@ export interface CatalogueInput {
   url: string;
   imageUrl?: string | null;
   inStock?: boolean;
+  /** Who sells it, when an import says so ("Sephora"). Null: named from the link. */
+  retailer?: string | null;
 }
 
 export async function upsertCatalogueProduct(input: CatalogueInput): Promise<string> {
@@ -112,6 +125,7 @@ export async function upsertCatalogueProduct(input: CatalogueInput): Promise<str
     input.url,
     input.imageUrl ?? null,
     input.inStock === false ? 0 : 1,
+    cleanRetailerName(input.retailer),
     nowIso(),
   ] as const;
 
@@ -120,7 +134,7 @@ export async function upsertCatalogueProduct(input: CatalogueInput): Promise<str
       `UPDATE catalogue_products
           SET sku = ?, name = ?, brand = ?, category = ?, description = ?, ingredients_json = ?,
               tags_json = ?, price_cents = ?, currency = ?, url = ?, image_url = ?, in_stock = ?,
-              updated_at = ?
+              retailer = ?, updated_at = ?
         WHERE id = ?`,
       ...values,
       existing.id,
@@ -132,8 +146,8 @@ export async function upsertCatalogueProduct(input: CatalogueInput): Promise<str
   await run(
     `INSERT INTO catalogue_products
        (id, source, external_id, sku, name, brand, category, description, ingredients_json,
-        tags_json, price_cents, currency, url, image_url, in_stock, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        tags_json, price_cents, currency, url, image_url, in_stock, retailer, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     input.source,
     input.externalId ?? null,
@@ -171,14 +185,21 @@ async function pruneMissing(source: CatalogueSource, seen: Set<string>): Promise
 }
 
 export async function catalogueStatus(): Promise<CatalogueStatus> {
-  const count = await row<{ n: string | number }>('SELECT count(*) AS n FROM catalogue_products');
+  const count = await row<{ n: string | number; synced: string | number | null }>(
+    `SELECT count(*) AS n,
+            sum(CASE WHEN source IN ('shopify', 'woocommerce') THEN 1 ELSE 0 END) AS synced
+       FROM catalogue_products`,
+  );
   const last = await row<{ finished_at: string | null; source: string; imported: number; error: string | null }>(
     'SELECT finished_at, source, imported, error FROM catalogue_syncs ORDER BY started_at DESC LIMIT 1',
   );
+  const products = Number(count?.n ?? 0);
+  const synced = Number(count?.synced ?? 0);
   return {
-    storeName: storeName(),
+    /* The store's name describes the shelf only when every product on it came from that store's sync. */
+    storeName: products > 0 && synced === products ? storeName() : null,
     storeUrl: storeUrl(),
-    products: Number(count?.n ?? 0),
+    products,
     lastSync: last?.finished_at ?? null,
     lastSource: (last?.source as CatalogueStatus['lastSource']) ?? null,
     lastError: last?.error ?? null,
@@ -404,7 +425,11 @@ export async function syncStore(): Promise<{ imported: number; removed: number; 
   }
 }
 
-/** A JSON import: for shops that are neither platform, or for a hand-kept list. */
+/**
+ * A JSON import: for shops that are neither platform, or for a hand-kept list.
+ * Each product may say who sells it (`retailer`); otherwise its button is
+ * named from its link.
+ */
 export async function importCatalogue(items: unknown[]): Promise<{ imported: number; skipped: number }> {
   let imported = 0;
   let skipped = 0;
@@ -448,6 +473,7 @@ export async function importCatalogue(items: unknown[]): Promise<{ imported: num
       url,
       imageUrl: typeof p.image === 'string' ? p.image : typeof p.imageUrl === 'string' ? p.imageUrl : null,
       inStock: p.inStock !== false,
+      retailer: cleanRetailerName(p.retailer),
     });
     imported++;
   }

@@ -8,7 +8,8 @@
  * An assessment is only made from a published ingredient list - an empty list
  * is not an all-clear. And an affiliate tag is added only to its own
  * retailer's links, carries only the operator's static string, and nothing a
- * scan produced ever reaches a URL (SRS ADS-01).
+ * scan produced ever reaches a URL (SRS ADS-01). Every "Shop at ..." name is
+ * that product's own retailer, never a house name.
  *
  * Tested against a real HTTP server with the router mounted, so the auth
  * guard and Express's routing are part of what is checked.
@@ -27,7 +28,7 @@ function product(partial: Partial<CatalogueProduct> & { name: string }): Catalog
     id: slug,
     source: 'import',
     sku: null,
-    brand: 'Ese',
+    brand: 'Brand',
     category: null,
     description: '',
     ingredients: [],
@@ -132,12 +133,13 @@ describe('GET /api/catalogue', () => {
 
   it('filters by chip and search, and sends the shop link with each product', async () => {
     process.env.ELOHIM_STORE_URL = 'https://shop.example';
-    process.env.ELOHIM_STORE_NAME = 'Ese';
+    process.env.ELOHIM_STORE_NAME = 'Northside Apothecary';
     process.env.ELOHIM_AFFILIATE_STORE_PARAMS = 'ref=evia';
+    // Synced from the configured store, which has a name: the store's name.
     shelf.push(
-      product({ name: 'Gentle Foaming Wash' }),
-      product({ name: 'Barrier Cream', category: 'Moisturiser', ingredients: ['Aqua', 'Glycerin', 'Ceramide NP'] }),
-      product({ name: 'Calm Drops', tags: ['serum'], ingredients: ['Aqua', 'Niacinamide'] }),
+      product({ name: 'Gentle Foaming Wash', source: 'shopify' }),
+      product({ name: 'Barrier Cream', source: 'shopify', category: 'Moisturiser', ingredients: ['Aqua', 'Glycerin', 'Ceramide NP'] }),
+      product({ name: 'Calm Drops', source: 'shopify', tags: ['serum'], ingredients: ['Aqua', 'Niacinamide'] }),
     );
 
     const cleansers = await get('/catalogue?category=cleansers');
@@ -148,9 +150,74 @@ describe('GET /api/catalogue', () => {
     expect(found.map((p) => p.name)).toEqual(['Calm Drops']);
     expect(found[0].shop).toEqual({
       url: 'https://shop.example/products/calm-drops?ref=evia',
-      retailer: 'Ese',
+      retailer: 'Northside Apothecary',
       affiliate: true,
     });
+  });
+
+  it("names each product's own retailer, never a house name", async () => {
+    process.env.ELOHIM_STORE_URL = 'https://shop.example';
+    process.env.ELOHIM_STORE_NAME = 'Northside Apothecary';
+    shelf.push(
+      product({ name: 'A Sephora Serum', url: 'https://www.sephora.com/product/serum-P1' }),
+      product({ name: 'B Hydrating Cleanser', brand: 'CeraVe', url: 'https://www.cerave.com/skincare/cleansers/hydrating' }),
+      product({ name: 'C Imported Toner', retailer: 'Cult Beauty', url: 'https://www.cultbeauty.co.uk/p/1' }),
+      product({ name: 'D Imported Balm', retailer: 'Space NK', url: 'https://shop.example/products/d' }),
+      // On the store's host, but imported rather than synced: named by its link.
+      product({ name: 'E Hand-kept Mist', url: 'https://shop.example/products/e' }),
+      product({ name: 'F Unknown Shop Cream', brand: 'La Roche-Posay', url: 'https://www.skinshop.co.uk/p/f' }),
+    );
+    const { body } = await get('/catalogue');
+    const names = Object.fromEntries(
+      (body.products as Array<{ name: string; shop: { retailer: string } }>).map((p) => [p.name, p.shop.retailer]),
+    );
+    expect(names).toEqual({
+      'A Sephora Serum': 'Sephora',
+      'B Hydrating Cleanser': 'CeraVe',
+      'C Imported Toner': 'Cult Beauty',
+      'D Imported Balm': 'Space NK',
+      'E Hand-kept Mist': 'shop.example',
+      'F Unknown Shop Cream': 'skinshop.co.uk',
+    });
+
+    const one = await get('/catalogue/b-hydrating-cleanser');
+    expect((one.body.product as { shop: { retailer: string } }).shop.retailer).toBe('CeraVe');
+    expect(JSON.stringify(body)).not.toMatch(/\bEse\b/);
+  });
+
+  it('has no default store name: an unnamed store is named by its address', async () => {
+    process.env.ELOHIM_STORE_URL = 'https://shop.example';
+    delete process.env.ELOHIM_STORE_NAME;
+    shelf.push(product({ name: 'Synced Cream', source: 'woocommerce' }));
+    const { body } = await get('/catalogue');
+    expect((body.products as Array<{ shop: { retailer: string } }>)[0].shop.retailer).toBe('shop.example');
+  });
+
+  it('keeps the reading out of every shop link it sends (ADS-01)', async () => {
+    process.env.ELOHIM_AFFILIATE_AMAZON_TAG = 'evia-20';
+    process.env.ELOHIM_AFFILIATE_LINKS = 'sephora.com:om_mmc=aff-evia';
+    shelf.push(
+      product({ name: 'Amazon Serum', url: 'https://www.amazon.com/dp/B00X', ingredients: ['Aqua', 'Parfum'] }),
+      product({ name: 'Sephora Cream', url: 'https://www.sephora.com/product/p1', retailer: 'Sephora' }),
+    );
+    const list = await get('/catalogue');
+    const detail = await get('/catalogue/amazon-serum');
+    const shops = [
+      ...(list.body.products as Array<{ url: string; shop: { url: string } }>),
+      detail.body.product as { url: string; shop: { url: string } },
+    ];
+    expect(shops.map((p) => p.shop.url)).toEqual([
+      'https://www.amazon.com/dp/B00X?tag=evia-20',
+      'https://www.sephora.com/product/p1?om_mmc=aff-evia',
+      'https://www.amazon.com/dp/B00X?tag=evia-20',
+    ]);
+    for (const { shop } of shops) {
+      const lower = decodeURIComponent(shop.url).toLowerCase();
+      for (const key of SKIN_METRIC_KEYS) expect(lower).not.toContain(key.toLowerCase());
+      for (const word of ['texture', 'fragrance', 'combination', 'concern', 'skin', 'scan', 'user-1']) {
+        expect(lower).not.toContain(word);
+      }
+    }
   });
 
   it('refuses a category it does not know rather than ignoring it', async () => {
@@ -231,10 +298,18 @@ describe('affiliate links', () => {
 
   it('names the retailer for the button', () => {
     process.env.ELOHIM_STORE_URL = 'https://shop.example/';
-    process.env.ELOHIM_STORE_NAME = 'Ese';
-    expect(retailerFor('https://shop.example/products/a')).toBe('Ese');
+    process.env.ELOHIM_STORE_NAME = 'Northside Apothecary';
+    // The store's name only for a product its own sync brought in.
+    expect(retailerFor('https://shop.example/products/a', { source: 'shopify' })).toBe('Northside Apothecary');
+    expect(retailerFor('https://shop.example/products/a', { source: 'import' })).toBe('shop.example');
+    expect(retailerFor('https://shop.example/products/a')).toBe('shop.example');
     expect(retailerFor('https://www.amazon.com/s?k=a')).toBe('Amazon');
-    expect(retailerFor('https://www.lookfantastic.com/p/1')).toBe('Lookfantastic');
+    expect(retailerFor('https://www.lookfantastic.com/p/1')).toBe('LOOKFANTASTIC');
+    expect(retailerFor('https://www.cerave.com/p/1', { brand: 'CeraVe' })).toBe('CeraVe');
+    expect(retailerFor('https://www.amazon.com/dp/1', { retailer: 'Sephora' })).toBe('Sephora');
+    // No name configured: no default name either.
+    delete process.env.ELOHIM_STORE_NAME;
+    expect(retailerFor('https://shop.example/products/a', { source: 'shopify' })).toBe('shop.example');
   });
 
   it('puts nothing from the reading into any link of a pick', () => {
@@ -252,9 +327,9 @@ describe('affiliate links', () => {
       },
       product: product({ name: 'Calm Drops', url: 'https://shop.example/products/calm-drops' }),
       matched: ['Niacinamide'],
-      from: 'Ese',
-      offers: [amazonLink('Ese Calm Drops')],
-      priceNote: 'One price: $18.00 at Ese.',
+      from: 'shop.example',
+      offers: [amazonLink('Brand Calm Drops')],
+      priceNote: '$18.00 at shop.example. I have not compared other shops.',
       compared: 1,
       bestUrl: 'https://shop.example/products/calm-drops',
       reason: 'Calm Drops carries niacinamide.',

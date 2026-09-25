@@ -525,6 +525,11 @@ export interface CatalogueProduct {
   imageUrl: string | null;
   inStock: boolean;
   updatedAt: string;
+  /**
+   * Who sells it, when the catalogue import said so ("Sephora"). Absent or
+   * null: the "Shop at ..." name is worked out from `url` (shared/retailer.ts).
+   */
+  retailer?: string | null;
 }
 
 /**
@@ -557,7 +562,10 @@ export interface ProductPick {
   product: CatalogueProduct | null;
   /** Actives found in or on the product. */
   matched: string[];
-  /** The shop name when the pick is from the shelf. */
+  /**
+   * Who sells the shelf product - the name its "Shop at ..." button carries
+   * (shared/retailer.ts). Null when the shelf has nothing for this step.
+   */
   from: string | null;
   offers: Offer[];
   /** The price sentence, written from what was actually fetched. */
@@ -570,7 +578,12 @@ export interface ProductPick {
 }
 
 export interface CatalogueStatus {
-  storeName: string;
+  /**
+   * The configured store's name, only when a name is configured and every
+   * product on the shelf came from that store's sync; otherwise null (there
+   * is no default name).
+   */
+  storeName: string | null;
   storeUrl: string | null;
   products: number;
   lastSync: string | null;

@@ -140,7 +140,10 @@ export function containsFor(product: CatalogueProduct): string[] {
 export interface CatalogueListing extends CatalogueProduct {
   /** The chips this product shows under. */
   categories: CatalogueCategory[];
-  /** Where "Shop at ..." goes: the product URL with its retailer's affiliate tag, if one is configured. */
+  /**
+   * Where "Shop at {retailer}" goes: the product URL with its retailer's
+   * affiliate tag, if one is configured, and that product's own retailer.
+   */
   shop: { url: string; retailer: string; affiliate: boolean };
 }
 
@@ -149,6 +152,7 @@ export function listingFor(product: CatalogueProduct): CatalogueListing {
   return {
     ...product,
     categories: categoriesOf(product),
-    shop: { url: link.url, retailer: retailerFor(product.url), affiliate: link.affiliate },
+    /* Named from the product's own link (and its import's `retailer`), never from the tagged URL's query. */
+    shop: { url: link.url, retailer: retailerFor(product.url, product), affiliate: link.affiliate },
   };
 }

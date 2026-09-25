@@ -6,7 +6,8 @@
  * the shop's catalogue alone: no ratings, no review counts, no "Trending" /
  * "Popular" / "Best Match", no gallery the shop did not send, no cart - and
  * when the shelf is empty (it is, by default) it says so instead of filling
- * the grid. Every shop link is the URL the server sent, untouched.
+ * the grid. Every shop link is the URL the server sent, untouched, and every
+ * "Shop at ..." names that product's own retailer - never a house name.
  */
 import { describe, expect, it } from 'vitest';
 import type { CatalogueProduct, ProductPick } from '../shared/types.ts';
@@ -41,7 +42,7 @@ const product = (over: Partial<CatalogueProduct> = {}): CatalogueProduct => ({
 
 const listing = (over: Partial<CatalogueProduct> = {}): CatalogueListing => {
   const p = product(over);
-  return { ...p, categories: ['cleansers'], shop: { url: p.url, retailer: 'Ese', affiliate: true } };
+  return { ...p, categories: ['cleansers'], shop: { url: p.url, retailer: 'Sephora', affiliate: true } };
 };
 
 const pick = (over: Partial<ProductPick> = {}): ProductPick => ({
@@ -84,7 +85,7 @@ const input = ({ catalogue, ...over }: InputOver = {}): ProductsRealInput => ({
   hasScan: true,
   picks: [],
   picksLoading: false,
-  storeName: 'Ese',
+  storeName: null,
   shelfCount: 0,
   catalogue: { status: 'ready', items: [], total: 0, nextCursor: null, loadingMore: false, ...catalogue },
   savedItems: {},
@@ -114,6 +115,26 @@ describe('sample mode', () => {
       expect(card.shop?.url ?? null).toBeNull();
       expect(card.detail.shop?.url ?? null).toBeNull();
     }
+  });
+
+  it('names each sample product’s own retailer, the same way a real one is', () => {
+    const view = productsView(true, SAMPLE_PRODUCTS, input());
+    const retailers = cards(view).map((c) => c.shop!.retailer);
+    expect(retailers).toEqual([
+      'CeraVe',
+      'YesStyle',
+      'Ulta Beauty',
+      'La Roche-Posay',
+      'Stylevana',
+      'Paula’s Choice',
+      'Target',
+      'Amazon',
+    ]);
+    for (const card of cards(view)) {
+      expect(card.shop!.label).toBe(`Shop at ${card.shop!.retailer}`);
+      expect(card.detail.shop).toEqual(card.shop);
+    }
+    expect(text(view)).not.toMatch(/\bEse\b/);
   });
 });
 
@@ -154,11 +175,50 @@ describe('real mode', () => {
     );
     const [pickCard, shelfCard] = cards(view);
     expect(pickCard.shop).toMatchObject({ url: 'https://www.amazon.com/s?k=Retinol%20serum&tag=evia-21', kind: 'search' });
-    expect(shelfCard.shop).toMatchObject({ url: shelfItem.shop.url, label: 'Shop at Ese', kind: 'product' });
+    expect(shelfCard.shop).toMatchObject({ url: shelfItem.shop.url, label: 'Shop at Sephora', retailer: 'Sephora', kind: 'product' });
     for (const card of cards(view)) {
       const url = card.shop?.url ?? '';
       expect(url).not.toMatch(/texture|61|concern|skin|scan/i);
     }
+  });
+
+  it('names a shelf pick’s own retailer, and never a house name', () => {
+    const shelfPick = pick({
+      product: product({ id: 'cat-2', brand: 'CeraVe', url: 'https://www.cerave.com/p/2' }),
+      from: 'CeraVe',
+      offers: [],
+      priceNote: '£12.99 at CeraVe. I have not compared other shops.',
+    });
+    const [card] = cards(buildProducts(input({ picks: [shelfPick] })));
+    expect(card.shop).toMatchObject({ label: 'Shop at CeraVe', retailer: 'CeraVe', url: 'https://www.cerave.com/p/2' });
+    expect(card.detail.shop).toEqual(card.shop);
+
+    // An older server that did not name the seller: named from the link, not a default.
+    const unnamed = cards(buildProducts(input({ picks: [{ ...shelfPick, from: null }] })))[0];
+    expect(unnamed.shop?.label).toBe('Shop at CeraVe');
+    const elsewhere = cards(
+      buildProducts(input({ picks: [{ ...shelfPick, from: null, product: product({ url: 'https://www.ulta.com/p/9' }) }] })),
+    )[0];
+    expect(elsewhere.shop?.label).toBe('Shop at Ulta Beauty');
+
+    const everything = buildProducts(
+      input({ picks: [shelfPick, pick()], catalogue: { status: 'ready', items: [listing()], total: 1 }, shelfCount: 1 }),
+    );
+    expect(text(everything)).not.toMatch(/\bEse\b/);
+  });
+
+  it('names a configured store in the shelf copy only when the server gives one', () => {
+    const unnamed = buildProducts(input({ shelfCount: 1, catalogue: { status: 'ready', items: [listing()], total: 1 } }));
+    expect(unnamed.sections.find((s) => s.id === 'shelf')!.subtitle).toBe(
+      'From the catalogue. Each product links to the shop that sells it.',
+    );
+    const named = buildProducts(
+      input({ storeName: 'Northside Apothecary', shelfCount: 1, catalogue: { status: 'ready', items: [listing()], total: 1 } }),
+    );
+    expect(named.sections.find((s) => s.id === 'shelf')!.subtitle).toBe('From the Northside Apothecary catalogue.');
+    expect(buildProducts(input()).sections.find((s) => s.id === 'shelf')!.empty?.body).toMatch(
+      /^Products appear here when a shop catalogue is connected\./,
+    );
   });
 
   it('gives a pick its real reason and reading, and the patch-test note', () => {

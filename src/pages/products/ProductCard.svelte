@@ -225,6 +225,8 @@
     gap: 10px;
     margin-top: auto;
     padding-top: 10px;
+    /* The shop button sets the retailer on its own line when the card is narrow (ShopButton). */
+    container: pcard-foot / inline-size;
   }
   .pcard__price {
     margin: 0;

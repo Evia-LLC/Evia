@@ -26,9 +26,13 @@
  *
  * There is no cart anywhere (decision 11): every product ends in "Shop at
  * {retailer} ↗", a plain external link the server has already tagged for that
- * retailer's affiliate programme and nothing else (ADS-01).
+ * retailer's affiliate programme and nothing else (ADS-01). The retailer is
+ * that product's own (the server names it: shared/retailer.ts), never a house
+ * name; the shelf's copy names a store only when the server says every
+ * product came from a configured, named store.
  */
 import type { ProductAssessment, ProductPick, RoutineStep } from '@shared/types.ts';
+import { retailerName } from '@shared/retailer.ts';
 import type { CatalogueCategory, CatalogueListing } from '@/lib/api.ts';
 import type { ProductGlyphName } from '@/pages/products/glyphs.ts';
 import type { IconName } from '@/ui/icons.ts';
@@ -76,7 +80,7 @@ export interface RatingView {
 }
 
 export interface ShopLinkView {
-  /** "Shop at Ese", "Search Amazon". */
+  /** "Shop at CeraVe", "Shop at Sephora", "Search Amazon". */
   label: string;
   retailer: string;
   /** The outbound URL; null in sample mode, where shop links are switched off. */
@@ -332,8 +336,12 @@ export interface ProductsRealInput {
   /** The picks for the latest reading (session.picks). */
   picks: ProductPick[];
   picksLoading: boolean;
-  /** The shop's name (catalogue status), for copy. */
-  storeName: string;
+  /**
+   * The configured store's name (catalogue status), for the shelf's copy:
+   * only when every product came from that store's sync. Null otherwise - and
+   * then the copy says "the catalogue", never a made-up name.
+   */
+  storeName: string | null;
   /** How many products the shelf holds, from the public status; null if unknown. */
   shelfCount: number | null;
   catalogue: {
@@ -474,7 +482,7 @@ function offerLink(offer: ProductPick['offers'][number]): ShopLinkView {
   };
 }
 
-function pickCard(pick: ProductPick, extra: CatalogueExtra | undefined, storeName: string): ProductCardView {
+function pickCard(pick: ProductPick, extra: CatalogueExtra | undefined): ProductCardView {
   const s = pick.suggestion;
   const step = STEP_LABEL[s.step];
   const product = pick.product;
@@ -483,9 +491,14 @@ function pickCard(pick: ProductPick, extra: CatalogueExtra | undefined, storeNam
     ? `Picked for your ${s.because.label.toLowerCase()} reading`
     : 'An every-day step, whatever the reading';
   const offers = pick.offers.map(offerLink);
-  const shop: ShopLinkView | null = product
-    ? { label: `Shop at ${pick.from ?? storeName}`, retailer: pick.from ?? storeName, url: product.url, kind: 'product' }
-    : (offers[0] ?? null);
+  /* The server names the seller; an older response without one is named from the product's own link. */
+  const retailer = product
+    ? (pick.from ?? retailerName({ url: product.url, brand: product.brand, retailer: product.retailer }))
+    : null;
+  const shop: ShopLinkView | null =
+    product && retailer
+      ? { label: `Shop at ${retailer}`, retailer, url: product.url, kind: 'product' }
+      : (offers[0] ?? null);
   const alsoAt = product ? offers : offers.slice(1);
   const price = product ? money(product.priceCents, product.currency) : null;
 
@@ -500,7 +513,7 @@ function pickCard(pick: ProductPick, extra: CatalogueExtra | undefined, storeNam
     catalogueId: product?.id ?? null,
     brand: product ? product.brand : `${step} step`,
     name: product ? product.name : s.title,
-    blurb: product ? because : `Not on the ${storeName} shelf yet. ${because}.`,
+    blurb: product ? because : `Not on the shelf yet. ${because}.`,
     badge: { label: step, variant: 'neutral' },
     rating: null,
     price,
@@ -538,9 +551,12 @@ function matches(card: ProductCardView, query: string): boolean {
   return words.every((w) => card.searchText.includes(w));
 }
 
-const SHELF_EMPTY = (storeName: string): EmptyView => ({
+/** "the Northside Apothecary catalogue" for a named, synced store; otherwise just "the catalogue". */
+const catalogueOf = (storeName: string | null): string => (storeName ? `the ${storeName} catalogue` : 'the catalogue');
+
+const SHELF_EMPTY = (storeName: string | null): EmptyView => ({
   title: 'The shop shelf is empty for now',
-  body: `Products appear here when the ${storeName} catalogue is connected. Until then, Evia's picks point to places to look, and nothing here is invented to fill the space.`,
+  body: `Products appear here when ${storeName ? catalogueOf(storeName) : 'a shop catalogue'} is connected. Until then, Evia's picks point to places to look, and nothing here is invented to fill the space.`,
   icon: 'shopping-bag',
 });
 
@@ -563,7 +579,8 @@ function picksEmpty(input: ProductsRealInput): EmptyView {
 export function buildProducts(input: ProductsRealInput): ProductsView {
   const { category, query } = input;
   const q = query.trim();
-  const picks = input.picks.map((p) => pickCard(p, p.product ? input.extras[p.product.id] : undefined, input.storeName));
+  const picks = input.picks.map((p) => pickCard(p, p.product ? input.extras[p.product.id] : undefined));
+  const theCatalogue = catalogueOf(input.storeName);
   const shelf = input.catalogue.items.map((l) => catalogueCard(l, input.extras[l.id]));
   const shelfLoading = input.catalogue.status === 'loading' || input.catalogue.status === 'idle';
   const noShelf = input.catalogue.status === 'ready' && input.catalogue.total === 0 && !q && (category === 'all' || category === 'recommended');
@@ -573,7 +590,7 @@ export function buildProducts(input: ProductsRealInput): ProductsView {
       return input.shelfCount
         ? {
             title: 'Sign in to browse the shelf',
-            body: `The ${input.storeName} catalogue is open to signed-in accounts. Your picks from this visit stay above.`,
+            body: `${capitalise(theCatalogue)} is open to signed-in accounts. Your picks from this visit stay above.`,
             icon: 'shopping-bag',
           }
         : SHELF_EMPTY(input.storeName);
@@ -585,16 +602,21 @@ export function buildProducts(input: ProductsRealInput): ProductsView {
     if (q) return { title: `Nothing matches “${q}”`, body: 'Try a brand, a product name or an ingredient.', icon: 'search' };
     return {
       title: `Nothing under ${chipLabel(category)} yet`,
-      body: `The ${input.storeName} shelf has nothing in this category right now.`,
+      body: `${capitalise(theCatalogue)} has nothing in this category right now.`,
       icon: 'shopping-bag',
     };
   };
 
-  /* "From the Ese catalogue." - and how much of it, when not all of it is shown. */
+  /*
+   * Where the shelf is from - a named store only when every product came
+   * from it; otherwise each button names its own shop - and how much of it
+   * is shown, when not all of it is.
+   */
+  const shelfFrom = input.storeName
+    ? `From ${theCatalogue}.`
+    : 'From the catalogue. Each product links to the shop that sells it.';
   const shelfSubtitle = (shown: number): string =>
-    input.catalogue.total > shown
-      ? `From the ${input.storeName} catalogue. Showing ${shown} of ${input.catalogue.total}.`
-      : `From the ${input.storeName} catalogue.`;
+    input.catalogue.total > shown ? `${shelfFrom} Showing ${shown} of ${input.catalogue.total}.` : shelfFrom;
 
   const sections: ProductSectionView[] = [];
 
@@ -630,7 +652,7 @@ export function buildProducts(input: ProductsRealInput): ProductsView {
             : gone && !cards.length
               ? {
                   title: 'Your saved products have left the shelf',
-                  body: `The ${input.storeName} catalogue no longer has what you saved here.`,
+                  body: `${capitalise(theCatalogue)} no longer has what you saved here.`,
                   icon: 'heart',
                 }
               : { title: 'Nothing saved yet', body: 'Tap the heart on a product to keep it here. Saved items stay on this device.', icon: 'heart' },

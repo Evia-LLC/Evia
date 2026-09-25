@@ -22,7 +22,7 @@ import { matchIngredients } from '../skin/ingredients.ts';
 import type { RoutinePlan, Suggestion } from '../skin/recommend.ts';
 import type { IngredientFamily } from '../skin/ingredient-data.ts';
 import { listCatalogue, storeName, storeUrl } from './store.ts';
-import { comparisonAvailable, ebayOffers, webOffers } from './offers.ts';
+import { comparisonAvailable, ebayOffers, retailerFor, webOffers } from './offers.ts';
 import type {
   CatalogueProduct,
   Offer,
@@ -140,16 +140,23 @@ function money(cents: number | null, currency: string | null): string {
   }
 }
 
+/** Who sells a shelf product: its own retailer, as its "Shop at ..." button says. */
+export function sellerOf(product: CatalogueProduct): string {
+  return retailerFor(product.url, product);
+}
+
 /**
  * The sentence about price, written from what was actually fetched.
  *
  * `compared` counts sources with a real price — the shelf and any marketplace
- * offers. One source is a price, not a comparison, and the note says so.
+ * offers. One source is a price, not a comparison, and the note says so. The
+ * shelf price is named by the shop that sells the product.
  */
 function priceNote(store: CatalogueProduct | null, offers: Offer[]): { note: string; compared: number; bestUrl: string | null } {
   const priced: Array<{ label: string; cents: number; url: string; own: boolean }> = [];
+  const seller = store ? sellerOf(store) : null;
   if (store?.priceCents !== null && store?.priceCents !== undefined) {
-    priced.push({ label: storeName(), cents: store.priceCents, url: store.url, own: true });
+    priced.push({ label: seller!, cents: store.priceCents, url: store.url, own: true });
   }
   for (const o of offers) {
     if (o.compared && o.priceCents !== null && (!store || o.currency === store.currency)) {
@@ -162,7 +169,7 @@ function priceNote(store: CatalogueProduct | null, offers: Offer[]): { note: str
   if (priced.length === 1) {
     return {
       note: priced[0].own
-        ? `${money(priced[0].cents, store!.currency)} on the ${storeName()} shelf. I have not compared other shops.`
+        ? `${money(priced[0].cents, store!.currency)} at ${seller}. I have not compared other shops.`
         : `${money(priced[0].cents, offers.find((o) => o.compared)?.currency ?? null)} at ${priced[0].label}. One price, not a comparison.`,
       compared: 1,
       bestUrl: priced[0].url,
@@ -172,9 +179,9 @@ function priceNote(store: CatalogueProduct | null, offers: Offer[]): { note: str
   const best = sorted[0];
   const currency = store?.currency ?? offers.find((o) => o.compared)?.currency ?? null;
   const note = best.own
-    ? `Best price of the ${priced.length} I checked: ${money(best.cents, currency)} on the ${storeName()} shelf.`
+    ? `Best price of the ${priced.length} I checked: ${money(best.cents, currency)} at ${seller}.`
     : `Cheapest of the ${priced.length} I checked is ${best.label} at ${money(best.cents, currency)}` +
-      (store ? `; the ${storeName()} shelf has it at ${money(store.priceCents, currency)}.` : '.');
+      (store ? `; ${seller} has it at ${money(store.priceCents, currency)}.` : '.');
   return { note, compared: priced.length, bestUrl: best.url };
 }
 
@@ -236,7 +243,7 @@ export async function pickProducts(
       },
       product: top?.product ?? null,
       matched: top?.matched ?? [],
-      from: top ? storeName() : null,
+      from: top ? sellerOf(top.product) : null,
       offers,
       priceNote: note,
       compared,
@@ -244,8 +251,8 @@ export async function pickProducts(
       reason: top
         ? top.matched.length
           ? `${top.product.name} carries ${top.matched.slice(0, 2).join(' and ')}, which is what I want on this.`
-          : `${top.product.name} is the ${suggestion.step === 'protect' ? 'sun protection' : suggestion.title.toLowerCase()} I would reach for on the ${storeName()} shelf.`
-        : `Nothing on the ${storeName()} shelf does this yet, so here is where I would look.`,
+          : `${top.product.name} is the ${suggestion.step === 'protect' ? 'sun protection' : suggestion.title.toLowerCase()} I would reach for on the shelf.`
+        : `Nothing on the shelf does this yet, so here is where I would look.`,
     });
   }
 
@@ -257,7 +264,7 @@ export function renderPicks(picks: ProductPick[]): string {
   if (!picks.length) return '';
   const lines = picks.map((p) => {
     const where = p.product
-      ? `${p.product.brand ? p.product.brand + ' ' : ''}${p.product.name} — ${p.priceNote} Link: ${p.product.url}`
+      ? `${p.product.brand ? p.product.brand + ' ' : ''}${p.product.name}, sold by ${p.from ?? sellerOf(p.product)} — ${p.priceNote} Link: ${p.product.url}`
       : `no shelf product; ${p.priceNote} ${p.offers
           .slice(0, 2)
           .map((o) => `${o.merchant}${o.priceCents !== null ? ' ' + money(o.priceCents, o.currency) : ''}: ${o.url}`)
@@ -265,9 +272,11 @@ export function renderPicks(picks: ProductPick[]): string {
     const because = p.suggestion.because ? ` (${p.suggestion.because.label} ${p.suggestion.because.value})` : '';
     return `- [${p.suggestion.step}] for ${p.suggestion.title}${because}: ${where}`;
   });
+  /* The store's name only when one is configured; otherwise each line names its own seller. */
+  const store = storeName();
   return [
     '# Products you can point to',
-    `The shop behind you is ${storeName()}${storeUrl() ? ` (${storeUrl()})` : ''}. These are the only products you may name, with the prices exactly as written:`,
+    `${store ? `The shop behind you is ${store}${storeUrl() ? ` (${storeUrl()})` : ''}. ` : ''}These are the only products you may name, with the shop that sells each one and the prices exactly as written:`,
     ...lines,
     'Rules: recommend the ingredient first and the product second. Say where it is from and the price as written above. Only claim a price comparison when the line says prices were checked; otherwise say plainly that you have not compared. Never invent a product, price or shop.',
   ].join('\n');

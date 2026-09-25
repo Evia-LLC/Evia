@@ -17,7 +17,8 @@
  * written from `compared`, which counts real offers only.
  */
 import { log } from '../lib/log.ts';
-import type { Offer, ProductPick } from '../../shared/types.ts';
+import type { CatalogueProduct, Offer, ProductPick } from '../../shared/types.ts';
+import { hostOf, onDomain, retailerName } from '../../shared/retailer.ts';
 
 // --- affiliate links ----------------------------------------------------------
 
@@ -70,29 +71,12 @@ function queryFrom(raw: string | undefined, where: string): Array<[string, strin
   return pairs;
 }
 
-function hostOf(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.hostname.toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-/** `host` is `domain` or one of its subdomains. */
-function onDomain(host: string, domain: string): boolean {
-  const d = domain.toLowerCase().replace(/^www\./, '');
-  return host === d || host.endsWith(`.${d}`);
-}
-
 /** A brand's own country domains (amazon.com, amazon.co.uk, amazon.com.au, amazon.de), not lookalikes. */
 const brandDomain = (brand: string) => new RegExp(`(^|\\.)${brand}\\.(com|co\\.[a-z]{2}|com\\.[a-z]{2}|[a-z]{2})$`);
 const AMAZON = brandDomain('amazon');
 const EBAY = brandDomain('ebay');
-const GOOGLE = brandDomain('google');
 const isAmazon = (host: string) => AMAZON.test(host) || host === 'amzn.to';
 const isEbay = (host: string) => EBAY.test(host);
-const isGoogleShopping = (host: string) => GOOGLE.test(host);
 
 function storeHost(): string | null {
   const raw = process.env.ELOHIM_STORE_URL?.trim();
@@ -148,17 +132,29 @@ export function withAffiliate(url: string): string {
   return affiliateLink(url).url;
 }
 
-/** The name to put on a "Shop at ..." button for this link. */
-export function retailerFor(url: string): string {
-  const host = hostOf(url);
-  if (!host) return 'the retailer';
+/** What the retailer name is worked out from: a catalogue product, or any part of one. */
+export type RetailerOf = Partial<Pick<CatalogueProduct, 'brand' | 'retailer' | 'source'>>;
+
+/**
+ * The name to put on a product's "Shop at ..." button: that product's own
+ * retailer (shared/retailer.ts has the rules), never a house name.
+ *
+ * The configured store's name (ELOHIM_STORE_NAME) is used only for a product
+ * that came from that store's sync (Shopify or WooCommerce, ELOHIM_STORE_URL)
+ * and whose link is on the store's own host - and only when a name is set.
+ * An import, a hand-kept list, or a store with no name configured is named by
+ * the link itself.
+ */
+export function retailerFor(url: string, product: RetailerOf = {}): string {
+  const name = process.env.ELOHIM_STORE_NAME?.trim();
   const shop = storeHost();
-  if (shop && onDomain(host, shop)) return process.env.ELOHIM_STORE_NAME?.trim() || 'Ese';
-  if (isAmazon(host)) return 'Amazon';
-  if (isEbay(host)) return 'eBay';
-  if (isGoogleShopping(host)) return 'Google Shopping';
-  const label = host.replace(/^www\./, '').split('.')[0] ?? host;
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  const synced = product.source === 'shopify' || product.source === 'woocommerce';
+  return retailerName({
+    url,
+    brand: product.brand ?? null,
+    retailer: product.retailer ?? null,
+    store: name && shop && synced ? { name, host: shop } : null,
+  });
 }
 
 /**

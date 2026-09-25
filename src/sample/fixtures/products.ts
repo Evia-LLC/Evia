@@ -12,9 +12,12 @@
  * which read as a bug on screen, so those two mistakes are not copied.
  *
  * Deliberate departures (BUILD-PLAN decision 11): no cart, so "Add to cart"
- * is "Shop at Ese ↗" - and in the preview the link is switched off (`url:
- * null`), because a sample price must never send anyone to a real retailer.
- * The retailer name is the app's own default shop name.
+ * is "Shop at {retailer} ↗", naming that product's own retailer exactly as a
+ * real product's button does - the brand's own site ("Shop at CeraVe") or a
+ * major beauty retailer ("Shop at Ulta Beauty"). The retailers are
+ * illustrative, like the prices, and in the preview the link is switched off
+ * (`url: null`), because a sample price must never send anyone to a real
+ * retailer.
  *
  * The mockup shows only the first product's panel. The other seven panels
  * are built from each card's own text: the description is the card's blurb,
@@ -42,9 +45,10 @@ import {
 } from '@/view/products.ts';
 import type { CatalogueCategory } from '@/lib/api.ts';
 
-const RETAILER = 'Ese';
-
-const shop: ShopLinkView = { label: `Shop at ${RETAILER}`, retailer: RETAILER, url: null, kind: 'product' };
+/** The sample product's own "Shop at ..." button, switched off in the preview (no URL). */
+function shopAt(retailer: string): ShopLinkView {
+  return { label: `Shop at ${retailer}`, retailer, url: null, kind: 'product' };
+}
 
 /** Five stars for a rating out of 5, to the nearest half: 4.7 is four and a half, 4.8 is five. */
 export function starsFor(rating: string): StarFill[] {
@@ -57,6 +61,8 @@ interface SampleSeed {
   badge: ProductCardView['badge'];
   brand: string;
   name: string;
+  /** Who sells it in the sample: the brand's own site or a major beauty retailer. */
+  retailer: string;
   blurb: string;
   rating: string;
   count: string;
@@ -79,6 +85,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Best Match', variant: 'match' },
     brand: 'CeraVe',
     name: 'Hydrating Facial Cleanser',
+    retailer: 'CeraVe',
     blurb: 'Gentle, non-foaming cleanser for normal to dry skin.',
     rating: '4.8',
     count: '12.4k',
@@ -92,6 +99,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Trending', variant: 'trending' },
     brand: 'Anua',
     name: 'Heartleaf 77% Toner',
+    retailer: 'YesStyle',
     blurb: 'Soothes and balances sensitive skin.',
     rating: '4.7',
     count: '8.1k',
@@ -109,6 +117,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Best Match', variant: 'match' },
     brand: 'The Ordinary',
     name: 'Niacinamide 10% + Zinc 1%',
+    retailer: 'Ulta Beauty',
     blurb: 'Helps with oil control, pores and uneven tone.',
     rating: '4.9',
     count: '18.2k',
@@ -126,6 +135,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Popular', variant: 'trending' },
     brand: 'La Roche-Posay',
     name: 'Toleriane Double Repair Moisturiser',
+    retailer: 'La Roche-Posay',
     blurb: 'Strengthens skin barrier and provides long-lasting hydration.',
     rating: '4.8',
     count: '10.6k',
@@ -143,6 +153,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Good for you', variant: 'match' },
     brand: 'Beauty of Joseon',
     name: 'Relief Sun SPF 50+',
+    retailer: 'Stylevana',
     blurb: 'Lightweight, no white cast. Perfect for daily use.',
     rating: '4.7',
     count: '9.3k',
@@ -160,6 +171,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'For concerns', variant: 'trending' },
     brand: 'Paula’s Choice',
     name: '2% BHA Liquid Exfoliant',
+    retailer: 'Paula’s Choice',
     blurb: 'Unclogs pores and helps prevent breakouts.',
     rating: '4.8',
     count: '11.7k',
@@ -177,6 +189,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Best Match', variant: 'match' },
     brand: 'La Roche-Posay',
     name: 'Effaclar Duo+',
+    retailer: 'Target',
     blurb: 'Targets blemishes and helps prevent marks.',
     rating: '4.6',
     count: '7.5k',
@@ -194,6 +207,7 @@ const SEEDS: SampleSeed[] = [
     badge: { label: 'Gentle option', variant: 'gentle' },
     brand: 'CeraVe',
     name: 'PM Facial Moisturising Lotion',
+    retailer: 'Amazon',
     blurb: 'Lightweight, oil-free hydration for nighttime.',
     rating: '4.8',
     count: '9.1k',
@@ -286,6 +300,7 @@ function galleryFor(seed: SampleSeed, index: number): GalleryItem[] {
 }
 
 function card(seed: SampleSeed, index: number): ProductCardView {
+  const shop = shopAt(seed.retailer);
   const rating: RatingView = { value: seed.rating, count: `(${seed.count})`, stars: starsFor(seed.rating) };
   const similar = SEEDS.filter((s) => s.category === seed.category && s.id !== seed.id).map((s) => `${s.brand} ${s.name}`);
   return {
