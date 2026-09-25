@@ -2,11 +2,14 @@
  * SAMPLE DATA - the Products mockup's own shelf (ref3.png), for sample mode
  * only. Every string, price and rating is copied from
  * work/evia-rebuild/specs/products.md sections 2.3-2.8, including the parts
- * nothing real produces: the star ratings and review counts (drawn exactly as
- * the mockup draws them, 4.9 with four stars and the panel's two), the
+ * nothing real produces: the star ratings and review counts, the
  * "Trending" / "Popular" / "Best Match" badges, the gallery and "In stock".
  * That is why it is sample data, and why it only ever shows under the Sample
  * data badge.
+ *
+ * The stars are drawn from each rating, to the nearest half star. The mockup
+ * drew some of them wrong (4.9 with four stars, the panel's 4.8 with two),
+ * which read as a bug on screen, so those two mistakes are not copied.
  *
  * Deliberate departures (BUILD-PLAN decision 11): no cart, so "Add to cart"
  * is "Shop at Ese ↗" - and in the preview the link is switched off (`url:
@@ -43,10 +46,11 @@ const RETAILER = 'Ese';
 
 const shop: ShopLinkView = { label: `Shop at ${RETAILER}`, retailer: RETAILER, url: null, kind: 'product' };
 
-/** Cards 1, 2, 4, 5, 6 and 8: four full stars and a half. */
-const HALF: StarFill[] = ['full', 'full', 'full', 'full', 'half'];
-/** Cards 3 (4.9) and 7 (4.6): four full stars and an empty one, as drawn. */
-const FOUR: StarFill[] = ['full', 'full', 'full', 'full', 'empty'];
+/** Five stars for a rating out of 5, to the nearest half: 4.7 is four and a half, 4.8 is five. */
+export function starsFor(rating: string): StarFill[] {
+  const halves = Math.round(Math.min(5, Math.max(0, Number(rating) || 0)) * 2);
+  return [0, 1, 2, 3, 4].map((i) => (halves >= 2 * i + 2 ? 'full' : halves === 2 * i + 1 ? 'half' : 'empty'));
+}
 
 interface SampleSeed {
   id: string;
@@ -56,7 +60,6 @@ interface SampleSeed {
   blurb: string;
   rating: string;
   count: string;
-  stars: StarFill[];
   price: string;
   bottle: BottleKind;
   category: CatalogueCategory;
@@ -79,7 +82,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Gentle, non-foaming cleanser for normal to dry skin.',
     rating: '4.8',
     count: '12.4k',
-    stars: HALF,
     price: '$14.99',
     bottle: 'cerave-cleanser',
     category: 'cleansers',
@@ -93,7 +95,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Soothes and balances sensitive skin.',
     rating: '4.7',
     count: '8.1k',
-    stars: HALF,
     price: '$18.00',
     bottle: 'anua-toner',
     category: 'toners',
@@ -111,7 +112,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Helps with oil control, pores and uneven tone.',
     rating: '4.9',
     count: '18.2k',
-    stars: FOUR,
     price: '$8.90',
     bottle: 'ordinary-serum',
     category: 'serums',
@@ -129,7 +129,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Strengthens skin barrier and provides long-lasting hydration.',
     rating: '4.8',
     count: '10.6k',
-    stars: HALF,
     price: '$19.99',
     bottle: 'lrp-cream',
     category: 'moisturisers',
@@ -147,7 +146,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Lightweight, no white cast. Perfect for daily use.',
     rating: '4.7',
     count: '9.3k',
-    stars: HALF,
     price: '$17.00',
     bottle: 'boj-sun',
     category: 'sunscreens',
@@ -165,7 +163,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Unclogs pores and helps prevent breakouts.',
     rating: '4.8',
     count: '11.7k',
-    stars: HALF,
     price: '$34.00',
     bottle: 'pc-bha',
     category: 'treatments',
@@ -183,7 +180,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Targets blemishes and helps prevent marks.',
     rating: '4.6',
     count: '7.5k',
-    stars: FOUR,
     price: '$22.00',
     bottle: 'lrp-duo',
     category: 'treatments',
@@ -201,7 +197,6 @@ const SEEDS: SampleSeed[] = [
     blurb: 'Lightweight, oil-free hydration for nighttime.',
     rating: '4.8',
     count: '9.1k',
-    stars: HALF,
     price: '$15.50',
     bottle: 'cerave-pm',
     category: 'moisturisers',
@@ -291,7 +286,7 @@ function galleryFor(seed: SampleSeed, index: number): GalleryItem[] {
 }
 
 function card(seed: SampleSeed, index: number): ProductCardView {
-  const rating: RatingView = { value: seed.rating, count: `(${seed.count})`, stars: seed.stars };
+  const rating: RatingView = { value: seed.rating, count: `(${seed.count})`, stars: starsFor(seed.rating) };
   const similar = SEEDS.filter((s) => s.category === seed.category && s.id !== seed.id).map((s) => `${s.brand} ${s.name}`);
   return {
     id: seed.id,
@@ -313,11 +308,7 @@ function card(seed: SampleSeed, index: number): ProductCardView {
       gallery: galleryFor(seed, index),
       brand: seed.brand,
       name: seed.name,
-      // The panel draws two stars for 4.8, exactly as the mockup does.
-      rating:
-        index === 0
-          ? { value: seed.rating, count: `(${seed.count} reviews)`, stars: ['full', 'full'] }
-          : { value: seed.rating, count: `(${seed.count} reviews)`, stars: seed.stars },
+      rating: { value: seed.rating, count: `(${seed.count} reviews)`, stars: starsFor(seed.rating) },
       price: seed.price,
       priceNote: null,
       stock: 'in',

@@ -76,21 +76,21 @@ void main() {
   vec3 L = normalize(vec3(-0.35, 0.55, 0.78));
   vec4 feat = texture2D(uFeatures, vUv);
 
-  // Skin: a warm mauve, softly lit (forehead about #a48792, nose about #907a87),
-  // with a light wrap so surfaces facing down (under the nose, the jaw) stay mauve
-  // instead of dropping to navy.
+  // Skin: a cool lavender light rather than a skin tone, softly lit, with a
+  // light wrap so surfaces facing down (under the nose, the jaw) stay lavender
+  // instead of dropping to navy. The features (brows, eyes, lips) are only
+  // hinted, so it reads as a projection of a face, not a portrait.
   float wrap = clamp((dot(N, L) + 0.45) / 1.45, 0.0, 1.0);
-  vec3 shade = vec3(0.45, 0.35, 0.42);
-  vec3 skin = vec3(0.86, 0.70, 0.74);
+  vec3 shade = vec3(0.30, 0.31, 0.52);
+  vec3 skin = vec3(0.80, 0.77, 0.94);
   vec3 col = mix(shade, skin, pow(wrap, 1.2));
-  col *= 1.0 - 0.28 * vCavity;
-  col = mix(col, vec3(0.66, 0.42, 0.52) * (0.6 + 0.5 * wrap), feat.r * 0.7);
-  col = mix(col, vec3(0.26, 0.20, 0.27), feat.g * 0.6);
-  col = mix(col, vec3(0.20, 0.16, 0.22), clamp(vEye * 1.6, 0.0, 1.0) * 0.85);
-  col = mix(col, vec3(0.22, 0.13, 0.19), clamp(vMouth * 1.6, 0.0, 1.0));
-  // Blue-violet overlay (multiply #8fa6e8, lightly) and a small screen lift.
-  col = mix(col, col * vec3(0.56, 0.65, 0.91), 0.16);
-  col = 1.0 - (1.0 - col) * (1.0 - 0.12 * vec3(0.62, 0.70, 0.95));
+  col *= 1.0 - 0.22 * vCavity;
+  col = mix(col, vec3(0.62, 0.52, 0.76) * (0.6 + 0.5 * wrap), feat.r * 0.5);
+  col = mix(col, vec3(0.34, 0.32, 0.52), feat.g * 0.45);
+  col = mix(col, vec3(0.30, 0.30, 0.50), clamp(vEye * 1.6, 0.0, 1.0) * 0.55);
+  col = mix(col, vec3(0.46, 0.38, 0.62), clamp(vMouth * 1.6, 0.0, 1.0) * 0.6);
+  // A small screen lift toward periwinkle.
+  col = 1.0 - (1.0 - col) * (1.0 - 0.14 * vec3(0.62, 0.72, 0.98));
   vec3 H = normalize(L + V);
   col += pow(max(dot(N, H), 0.0), 36.0) * 0.18 * vec3(0.95, 0.9, 1.0);
 
@@ -111,7 +111,7 @@ void main() {
   float fr = pow(1.0 - ndv, 2.0);
   vec3 rim = mix(vec3(0.42, 0.58, 0.95), vec3(0.80, 0.95, 1.0), fr * fr);
   // Strongest on the silhouette; inner slopes (the nose) keep only a trace of it.
-  vec3 emit = rim * fr * 0.9 * mix(1.0, 0.35, smoothstep(0.5, 1.0, vEdge));
+  vec3 emit = rim * fr * 1.3 * mix(1.0, 0.4, smoothstep(0.5, 1.0, vEdge));
 
   // Scan band: a soft band with a brighter (but not razor-thin) core, sweeping down.
   float dy = vWorld.y - uScanY;
@@ -126,8 +126,12 @@ void main() {
   float upper = smoothstep(0.2, 0.6, e.y);
   float top = (1.0 - upper * smoothstep(0.8, 1.02, length(e))) * (1.0 - smoothstep(uTopY - uFaceH * 0.03, uTopY, vWorld.y));
   float topNarrow = 1.0 - smoothstep(uTopY - uFaceH * 0.04, uTopY, vWorld.y);
-  float edge = smoothstep(0.0, 0.3, vEdge);
-  float alpha = mix(0.78, 0.95, ndv) * edge * top * uPresence;
+  // Over the brows and forehead the edge fades over two rings of the mesh, not
+  // one: where the outline dips above the eyes it melts into the head's glow
+  // instead of leaving a hard dark notch.
+  float edge = smoothstep(0.0, mix(0.3, 1.0, upper), vEdge);
+  // See-through toward the silhouette, denser where it faces the viewer.
+  float alpha = mix(0.6, 0.88, ndv) * edge * top * uPresence;
   vec3 glow = emit * top * top + zoneLight * topNarrow;
   vec3 rgb = col * alpha + glow * edge * uPresence;
   gl_FragColor = vec4(rgb, max(alpha, max(rgb.r, max(rgb.g, rgb.b))));
@@ -166,7 +170,7 @@ void main() {
   float top = mix(1.0 - smoothstep(uTopY - uFaceH * 0.12, uTopY, wp.y), 1.0 - smoothstep(uTopY - uFaceH * 0.04, uTopY, wp.y), zone);
   float lit = clamp(dot(n, normalize(vec3(-0.35, 0.55, 0.78))) * 0.9 + 0.2, 0.0, 1.0);
   // 30-45% outside zones, about 80% inside them.
-  float a = mix(0.3 + 0.15 * lit, 0.8, zone) * mix(1.0, 0.8 + 0.2 * uBreath, zone);
+  float a = mix(0.4 + 0.18 * lit, 0.8, zone) * mix(1.0, 0.8 + 0.2 * uBreath, zone);
   a = (a + act * 0.15) * twinkle + band * 0.45;
   a *= smoothstep(0.02, 0.4, aEdge) * smoothstep(0.02, 0.3, ndv) * mix(0.15, 1.0, top) * uPresence;
   vAlpha = a;
@@ -426,7 +430,7 @@ void main() {
   vec3 V = normalize(cameraPosition - vWorld);
   float ndv = abs(dot(N, V));
   float body = smoothstep(0.0, 0.05, vS) * vSide;
-  // Pure light, and hardly any: no fill at all, only a hairline on the outline
+  // Pure light, and hardly any: no fill over the crown, only a hairline on the outline
   // that fades out toward the crown and is broken into soft lengths, so it reads
   // as the edge of a hologram (with the particles and arcs) rather than a cap
   // over the head. A short breath of the skin's light rises off the forehead.
@@ -436,7 +440,9 @@ void main() {
   float breaks = 0.35 + 0.65 * smoothstep(0.25, 0.75, 0.5 + 0.5 * sin(vWorld.x * 0.09 + vWorld.y * 0.05 + 1.3 * sin(vWorld.y * 0.03)));
   vec3 fill = vec3(0.0);
   vec3 rim = mix(vec3(0.42, 0.58, 0.95), vec3(0.80, 0.95, 1.0), edge) * edge * 0.3 * fade * breaks;
-  vec3 scatter = vec3(0.52, 0.44, 0.58) * exp(-vS * 18.0) * 0.08;
+  // Just above the face's edge a soft cool light carries the face's glow up a
+  // little way (it fills the dips above the brows, then fades well before the crown).
+  vec3 scatter = vec3(0.40, 0.52, 0.92) * exp(-vS * 7.0) * 0.2 * (0.5 + 0.5 * ndv);
   gl_FragColor = light((fill + rim + scatter) * body * uPresence);
 }
 `;

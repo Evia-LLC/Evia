@@ -7,10 +7,13 @@
   "cannot be undone" step, and it cannot be submitted twice. The notice text
   is the centralised placeholder legal copy, marked as such in development.
   A guest has no account, so both actions are off and the page says why.
+  With sample data on, a signed-in account is set aside (BUILD-PLAN 3.1):
+  both actions are off too, and the note offers the way back to it.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
+  import { sample } from '@/sample/mode.svelte.ts';
   import { deleteAccount, downloadDataExport } from '@/state/controller.ts';
   import { ACCOUNT_DELETION_NOTICE_PLACEHOLDER, DATA_EXPORT_NOTICE_PLACEHOLDER } from '@/legal/content.ts';
   import Card from '@/ui/Card.svelte';
@@ -19,6 +22,7 @@
   import Pill from '@/ui/Pill.svelte';
   import PageFrame from './frame/PageFrame.svelte';
   import TextField from './frame/TextField.svelte';
+  import SampleAccountNote from './frame/SampleAccountNote.svelte';
 
   let typed = $state('');
   let secondConfirmation = $state(false);
@@ -26,6 +30,14 @@
   let deletionError = $state<string | null>(null);
   const phrase = 'DELETE';
   const typedCorrectly = $derived(typed.trim() === phrase);
+  /** No account to act on: a guest, or an account set aside for sample data. */
+  const unavailable = $derived(session.guest || sample.on);
+  // Sample data turned on mid-way: the half-finished deletion is dropped.
+  $effect(() => {
+    if (!unavailable) return;
+    typed = '';
+    secondConfirmation = false;
+  });
 
   /*
    * Each step removes the button that was just pressed, so focus is placed
@@ -37,7 +49,7 @@
   let continueButton = $state<HTMLButtonElement | null>(null);
 
   async function continueDeletion() {
-    if (!typedCorrectly || deleting) return;
+    if (!typedCorrectly || deleting || unavailable) return;
     secondConfirmation = true;
     await tick();
     finalStep?.querySelector<HTMLElement>('.go-back')?.focus();
@@ -50,7 +62,7 @@
   }
 
   async function removeAccount() {
-    if (!typedCorrectly || !secondConfirmation || deleting) return;
+    if (!typedCorrectly || !secondConfirmation || deleting || unavailable) return;
     deleting = true;
     deletionError = null;
     try {
@@ -73,6 +85,8 @@
       You are looking around without an account, so nothing is stored to download or delete. Both actions work once
       you sign in.
     </p>
+  {:else if sample.on}
+    <SampleAccountNote action="download or delete your account's data" />
   {/if}
 
   <div class="rights">
@@ -87,7 +101,7 @@
           variant="primary"
           iconStart="arrow-up-right"
           onclick={downloadDataExport}
-          disabled={session.guest || session.dataExport.status === 'exporting'}
+          disabled={unavailable || session.dataExport.status === 'exporting'}
         >
           {session.dataExport.status === 'exporting' ? 'Preparing export…' : 'Download JSON export'}
         </Button>
@@ -115,7 +129,7 @@
         bind:value={typed}
         autocomplete="off"
         size="short"
-        disabled={deleting || secondConfirmation || session.guest}
+        disabled={deleting || secondConfirmation || unavailable}
       />
 
       {#if secondConfirmation}
@@ -123,7 +137,7 @@
           <strong class="final__title">Final confirmation</strong>
           <p class="final__text">This cannot be undone. Delete the account and all attached data now?</p>
           <div class="actions">
-            <button class="danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly}>
+            <button class="danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly || unavailable}>
               {deleting ? 'Deleting account…' : 'Permanently delete my account'}
             </button>
             <Button variant="secondary" class="go-back" onclick={stepBack} disabled={deleting}>Go back</Button>
@@ -136,7 +150,7 @@
             type="button"
             bind:this={continueButton}
             onclick={continueDeletion}
-            disabled={!typedCorrectly || deleting || session.guest}
+            disabled={!typedCorrectly || deleting || unavailable}
           >
             Continue
           </button>

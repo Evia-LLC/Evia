@@ -99,9 +99,14 @@
     height: 100%;
   }
 
+  /* The mockup's near-square art box, capped on wide cards (1920) so the
+     first row's prices and shop links stay above the fold. */
   .pcard__media {
     position: relative;
+    /* A definite width: with only aspect-ratio, the height cap would narrow the box too. */
+    width: 100%;
     aspect-ratio: 166 / 170;
+    max-height: 232px;
     background: linear-gradient(180deg, var(--blush-50) 0%, var(--blush-100) 100%);
   }
   .pcard__media.is-selected {
@@ -194,19 +199,25 @@
     line-height: 1.4;
     color: var(--text-secondary);
     display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  /* Stars, value and count stay on one line; on a very slim card the whole
+     "4.8 (12.4k)" moves under the stars rather than splitting. */
   .pcard__rating {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 2px 6px;
     margin: 6px 0 0;
     font-size: var(--fs-meta);
     line-height: 1.2;
     color: var(--text-muted);
+  }
+  .pcard__rating > span[aria-hidden] {
+    white-space: nowrap;
   }
   .pcard__foot {
     display: flex;

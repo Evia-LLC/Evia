@@ -419,7 +419,7 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
 
   // Halo behind the head (a cheap bloom) and the neck column: one quad each, placed per face.
   const unitQuad = own(new THREE.PlaneGeometry(2, 2));
-  const haloU = { ...U, uHalf: { value: new THREE.Vector2(1, 1) }, uColor: { value: rgb(0x2f4a9a) }, uGain: { value: 0.3 }, uFade: U.uPresence };
+  const haloU = { ...U, uHalf: { value: new THREE.Vector2(1, 1) }, uColor: { value: rgb(0x3a58b0) }, uGain: { value: 0.42 }, uFade: U.uPresence };
   const haloMat = own(additive(new THREE.ShaderMaterial({ vertexShader: S.QUAD_VERT, fragmentShader: S.GLOW_FRAG, uniforms: haloU })));
   haloMat.depthTest = false;
   const halo = new THREE.Mesh(unitQuad, haloMat);
@@ -694,6 +694,15 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       // head read as a swim cap, and the hologram is a face, not a helmet.
       const meridians = Array.from({ length: 5 }, (_, m) => ({ u: (m + 0.5) / 5 + (rnd() - 0.5) * 0.06, w0: 0.1 + rnd() * 0.25, w1: 0.55 + rnd() * 0.35 }));
       for (const m of meridians) arc(m.u, m.u, m.w0, m.w1, 2, 0.13);
+      // A wireframe of hair (ref4): fine strands from the hairline sweeping back over
+      // the crown, leaning toward the middle, so the head reads as a hologram of a
+      // head rather than a bald shell. Lines of light only; nothing measured.
+      const strands = 30;
+      for (let h = 0; h < strands; h++) {
+        const u = 0.03 + (0.94 * (h + 0.2 + rnd() * 0.6)) / strands;
+        const lean = (0.5 - u) * (0.18 + rnd() * 0.14);
+        arc(u, u + lean, 0.02 + rnd() * 0.1, 0.72 + rnd() * 0.28, 1 + rnd() * 3, 0.2 + rnd() * 0.16);
+      }
       for (const m of meridians) if (rnd() < 0.7) node(m.u, m.w0 + (m.w1 - m.w0) * (0.3 + rnd() * 0.5));
       // A few arcs floating 10-35 px out from the shell, around its outline.
       for (let a = 0; a < 8; a++) {

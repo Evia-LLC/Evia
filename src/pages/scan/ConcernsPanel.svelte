@@ -89,6 +89,8 @@
     align-items: center;
     gap: 10px;
     min-height: var(--row-h, 34px);
+    /* A row that does wrap (a narrow panel) keeps clear of its neighbours. */
+    padding-block: 3px;
     animation: concerns-in 360ms var(--ease-out) both;
     animation-delay: calc(1.5s + var(--i) * 60ms);
   }

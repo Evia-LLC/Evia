@@ -1,11 +1,12 @@
 <!--
   The consult room behind the Scan page, full-bleed.
 
-  Underneath is always Room's CSS stand-in for the consult room (navy window,
-  rose-gold coves), so the page reads as the room from the first frame and if
-  the render fails. Over it, once `/env/consult/anchors.json` answers, the
-  Blender plate - placed by the page (consult-plate.ts explains why Room does
-  not place it yet):
+  The room is a `Room` like every other: it loads the Blender render the one
+  way rooms load (loadAnchors, via consult-plate.ts), shows its CSS stand-in
+  (navy window, rose-gold coves) from the first frame and until the render has
+  decoded, then fades the render in over it with its LED boost layer
+  breathing. What this component adds is where the render goes (`rect`),
+  because the Scan page composes on a stage rather than on the box:
 
   desk    the plate's `refFrame` lines up with the ref4 design stage, so the
           pedestal sits under the tray and the wall, book and pedestal text
@@ -23,7 +24,7 @@
 -->
 <script lang="ts">
   import Room from '@/stage/Room.svelte';
-  import { quadMatrix, type Point, type Quad } from '@/stage/room-anchors.ts';
+  import { quadMatrix, type Point, type Quad, type RoomStatus } from '@/stage/room-anchors.ts';
   import {
     loadConsultPlate,
     pinPlate,
@@ -55,8 +56,10 @@
   const { box, stage, pinAt = [0.5, 0.5], withText = false, engraveLeft = true, withBooks = true }: Props = $props();
 
   let plate = $state.raw<ConsultPlate | null>(null);
-  let failed = $state(false);
-  let loaded = $state(false);
+  /* Which render `plate` is (a missing portrait set falls back to the landscape one). */
+  let plateKind = $state<PlateKind>('desk');
+  /* Room's own report: the render is on screen once it has decoded. */
+  let status = $state<RoomStatus>('loading');
 
   /** The phone-portrait render for narrow portrait boxes; the landscape one otherwise. */
   const kind = $derived<PlateKind>(!stage && box.w > 0 && box.w / Math.max(1, box.h) < 0.7 ? 'mobile' : 'desk');
@@ -68,11 +71,8 @@
       // A missing or malformed portrait set falls back to the landscape render.
       const next = p ?? (want === 'mobile' ? await loadConsultPlate('desk') : null);
       if (!live) return;
-      if (next !== plate) {
-        loaded = false;
-        failed = false;
-      }
       plate = next;
+      plateKind = p ? want : 'desk';
     });
     return () => {
       live = false;
@@ -86,11 +86,7 @@
     return pinPlate(plate, box, emitter, pinAt);
   });
 
-  const showPlate = $derived(!!plate && !!rect && !failed);
-
-  const srcset = $derived(plate ? plate.base.map((f) => `${f.src} ${f.w}w`).join(', ') : '');
-  const neonSet = $derived(plate ? plate.neon.map((f) => `${f.src} ${f.w}w`).join(', ') : '');
-  const fallbackSrc = $derived(plate ? plate.base[plate.base.length - 1].src : '');
+  const showPlate = $derived(!!plate && !!rect && status === 'plate');
 
   /* ---- surfaces: text warped onto the plate's quads ------------------------ */
 
@@ -185,9 +181,14 @@
     const centre = (q?: Quad) => (q ? (q[0][0] + q[1][0]) / 2 : 0.5);
     // Ref px to plate px, for sizes: the ref frame is refFrame.w of the plate's width.
     const k = (plate.w * (plate.refFrame?.w ?? 1)) / 1672;
+    /* Centred text runs half its length either side of its offset; a textPath
+       drops the glyphs that fall before the path starts (the "Y" of "Your"),
+       so the offset is kept at least half the line's length (about 0.5em a
+       character, and a little spare) along the band. */
+    const halfLine = (('Your skin. Understood.'.length * 0.5 * 21 * k) / 2 / total) * 100 + 1.5;
     return {
       d,
-      left: at(centre(plate.surfaces.pedestal_text_left?.quad)),
+      left: Math.max(halfLine, at(centre(plate.surfaces.pedestal_text_left?.quad))),
       right: at(centre(plate.surfaces.pedestal_text_right?.quad)),
       sans: 21 * k,
       serif: 42 * k,
@@ -196,7 +197,7 @@
 </script>
 
 <div class="backdrop" aria-hidden="true">
-  <Room room="consult" layout="fill" />
+  <Room room="consult" layout="fill" variant={plateKind} {rect} onstatus={(next) => (status = next)} />
 
   {#if !showPlate && stage}
     <!-- The stand-in's pedestal: glass top and copper band, where the render puts them. -->
@@ -209,31 +210,7 @@
     ></div>
   {/if}
 
-  {#if plate && rect && !failed}
-    <div
-      class="backdrop__plate"
-      class:is-loaded={loaded}
-      style:left="{rect.x}px"
-      style:top="{rect.y}px"
-      style:width="{rect.w}px"
-      style:height="{rect.h}px"
-    >
-      <img
-        src={fallbackSrc}
-        {srcset}
-        sizes="{Math.ceil(rect.w)}px"
-        alt=""
-        decoding="async"
-        fetchpriority="high"
-        draggable="false"
-        onload={() => (loaded = true)}
-        onerror={() => (failed = true)}
-      />
-      {#if neonSet}
-        <img class="backdrop__neon" srcset={neonSet} sizes="{Math.ceil(rect.w)}px" alt="" decoding="async" draggable="false" />
-      {/if}
-    </div>
-
+  {#if plate && rect && showPlate}
     {#if withText}
       {#if warps.wall_left_text}
         {@const w = warps.wall_left_text}
@@ -306,41 +283,6 @@
     pointer-events: none;
     background: var(--navy-900);
   }
-  .backdrop__plate {
-    position: absolute;
-    opacity: 0;
-    transition: opacity 600ms var(--ease-out);
-  }
-  .backdrop__plate.is-loaded {
-    opacity: 1;
-  }
-  .backdrop__plate img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    user-select: none;
-  }
-  /* The LEDs breathe a little (the render's own boost layer, plus-lighter). */
-  .backdrop__neon {
-    mix-blend-mode: plus-lighter;
-    opacity: 0;
-    animation: neon-breathe 8s var(--ease-in-out) infinite alternate;
-  }
-  @supports not (mix-blend-mode: plus-lighter) {
-    .backdrop__neon {
-      mix-blend-mode: screen;
-    }
-  }
-  @keyframes neon-breathe {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 0.3;
-    }
-  }
-
   .backdrop__pedestal {
     position: absolute;
     border-radius: 50% / 34%;
@@ -367,11 +309,13 @@
     font-family: var(--font-sans);
     user-select: none;
   }
+  /* Lit wall lettering, a step lighter than the plaster (ref4's walls): it is
+     decoration, but it should still read as words, not as a stain. */
   .surface--wall-left {
     align-items: center;
     justify-content: center;
     gap: 2px;
-    color: #a88480;
+    color: #cfa59c;
   }
   .surface__logo {
     font-family: var(--font-serif);
@@ -391,7 +335,7 @@
   .surface--wall-right {
     justify-content: flex-start;
     padding-top: 4%;
-    color: #b38b86;
+    color: #e3bcb2;
   }
   .surface__big {
     font-weight: 300;
@@ -406,7 +350,7 @@
     line-height: 1.95;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: #a98380;
+    color: #d6aca3;
   }
   .surface--book {
     justify-content: center;
@@ -422,11 +366,16 @@
     position: absolute;
     overflow: visible;
   }
+  /* Engraved: a pale fill with a thin dark edge, so it reads on the band's
+     bright reflection as well as on its shadowed copper. */
   .surface-band__sans {
     font-family: var(--font-sans);
     font-weight: 300;
     letter-spacing: 0.02em;
-    fill: #8f716b;
+    fill: #d9b3a8;
+    stroke: rgba(72, 38, 30, 0.45);
+    stroke-width: 1.4px;
+    paint-order: stroke;
   }
   .surface-band__serif {
     font-family: var(--font-serif);
@@ -434,15 +383,4 @@
     fill: #a07268;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .backdrop__neon {
-      animation: none;
-    }
-    .backdrop__plate {
-      transition: none;
-    }
-  }
-  :global([data-reduced-motion='true']) .backdrop__neon {
-    animation: none;
-  }
 </style>

@@ -9,7 +9,7 @@ export interface LegalContentEntry {
 export const DATA_EXPORT_NOTICE_PLACEHOLDER: LegalContentEntry = {
   id: 'data-export-notice-placeholder-v0',
   placeholder: true,
-  text: 'Your download contains the account data currently held by Elohim. Stored photo files are not included in this JSON export.',
+  text: 'Your download contains the account data currently held by Evia. Stored photo files are not included in this JSON export.',
 };
 
 export const ACCOUNT_DELETION_NOTICE_PLACEHOLDER: LegalContentEntry = {

@@ -91,6 +91,8 @@
   let anchors = $state.raw<HologramAnchors | null>(null);
   let ports = $state.raw<Record<string, { x: number; y: number }>>({});
   let holoAt = $state.raw({ x: 0, y: 0 });
+  /** Phone: the sheet's top edge, where the leader stops (it never crosses the sheet's text). */
+  let sheetTop = $state<number | null>(null);
   let webgl = $state(true);
 
   function measure() {
@@ -110,6 +112,8 @@
       next[el.dataset.slot] = { x: x - r.left, y: y - r.top };
     }
     ports = next;
+    const sheet = layout === 'phone' ? root.querySelector<HTMLElement>('.sheet') : null;
+    sheetTop = sheet ? sheet.getBoundingClientRect().top - r.top : null;
   }
 
   onMount(() => {
@@ -133,6 +137,9 @@
     void step;
     void sheetOpen;
     void tick().then(measure);
+    // Again once the sheet has finished sliding.
+    const t = setTimeout(measure, 450);
+    return () => clearTimeout(t);
   });
 
   const leaders = $derived.by((): Leader[] => {
@@ -143,7 +150,15 @@
       const a = anchors[c.anchor];
       const p = ports[c.slot];
       if (!a?.visible || !p) continue;
-      out.push({ id: c.slot, ax: holoAt.x + a.x, ay: holoAt.y + a.y, px: p.x, py: p.y, active: activeSlot === c.slot });
+      const ax = holoAt.x + a.x, ay = holoAt.y + a.y;
+      if (sheetTop !== null) {
+        // Phone: the line runs from the face down to a port on the sheet's rim,
+        // above the region's title; not at all while the sheet is pulled up over the face.
+        if (sheetOpen || ay > sheetTop - 12) continue;
+        out.push({ id: c.slot, ax, ay, px: p.x, py: sheetTop, active: activeSlot === c.slot });
+        continue;
+      }
+      out.push({ id: c.slot, ax, ay, px: p.x, py: p.y, active: activeSlot === c.slot });
     }
     return out;
   });
@@ -470,9 +485,11 @@
     --callout-gap: 6px;
   }
 
+  /* 14px nearer the edge than ref4's column, so the concerns panel (wider than
+     the mockup's, below) still clears the right callouts. */
   .panels {
     position: absolute;
-    right: calc(160px * var(--u));
+    right: calc(146px * var(--u));
     top: calc(40px * var(--u));
     display: flex;
     flex-direction: column;
@@ -482,8 +499,11 @@
   .panels :global(.skinmap) {
     width: max(292px, calc(318px * var(--u)));
   }
+  /* Wide enough that "Texture Irregularity" and "Redness / Sensitivity" stay
+     on one line beside their severity at the readable type (ref4's rows are
+     single lines); still narrower than the SKIN MAP card above. */
   .panels :global(.concerns) {
-    width: max(250px, calc(236px * var(--u)));
+    width: max(288px, calc(270px * var(--u)));
   }
   .is-compact .panels {
     right: 10px;
@@ -511,7 +531,10 @@
   [data-layout='desk'] .tray {
     padding: calc(11px * var(--u)) calc(10px * var(--u)) calc(10px * var(--u));
     border-radius: 14px calc(26px * var(--u)) 14px 14px;
-    background: linear-gradient(180deg, rgba(20, 27, 44, 0.66), rgba(14, 20, 34, 0.55));
+    /* Glass, not a box: the pedestal's light shows through the tray and the
+       cards (ref4), while the two layers together stay dark enough under the
+       light card text (about 0.75 of navy over the brightest ring). */
+    background: linear-gradient(180deg, rgba(44, 58, 92, 0.32), rgba(24, 32, 54, 0.28));
     box-shadow:
       inset 0 0 0 1px rgba(120, 150, 200, 0.3),
       inset 0 -2px 0 rgba(64, 85, 121, 0.9),
@@ -522,6 +545,7 @@
     animation-delay: 1.6s;
   }
   [data-layout='desk'] .tray :global(.mcard) {
+    --scan-card: linear-gradient(180deg, rgba(36, 47, 76, 0.62), rgba(20, 27, 46, 0.68));
     --card-pad: calc(10px * var(--u)) calc(10px * var(--u)) calc(11px * var(--u)) calc(10px * var(--u));
     --card-gap: calc(10px * var(--u));
     /* The mockup's card titles are small caps-height labels: 12 px keeps "BARRIER
@@ -607,6 +631,17 @@
     align-self: stretch;
     min-height: 380px;
     margin: -40px -30px 0;
+  }
+  /* A phone on its side: the window is shorter than the callouts' column, so
+     the head gets the column's full height and the page scrolls (the pedestal
+     sits below the fold, ScanPage's pinAt). */
+  @media (max-height: 519px) {
+    .t-hero {
+      min-height: 460px;
+    }
+    .t-holo {
+      margin-top: 0;
+    }
   }
   .t-holo .holo {
     width: 100%;

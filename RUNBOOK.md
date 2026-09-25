@@ -54,7 +54,7 @@ Two rules learned setting it up:
   host and the string is otherwise unchanged.
 - **Never put the production `DATABASE_URL` in the local `.env`.** Outside a
   deployment `server/lib/env.ts` turns `DEMO_MODE` on, and the launcher would seed
-  `demo@elohim.local` into the live database on its first start. PGlite stays the
+  `demo@evia.local` into the live database on its first start. PGlite stays the
   local database.
 
 **Voice — done.** The clone exists in the ElevenLabs workspace as "Elohim's voice",

@@ -104,9 +104,19 @@
   const consulting = $derived(view.phase === 'consultation');
   const capturing = $derived(view.mode === 'real' && (view.phase === 'capture' || view.phase === 'reading'));
 
-  /* Where the pedestal's emitter goes in the portrait compositions. */
+  /*
+   * Where the pedestal's emitter goes in the portrait compositions. A short
+   * window on the tablet composition (a phone on its side) scrolls a head
+   * taller than the window: the pedestal sits below the fold there, so its
+   * ring never cuts across the face at rest.
+   */
+  const shortTablet = $derived(layout === 'tablet' && height < 520);
   const pinAt = $derived<[number, number]>(
-    layout === 'phone' ? [0.5, consulting ? 0.5 : 0.62] : [0.5, consulting ? 0.62 : 0.7],
+    layout === 'phone'
+      ? [0.5, consulting ? 0.5 : 0.62]
+      : shortTablet
+        ? [0.5, consulting ? 1.25 : 0.95]
+        : [0.5, consulting ? 0.62 : 0.7],
   );
 
   onMount(() => {
@@ -382,8 +392,10 @@
     z-index: 3;
     display: flex;
     justify-content: center;
-    padding: 28px 16px calc(12px + var(--safe-b));
-    background: linear-gradient(180deg, rgba(8, 13, 24, 0), rgba(8, 13, 24, 0.9) 55%);
+    padding: 30px 16px calc(12px + var(--safe-b));
+    /* Solid from just above the disclosure's own line: whatever has scrolled
+       under it is hidden, never drawn faintly behind its words. */
+    background: linear-gradient(180deg, rgba(8, 13, 24, 0), rgba(8, 13, 24, 0.95) 24px, rgba(8, 13, 24, 0.97));
     pointer-events: none;
   }
   .scan__aibar > :global(*) {

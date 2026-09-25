@@ -1,14 +1,23 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FALLBACK_ANCHORS,
   applyQuad,
   coverFit,
+  hasRender,
   loadAnchors,
   parseAnchors,
+  plateSrcset,
   quadMatrix,
+  refFit,
   toPx,
   type Quad,
+  type RoomId,
+  type RoomVariant,
 } from '../src/stage/room-anchors.ts';
+import { PUBLISHED_ROOMS } from '../src/stage/env-rooms.ts';
+
+const published = (file: string): unknown => JSON.parse(readFileSync(new URL(`../public/env/${file}`, import.meta.url), 'utf8'));
 
 /*
  * The room plates are cropped by object-fit: cover, and wall text is bent onto
@@ -85,6 +94,14 @@ describe('parseAnchors', () => {
     expect(Object.keys(parsed?.surfaces ?? {})).toEqual(['niche_text']);
   });
 
+  it('refuses plate paths that leave /env', () => {
+    const parsed = parseAnchors({
+      frame: { w: 10, h: 10 },
+      plates: [{ src: '/env/lounge/a-10.webp' }, { src: '/secret.webp' }, { src: 'https://x.test/a.webp' }],
+    });
+    expect(parsed?.plates?.map((p) => p.src)).toEqual(['/env/lounge/a-10.webp']);
+  });
+
   it('rejects a file without a frame (or the dev server answering with HTML)', () => {
     expect(parseAnchors({})).toBeNull();
     expect(parseAnchors('<!doctype html>')).toBeNull();
@@ -106,7 +123,8 @@ describe('loadAnchors', () => {
   it('does not ask the server about a room without a published render', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
-    expect(await loadAnchors('consult', [])).toBeNull();
+    expect(await loadAnchors('consult', 'desk', {})).toBeNull();
+    expect(await loadAnchors('products-hero', 'mobile', { 'products-hero': ['desk'] })).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -117,8 +135,117 @@ describe('loadAnchors', () => {
       json: async () => ({ frame: { w: 1600, h: 900 } }),
     }));
     vi.stubGlobal('fetch', fetch);
-    const anchors = await loadAnchors('products-hero', ['products-hero']);
+    const anchors = await loadAnchors('products-hero', 'desk', { 'products-hero': ['desk'] });
     expect(fetch).toHaveBeenCalledWith('/env/products-hero/anchors.json', expect.anything());
     expect(anchors?.frame).toEqual({ w: 1600, h: 900, focus: undefined });
+  });
+
+  it('asks for the phone-portrait render by its own file', async () => {
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ frame: { w: 1080, h: 2340 } }),
+    }));
+    vi.stubGlobal('fetch', fetch);
+    const anchors = await loadAnchors('lounge', 'mobile', { lounge: ['desk', 'mobile'] });
+    expect(fetch).toHaveBeenCalledWith('/env/lounge/anchors-mobile.json', expect.anything());
+    expect(anchors?.frame.h).toBe(2340);
+  });
+});
+
+describe('refFit', () => {
+  // The products hero: ref3's 1062x311 frame sits at 8.4 % .. 91.6 % of a 2552x748 plate.
+  const ref = { x: 0.08386, y: 0.08422, w: 0.83229, h: 0.83155 };
+
+  it("draws the mockup's framing exactly over a box of its own shape", () => {
+    const fit = refFit(2552, 748, ref, 1062, 311);
+    expect(toPx(fit, [ref.x, ref.y])[0]).toBeCloseTo(0, 1);
+    expect(toPx(fit, [ref.x, ref.y])[1]).toBeCloseTo(0, 1);
+    expect(toPx(fit, [ref.x + ref.w, ref.y + ref.h])[0]).toBeCloseTo(1062, 1);
+    expect(toPx(fit, [ref.x + ref.w, ref.y + ref.h])[1]).toBeCloseTo(311, 1);
+    // Plain cover shows the whole margin, so the room reads ~17 % smaller.
+    expect(coverFit(2552, 748, 1062, 311).w / fit.w).toBeCloseTo(0.83, 1);
+  });
+
+  it('crops the framing at the focus in a narrower box and always covers it', () => {
+    for (const [w, h] of [
+      [700, 311],
+      [358, 260],
+      [1400, 400],
+    ]) {
+      const fit = refFit(2552, 748, ref, w, h, [0.62, 0.5]);
+      expect(fit.x).toBeLessThanOrEqual(0.001);
+      expect(fit.y).toBeLessThanOrEqual(0.001);
+      expect(fit.x + fit.w).toBeGreaterThanOrEqual(w - 0.001);
+      expect(fit.y + fit.h).toBeGreaterThanOrEqual(h - 0.001);
+    }
+  });
+
+  it('is plain cover without a framing', () => {
+    expect(refFit(1600, 900, null, 400, 400)).toEqual(coverFit(1600, 900, 400, 400));
+  });
+});
+
+describe('the published renders (public/env), read the one way every room loads', () => {
+  const files: Record<RoomId, Partial<Record<RoomVariant, string>>> = {
+    lounge: { desk: 'lounge/anchors.json', mobile: 'lounge/anchors-mobile.json' },
+    consult: { desk: 'consult/anchors.json', mobile: 'consult/anchors-mobile.json' },
+    'lounge-strip-window': { desk: 'lounge-strip-window/anchors.json' },
+    'lounge-strip-interior': {},
+    'products-hero': { desk: 'products-hero/anchors.json' },
+  };
+
+  it('parses every render env-rooms.ts lists, whichever format the Blender job wrote', () => {
+    for (const [room, variants] of Object.entries(PUBLISHED_ROOMS) as [RoomId, RoomVariant[]][]) {
+      for (const variant of variants) {
+        const file = files[room][variant];
+        expect(file, `${room} ${variant}`).toBeTruthy();
+        const anchors = parseAnchors(published(file!));
+        expect(anchors, file).not.toBeNull();
+        expect(anchors!.plates?.length, file).toBeGreaterThan(0);
+        expect(hasRender(room, variant)).toBe(true);
+      }
+    }
+  });
+
+  it('reads the Blender job format (consult): plate, refFrame, files, curves', () => {
+    const desk = parseAnchors(published('consult/anchors.json'))!;
+    expect(desk.frame).toEqual({ w: 2560, h: 1440 });
+    expect(desk.ref?.w).toBeCloseTo(0.8333, 3);
+    expect(desk.plates?.[0]).toMatchObject({ src: 'plate-2560.webp', kind: 'base', widths: [2560, 1920, 1280] });
+    expect(desk.plates?.[1]).toMatchObject({ kind: 'glow', animate: 'boost' });
+    expect(desk.surfaces?.wall_left_text?.lines).toContain('HIGHER SKIN STANDARDS');
+    expect(desk.curves?.pedestal_band_mid?.length).toBeGreaterThan(10);
+    expect(desk.points?.emitter_centre).toHaveLength(2);
+    const phone = parseAnchors(published('consult/anchors-mobile.json'))!;
+    expect(phone.ref).toBeNull();
+    expect(phone.plates?.[0].src).toMatch(/^mobile-plate-\d+\.webp$/);
+  });
+
+  it("finds each Room-format render's mockup framing (cameras refFrame or *_ref_tl/br points)", () => {
+    expect(parseAnchors(published('lounge/anchors.json'))!.ref?.x).toBeCloseTo(0.4995, 3);
+    expect(parseAnchors(published('products-hero/anchors.json'))!.ref?.w).toBeCloseTo(0.8323, 3);
+    expect(parseAnchors(published('lounge/anchors-mobile.json'))!.ref).toBeNull();
+  });
+
+  it('serves each plate at the width the screen needs (srcset of its published sizes)', () => {
+    const lounge = parseAnchors(published('lounge/anchors.json'))!;
+    expect(plateSrcset(lounge.plates![0], (src) => `/env/lounge/${src}`)).toBe(
+      '/env/lounge/home-1280.webp 1280w, /env/lounge/home-1920.webp 1920w, /env/lounge/home-2560.webp 2560w',
+    );
+    const strip = parseAnchors(published('lounge-strip-window/anchors.json'))!;
+    expect(strip.plates!.map((p) => p.kind)).toEqual(['base', 'blur']);
+    expect(plateSrcset(strip.plates![1])).toBeNull();
+    for (const [room, variants] of Object.entries(PUBLISHED_ROOMS) as [RoomId, RoomVariant[]][]) {
+      for (const variant of variants) {
+        for (const plate of parseAnchors(published(files[room][variant]!))!.plates!) {
+          const resolve = (src: string) => (src.startsWith('/') ? src : `/env/${room}/${src}`);
+          const names = plateSrcset(plate, resolve)?.split(', ').map((c) => c.split(' ')[0]) ?? [resolve(plate.src)];
+          for (const name of names) {
+            expect(() => readFileSync(new URL(`../public${name}`, import.meta.url)), name).not.toThrow();
+          }
+        }
+      }
+    }
   });
 });

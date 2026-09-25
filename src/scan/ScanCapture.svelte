@@ -58,6 +58,10 @@
   let starting = $state(false);
   /** Secure contexts only — every browser refuses the camera otherwise. */
   const isSecure = typeof window !== 'undefined' && window.isSecureContext;
+  /** No camera API at all (an insecure page, an old or locked-down browser): asking again cannot help. */
+  const hasCameraApi = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+  /** The phone sheet's height, so the face guide is drawn in the space above it. */
+  let panelH = $state(0);
 
   /**
    * The front capture, frozen.
@@ -496,7 +500,7 @@
   camera opens only on this page, the mesh is drawn as light and handed over
   at the shutter, nothing is kept.
 -->
-<div class="cap" data-layout={layout} class:is-body={isBody}>
+<div class="cap" data-layout={layout} class:is-body={isBody} style:--panel-h={panelH ? `${panelH}px` : null}>
   <div
     class="cap__frame"
     class:cap__frame--tall={isBody}
@@ -548,14 +552,14 @@
       </div>
     {/if}
 
-    {#if !uploadUrl && !stream && !running}
+    {#if !uploadUrl && !stream && !running && hasCameraApi}
       <button class="cap__enable" type="button" onclick={retryCamera} disabled={starting}>
         {starting ? 'Starting the camera…' : cameraError ? 'Try again' : 'Turn on the camera'}
       </button>
     {/if}
   </div>
 
-  <div class="cap__panel on-holo">
+  <div class="cap__panel on-holo" bind:clientHeight={panelH}>
     <ol class="cap__beats" aria-label="Steps">
       <li data-state={step > 0 ? 'done' : 'now'}><span>1</span>Frame</li>
       <li data-state={step > 1 ? 'done' : step === 1 ? 'now' : null}><span>2</span>Hold</li>
@@ -730,8 +734,22 @@
     pointer-events: none;
     transition: opacity 0.4s ease;
   }
+  /* Phone: the oval sits in the space between the status header and the
+     sheet (measured), keeping a face's proportions however short that is. */
+  [data-layout='phone'] .cap__frame {
+    --guide-top: max(16dvh, calc(var(--safe-t) + 140px));
+  }
   [data-layout='phone'] .cap__guide {
-    inset: 16% 14% 30%;
+    --room: calc(100dvh - var(--guide-top) - var(--panel-h, 30dvh) - 24px);
+    inset: auto;
+    top: var(--guide-top);
+    left: 50%;
+    width: min(72%, calc(var(--room) * 0.78));
+    height: var(--room);
+    transform: translateX(-50%);
+  }
+  [data-layout='phone'] .cap__enable {
+    top: calc((var(--guide-top) + 100% - var(--panel-h, 30%)) / 2);
   }
   .cap__guide--body {
     inset: 4% 18%;

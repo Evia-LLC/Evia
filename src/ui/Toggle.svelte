@@ -145,10 +145,17 @@
   .ev-toggle--dark .ev-toggle__switch.is-on::before {
     background: var(--rose-400);
   }
-  .is-disabled {
-    opacity: 0.5;
-  }
+  /* Disabled: the switch dims, the words do not - they are often the only
+     account of the choice, so they stay at readable contrast (4.5:1+). */
   .is-disabled .ev-toggle__switch {
+    opacity: 0.5;
     cursor: not-allowed;
+  }
+  .is-disabled .ev-toggle__label {
+    cursor: default;
+    color: var(--text-secondary);
+  }
+  .ev-toggle--dark.is-disabled .ev-toggle__label {
+    color: var(--text-on-dark);
   }
 </style>

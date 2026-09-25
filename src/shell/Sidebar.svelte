@@ -36,6 +36,29 @@
 
   /** Below 820px the tab bar replaces the sidebar (the same breakpoint as the CSS). */
   const shown = new MediaQuery('min-width: 820px', true);
+
+  /*
+   * In a very short window (a phone on its side) the list can still be taller
+   * than the rail: then a soft fade at the foot (or head) says there is more
+   * to scroll to, and goes once the end is reached.
+   */
+  let inner = $state<HTMLElement | null>(null);
+  let more = $state({ up: false, down: false });
+  function measureScroll() {
+    const el = inner;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    const up = el.scrollTop > 2;
+    const down = max > 2 && el.scrollTop < max - 2;
+    if (up !== more.up || down !== more.down) more = { up, down };
+  }
+  $effect(() => {
+    const el = inner;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measureScroll);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 </script>
 
 <nav class="ev-side on-dark" class:is-over-room={overRoom} aria-label="Main">
@@ -46,7 +69,7 @@
   {/if}
   <div class="ev-side__glass" aria-hidden="true"></div>
 
-  <div class="ev-side__inner">
+  <div class="ev-side__inner" class:has-up={more.up} class:has-down={more.down} bind:this={inner} onscroll={measureScroll}>
     <div class="ev-side__brand ev-side__brand--full"><Logo /></div>
     <div class="ev-side__brand ev-side__brand--rail"><Logo variant="compact" /></div>
 
@@ -70,7 +93,11 @@
     </ul>
 
     {#if talk}
-      <div class="ev-side__foot ev-side__foot--full"><TalkCard /></div>
+      <!-- The full sidebar (>= 1200) shows Routine docked beside Home (ref1),
+           whose own "Talk to Evia" is on screen: no second one here. -->
+      {#if route !== 'routine'}
+        <div class="ev-side__foot ev-side__foot--full"><TalkCard /></div>
+      {/if}
       <div class="ev-side__foot ev-side__foot--rail"><TalkCard variant="button" /></div>
     {/if}
   </div>
@@ -238,6 +265,37 @@
       clip-path: inset(50%);
       white-space: nowrap;
     }
+  }
+  /* A phone on its side (the rail with 390px or less of height): the brand
+     goes and the rhythm tightens so all seven places and Talk fit at 44px
+     targets; anything still below the fold fades out to say it scrolls. */
+  @media (max-width: 1199px) and (max-height: 520px) {
+    .ev-side__inner {
+      padding-top: max(10px, var(--safe-t));
+      padding-bottom: max(8px, var(--safe-b));
+    }
+    .ev-side__brand--rail {
+      display: none;
+    }
+    .ev-side__list {
+      margin: 0 0 8px;
+      gap: 2px;
+    }
+    .ev-side__item {
+      min-height: 44px;
+    }
+  }
+  .ev-side__inner.has-down {
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 36px), transparent);
+    mask-image: linear-gradient(180deg, #000 calc(100% - 36px), transparent);
+  }
+  .ev-side__inner.has-up {
+    -webkit-mask-image: linear-gradient(0deg, #000 calc(100% - 36px), transparent);
+    mask-image: linear-gradient(0deg, #000 calc(100% - 36px), transparent);
+  }
+  .ev-side__inner.has-up.has-down {
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 36px calc(100% - 36px), transparent);
+    mask-image: linear-gradient(180deg, transparent, #000 36px calc(100% - 36px), transparent);
   }
   @media (max-width: 819px) {
     .ev-side {

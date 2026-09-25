@@ -17,8 +17,13 @@
 
   The sample-data badge is mounted here too, so no page can forget it (the app
   root mounts one for the auth gate as well; only one ever draws). While it is
-  up, `--sample-space` (44px, else 0) is set on the shell for pages whose top
-  bar would otherwise sit under it on a phone.
+  up on a framed page, `main` starts below a band of its own (`--sample-band`,
+  40px plus the notch inset) that the badge sits in, so the badge never lands
+  on a page's top bar and nothing scrolls under it; inside `main` the notch
+  inset (`--safe-t`) and `--sample-space` are then 0, because the band already
+  took them. Full-screen layers outside the page flow (the chat drawer, the
+  immersive Scan page) keep `--sample-space` (44px) to pad their own tops by,
+  and a sheet opened from a page reads `--sample-overlay`.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -66,11 +71,17 @@
   data-frame={immersive ? 'immersive' : 'framed'}
   data-backdrop={overRoom ? 'room' : 'page'}
   data-sample={sample.on ? 'true' : null}
+  data-route={route}
 >
   <a class="evia-shell__skip" href="#main">Skip to content</a>
 
   {#if !immersive}
     <Sidebar {route} {overRoom} talk={route !== 'home'} />
+  {/if}
+
+  {#if sample.on && !immersive}
+    <!-- The strip the Sample data badge sits in, above the page. -->
+    <div class="evia-shell__band" aria-hidden="true"></div>
   {/if}
 
   <main class="evia-shell__main" id="main" tabindex="-1">
@@ -99,6 +110,9 @@
     /* Room the sample badge takes at the top; pages with a phone top bar can
        pad by it so nothing sits under the badge. */
     --sample-space: 0px;
+    --sample-overlay: 0px;
+    /* The strip above `main` that holds the badge on a framed page. */
+    --sample-band: 0px;
     position: relative;
     width: 100%;
     height: 100%;
@@ -119,6 +133,17 @@
   }
   .evia-shell[data-sample='true'] {
     --sample-space: 44px;
+    --sample-overlay: 44px;
+  }
+  .evia-shell[data-sample='true'][data-frame='framed'] {
+    --sample-band: calc(40px + var(--safe-t));
+  }
+  /* The band took the notch inset and the badge's room: pages lay out as if
+     neither were there. (A sheet a page opens over everything reads
+     `--sample-overlay` and the raw inset instead.) */
+  .evia-shell[data-sample='true'][data-frame='framed'] > .evia-shell__main {
+    --sample-space: 0px;
+    --safe-t: 0px;
   }
   .evia-shell[data-frame='immersive'] {
     --shell-nav-w: 0px;
@@ -132,7 +157,7 @@
 
   .evia-shell__main {
     position: absolute;
-    top: 0;
+    top: var(--sample-band);
     right: 0;
     bottom: var(--shell-bottom);
     left: var(--shell-nav-w);
@@ -143,6 +168,26 @@
   }
   .evia-shell__main:focus {
     outline: none;
+  }
+  .evia-shell__band {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: var(--shell-nav-w);
+    height: var(--sample-band);
+  }
+  /* Routine docked beside Home (>= 1200): the panel's own ground carries on
+     up through the band, seam included, so the column reads as one. The
+     width is the panel's (RoutinePage: max(480px, 536/1536 of the window)). */
+  @media (min-width: 1200px) {
+    .evia-shell[data-route='routine'] .evia-shell__band {
+      background: linear-gradient(
+        90deg,
+        transparent calc(100% - max(480px, 100vw * 536 / 1536) - 5px),
+        rgba(254, 250, 248, 0.96) 0 calc(100% - max(480px, 100vw * 536 / 1536)),
+        #f5dad8 0
+      );
+    }
   }
 
   .evia-shell__skip {

@@ -11,6 +11,8 @@
 -->
 <script lang="ts">
   import AiDisclosure from '@/shell/AiDisclosure.svelte';
+  import NotificationBell from '@/shell/NotificationBell.svelte';
+  import ProfilePill from '@/shell/ProfilePill.svelte';
   import Button from '@/ui/Button.svelte';
   import EmptyState from '@/ui/EmptyState.svelte';
   import Icon from '@/ui/Icon.svelte';
@@ -112,14 +114,26 @@
   );
 </script>
 
-<div class="rt-panel" data-mode={view.mode}>
-  <header class="rt-head">
+<div class="rt-panel" class:is-page={!docked} data-mode={view.mode}>
+  <!-- Docked beside Home (ref1): the centred title and the back chevron.
+       As its own page (tablet, phone): the header every dashboard page has
+       (PageFrame) - the serif title left, the bell and the profile right. -->
+  <header class="rt-head" class:is-page={!docked}>
     {#if docked}
       <IconButton icon="chevron-left" label="Back to Home" href="/" class="rt-head__back" iconSize={24} />
     {/if}
-    <h1 class="rt-head__title">Routine</h1>
-    <p class="rt-head__sub">{view.subtitle}</p>
-    <p class="rt-head__desc">{view.description}</p>
+    <div class="rt-head__titles">
+      <h1 class="rt-head__title">Routine</h1>
+      <p class="rt-head__sub">{view.subtitle}</p>
+      <p class="rt-head__desc">{view.description}</p>
+    </div>
+    {#if !docked}
+      <div class="rt-head__tools">
+        <NotificationBell tone="light" />
+        <ProfilePill tone="light" class="rt-head__pill" />
+        <ProfilePill tone="light" compact class="rt-head__pill-compact" />
+      </div>
+    {/if}
   </header>
 
   {#if view.status === 'ready'}
@@ -244,7 +258,7 @@
         body="Your routine is built from a skin reading: which steps, what to look for on a label, and why each one is there."
       >
         {#snippet action()}
-          <Button variant="primary" href="/scan" iconEnd="chevron-right">Start a scan</Button>
+          <Button variant="primary" href="/scan" iconStart="camera">Take a scan</Button>
         {/snippet}
       </EmptyState>
     </div>
@@ -316,6 +330,76 @@
     font-size: var(--fs-body-sm);
     line-height: 18px;
     text-wrap: balance;
+  }
+
+  .rt-panel.is-page {
+    padding-top: var(--topbar-top);
+  }
+  @media (max-width: 819px) {
+    .rt-panel.is-page {
+      padding-top: 12px;
+    }
+  }
+  /* Its own page: PageFrame's header (title block left, tools right, the
+     tools' top at --topbar-top). */
+  .rt-head.is-page {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px 24px;
+    padding: 0 var(--in-list, 16px) 4px;
+    text-align: left;
+  }
+  .rt-head.is-page .rt-head__titles {
+    min-width: 0;
+  }
+  .rt-head.is-page .rt-head__title {
+    font-size: var(--fs-h1);
+    line-height: 1.05;
+    letter-spacing: var(--tr-title);
+    color: var(--text-strong);
+    transform: none;
+  }
+  .rt-head.is-page .rt-head__sub {
+    margin-top: 10px;
+    font-family: var(--font-serif);
+    font-size: 19px;
+    font-weight: var(--fw-regular);
+    line-height: 1.35;
+    color: var(--text);
+  }
+  .rt-head.is-page .rt-head__desc {
+    margin-top: 4px;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    text-wrap: pretty;
+  }
+  .rt-head__tools {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--topbar-gap);
+  }
+  .rt-head__tools :global(.rt-head__pill-compact) {
+    display: none;
+  }
+  @media (max-width: 819px) {
+    .rt-head.is-page .rt-head__titles {
+      padding-top: 4px;
+    }
+    .rt-head.is-page .rt-head__sub {
+      margin-top: 8px;
+      font-size: 17px;
+    }
+    .rt-head__tools {
+      gap: 4px;
+    }
+    .rt-head__tools :global(.rt-head__pill) {
+      display: none;
+    }
+    .rt-head__tools :global(.rt-head__pill-compact) {
+      display: inline-flex;
+    }
   }
 
   .rt-panel :global(.rt-tabs) {

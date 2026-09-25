@@ -171,8 +171,8 @@ export interface EmptyView {
   title: string;
   body: string;
   icon: IconName;
-  /** An in-app action ("Take a scan"). */
-  action?: { label: string; href: string };
+  /** An in-app action ("Take a scan"), drawn as the app's one scan call to action. */
+  action?: { label: string; href: string; icon?: IconName };
 }
 
 export interface ProductSectionView {
@@ -550,7 +550,7 @@ function picksEmpty(input: ProductsRealInput): EmptyView {
       title: 'Your picks start with a scan',
       body: 'Evia suggests products by ingredient, from what your latest reading shows. Take a scan and they appear here, each with the reason for it.',
       icon: 'sparkle',
-      action: { label: 'Take a scan', href: '/scan' },
+      action: { label: 'Take a scan', href: '/scan', icon: 'camera' },
     };
   }
   return {

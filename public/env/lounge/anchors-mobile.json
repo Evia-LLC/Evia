@@ -11,7 +11,11 @@
  "plates": [
   {
    "src": "mobile-1080.webp",
-   "kind": "base"
+   "kind": "base",
+   "widths": [
+    720,
+    1080
+   ]
   }
  ],
  "surfaces": {

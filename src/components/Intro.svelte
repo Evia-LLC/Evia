@@ -311,6 +311,20 @@
   }
 
   @media (max-width: 819px) {
+    /* A phone: the caption and chips run over Home's tip card and the tab bar
+       stays under the Skip button, so the lower two thirds are near-opaque -
+       the room still shows at the top, nothing reads through the words. */
+    .intro__grade {
+      background: linear-gradient(
+        180deg,
+        rgba(31, 17, 12, 0.35) 0%,
+        rgba(31, 17, 12, 0.7) 22%,
+        rgba(31, 17, 12, 0.93) 40%,
+        rgba(31, 17, 12, 0.96) 100%
+      );
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+    }
     .intro__stage {
       padding: max(24px, var(--safe-t)) 24px 32px;
     }

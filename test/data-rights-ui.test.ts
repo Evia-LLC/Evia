@@ -6,8 +6,9 @@ describe('data rights confirmation UI contract', () => {
     const source = await readFile(new URL('../src/pages/DataRightsPage.svelte', import.meta.url), 'utf8');
     expect(source).toContain("const phrase = 'DELETE'");
     expect(source).toContain('secondConfirmation');
-    expect(source).toContain('if (!typedCorrectly || !secondConfirmation || deleting) return');
-    expect(source).toContain("disabled={deleting || !typedCorrectly}");
+    // `unavailable`: a guest, or an account set aside while sample data is on (BUILD-PLAN 3.1).
+    expect(source).toContain('if (!typedCorrectly || !secondConfirmation || deleting || unavailable) return');
+    expect(source).toContain("disabled={deleting || !typedCorrectly || unavailable}");
   });
 
   it('keeps authentication until deletion is confirmed by the server', async () => {

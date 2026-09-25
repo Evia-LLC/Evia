@@ -493,6 +493,12 @@
   --navrail-w: 80px; /* 820-1199px */
   --tabbar-h: 64px; /* < 820px, plus the home-indicator inset */
   --topbar-h: 72px;
+  /* The one top-right cluster (bell + profile pill) on every desktop and
+     tablet page (decision 9): its top edge and right inset in the page, and
+     the gap between the bell and the pill. The page title's top matches. */
+  --topbar-top: 16px;
+  --topbar-right: 24px;
+  --topbar-gap: 16px;
   --content-max: 1240px;
   --page-pad: clamp(16px, 2.2vw, 32px);
   --tap: 44px;
@@ -504,9 +510,11 @@
   --z-devstats: 5;
   --z-nav: 8;
   --z-sheet: 12;
-  --z-badge: 16;
   --z-auth: 20;
   --z-intro: 40;
+  /* Above everything, the sign-in gate and the intro included: sample data
+     must be announced on every screen while it shows (BUILD-PLAN 3.1). */
+  --z-badge: 50;
 
   /* Environment (App.svelte keeps --vvh and --kb live). */
   --safe-t: env(safe-area-inset-top, 0px);
@@ -737,5 +745,32 @@
 @keyframes fade {
   from {
     opacity: 0;
+  }
+}
+
+/*
+ * Glass without the blur. The glass tokens are tuned for a blurred backdrop;
+ * where a browser cannot blur (or the person has asked for less
+ * transparency), the text behind a bar or drawer would read through it. The
+ * same surfaces then go near-opaque, so nothing ever reads text-on-text.
+ */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-dark: rgba(78, 44, 29, 0.97);
+    --glass-dark-strong: rgba(66, 36, 25, 0.98);
+    --glass-light: rgba(255, 246, 243, 0.97);
+    --glass-light-strong: rgba(255, 246, 243, 0.98);
+    --glass-holo: rgba(8, 13, 24, 0.95);
+    --tabbar-glass: rgba(66, 36, 25, 0.98);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-dark: rgba(78, 44, 29, 0.97);
+    --glass-dark-strong: rgba(66, 36, 25, 0.98);
+    --glass-light: rgba(255, 246, 243, 0.97);
+    --glass-light-strong: rgba(255, 246, 243, 0.98);
+    --glass-holo: rgba(8, 13, 24, 0.95);
+    --tabbar-glass: rgba(66, 36, 25, 0.98);
   }
 }

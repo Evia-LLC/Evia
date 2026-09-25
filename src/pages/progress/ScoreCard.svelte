@@ -121,7 +121,7 @@
     {:else}
       <EmptyState title={view.emptyTitle} body={view.body} icon="bar-chart" compact>
         {#snippet action()}
-          <Button href="/scan" size={tapSize()} iconStart="camera">Take a scan</Button>
+          <Button variant="primary" href="/scan" iconStart="camera">Take a scan</Button>
         {/snippet}
       </EmptyState>
     {/if}

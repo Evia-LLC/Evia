@@ -9,7 +9,7 @@
   Links to the profile page.
 -->
 <script lang="ts">
-  import { link } from '@/router/router.svelte.ts';
+  import { link, router } from '@/router/router.svelte.ts';
   import { session } from '@/state/session.svelte.ts';
   import { sample } from '@/sample/mode.svelte.ts';
   import Avatar from '@/ui/Avatar.svelte';
@@ -35,9 +35,18 @@
   );
   const shownMembership = $derived(membership === undefined ? (sample.on ? 'Premium Member' : null) : membership);
   const label = $derived(`Your profile${shownName ? `, ${shownName}` : ''}`);
+  /* On the profile page itself the pill stays (the header keeps its shape) and says so. */
+  const here = $derived(router.path === href);
 </script>
 
-<a class="ev-profile ev-profile--{tone} {className}" class:is-compact={compact} {href} use:link aria-label={label}>
+<a
+  class="ev-profile ev-profile--{tone} {className}"
+  class:is-compact={compact}
+  {href}
+  use:link
+  aria-label={label}
+  aria-current={here ? 'page' : undefined}
+>
   <Avatar name={shownName} size={compact ? 40 : 52} />
   {#if !compact}
     <span class="ev-profile__text" aria-hidden="true">

@@ -11,9 +11,14 @@
   are the same checks the old page made. The progress-photo switch shows the
   consent record's own title and body, unedited. The cloud-reasoning text is
   the disclosure of what would be sent, kept word for word.
+
+  With sample data on, a signed-in account is set aside (BUILD-PLAN 3.1): the
+  switches show nothing recorded and cannot record anything, the account's
+  saved photos are not counted, and the note offers the way back.
 -->
 <script lang="ts">
   import { session } from '@/state/session.svelte.ts';
+  import { sample } from '@/sample/mode.svelte.ts';
   import { setConsent } from '@/state/controller.ts';
   import { link } from '@/router/router.svelte.ts';
   import { CONSENT_KEYS } from '@shared/consent-keys.ts';
@@ -24,8 +29,11 @@
   import Pill from '@/ui/Pill.svelte';
   import Icon from '@/ui/Icon.svelte';
   import PageFrame from './frame/PageFrame.svelte';
+  import SampleAccountNote from './frame/SampleAccountNote.svelte';
 
-  const consents = $derived(session.user?.consents);
+  /** No account to record on: a guest, or an account set aside for sample data. */
+  const accountless = $derived(session.guest || sample.on);
+  const consents = $derived(accountless ? undefined : session.user?.consents);
   const photoConsent = LEGAL_CONTENT['progress-photo-consent'];
   // The wording sits beside the switch rather than inside it: a disabled
   // switch dims its own row, and the words have to stay readable either way.
@@ -35,14 +43,15 @@
   const photoWordingApproved = photoConsent.status === 'approved';
   const cloudWordingApproved = consentWordingVersion('cloud-reasoning-v1')?.status === 'approved';
 
-  const photosDisabled = $derived(!session.imageStorage || session.guest || !photoWordingApproved);
-  const cloudDisabled = $derived(!session.modelAvailable || session.guest || !cloudWordingApproved);
+  const photosDisabled = $derived(!session.imageStorage || accountless || !photoWordingApproved);
+  const cloudDisabled = $derived(!session.modelAvailable || accountless || !cloudWordingApproved);
 
   let error = $state<string | null>(null);
   /** Bumped after a failed save, so a switch redraws from the recorded state. */
   let resync = $state(0);
 
   async function toggle(kind: 'progress_photos' | 'cloud_reasoning', granted: boolean) {
+    if (accountless) return;
     error = null;
     try {
       await setConsent(kind, granted);
@@ -58,6 +67,8 @@
   subtitle="Your skin is measured in this browser. Unless you choose otherwise, the photo never leaves your device — only the numbers do, and only to Evia's own server."
   back={{ href: '/settings', label: 'Settings' }}
 >
+  {#if sample.on && !session.guest}<SampleAccountNote action="see and change your choices" />{/if}
+
   <section class="where" aria-labelledby="priv-where">
     <h2 class="visually-hidden" id="priv-where">Where things go</h2>
     <Card>
@@ -121,7 +132,7 @@
           <Icon name="info" size={16} stroke={1.8} />
           <span>This consent never saves a capture by itself. You must affirmatively save each photo from its result screen.</span>
         </li>
-        {#if session.progressPhotos.length}
+        {#if !accountless && session.progressPhotos.length}
           <li class="note">
             <Icon name="info" size={16} stroke={1.8} />
             <span>

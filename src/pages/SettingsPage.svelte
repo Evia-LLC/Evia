@@ -15,7 +15,10 @@
   pretends to do what the app cannot (BUILD-PLAN decision 2).
 
   Nothing on this page is sample data: sample mode changes only the header's
-  profile pill (the shell's), and the switch that turns it off.
+  profile pill (the shell's), and the switch that turns it off. With sample
+  data on, a signed-in account is set aside (BUILD-PLAN 3.1): the account card
+  shows no email or date, only the note that brings the account back, and the
+  voice switch holds for the visit instead of being saved to the account.
 -->
 <script lang="ts">
   import { ROUTES, isLegalRoute, type RouteId } from '@/router/router.svelte.ts';
@@ -30,6 +33,7 @@
   import Button from '@/ui/Button.svelte';
   import PageFrame from './frame/PageFrame.svelte';
   import SettingsRow from './frame/SettingsRow.svelte';
+  import SampleAccountNote from './frame/SampleAccountNote.svelte';
 
   /** Which legal record each legal address shows. */
   const LEGAL_RECORD: Partial<Record<RouteId, LegalContentId>> = {
@@ -58,6 +62,9 @@
   const voiceOn = $derived(Boolean(session.user?.preferences.voiceEnabled) && session.canSpeak);
   let sound = $state(soundEnabled());
 
+  /** A signed-in account while sample data is on: set aside, not shown. */
+  const setAside = $derived(sample.on && !session.guest);
+
   const since = $derived(
     session.user?.createdAt
       ? new Date(session.user.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
@@ -81,7 +88,9 @@
       ? 'This browser cannot speak and no voice is configured, so Evia stays quiet here.'
       : session.guest
         ? 'For this visit only. Nothing is saved while you are looking around.'
-        : 'Remembered on your account.',
+        : sample.on
+          ? 'For this visit only. Nothing is saved while sample data is on.'
+          : 'Remembered on your account.',
   );
 </script>
 
@@ -90,18 +99,22 @@
     <div class="settings__col">
       <Card aria-labelledby="set-account">
         <SectionHeader id="set-account" title="Account" icon="user" />
-        <div class="account">
-          {#if session.guest}
-            <p class="account__who">{sample.on ? 'Sample preview' : 'Looking around'}</p>
-            <p class="account__meta">No account. Nothing is saved when you leave.</p>
-          {:else}
-            <p class="account__who">{session.user?.email}</p>
-            {#if since}<p class="account__meta">Member since {since}</p>{/if}
-          {/if}
-          <Button variant="secondary" size="sm" onclick={() => signOut()}>
-            {session.guest ? 'Leave' : 'Sign out'}
-          </Button>
-        </div>
+        {#if setAside}
+          <SampleAccountNote class="account-note" action="see your account or sign out" />
+        {:else}
+          <div class="account">
+            {#if session.guest}
+              <p class="account__who">{sample.on ? 'Sample preview' : 'Looking around'}</p>
+              <p class="account__meta">No account. Nothing is saved when you leave.</p>
+            {:else}
+              <p class="account__who">{session.user?.email}</p>
+              {#if since}<p class="account__meta">Member since {since}</p>{/if}
+            {/if}
+            <Button variant="secondary" size="sm" onclick={() => signOut()}>
+              {session.guest ? 'Leave' : 'Sign out'}
+            </Button>
+          </div>
+        {/if}
         <ul class="rows" role="list">
           <SettingsRow
             href="/profile"
@@ -141,7 +154,7 @@
           />
           <Toggle
             label="Sample data"
-            description="Fill every page with the design's sample data, labelled on screen the whole time. Nothing is saved."
+            description="Fill every page with the design's sample data, labelled on screen the whole time. While it is on, no account data is shown and nothing is saved."
             checked={sample.on}
             onchange={(on) => setSample(on)}
           />
@@ -232,6 +245,9 @@
     padding: 0;
   }
 
+  .settings :global(.account-note) {
+    margin: 18px 0 4px;
+  }
   .account {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

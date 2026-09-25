@@ -108,15 +108,17 @@
     </div>
   </header>
 
-  <section class="home__hero" aria-labelledby="home-greeting">
-    <h1 class="home__greeting" id="home-greeting">
+  <section class="home__hero" aria-labelledby={underPanel ? undefined : 'home-greeting'}>
+    <!-- Behind the Routine panel the page's heading is the panel's "Routine";
+         the greeting is scenery there, so it is not a second h1. -->
+    <svelte:element this={underPanel ? 'p' : 'h1'} class="home__greeting" id={underPanel ? undefined : 'home-greeting'}>
       {#if view.name}
         <span class="home__salute">{view.salutation}</span>
         <span class="home__name" class:is-long={longName}>{view.name}.</span>
       {:else}
         <span class="home__name">{view.salutation}</span>
       {/if}
-    </h1>
+    </svelte:element>
     <p class="home__question">
       <span>{view.question[0]}</span>
       <span>{view.question[1]}</span>
@@ -144,7 +146,7 @@
     {#if view.actions.look || view.actions.changed}
       <nav class="home__more" aria-label="More from Evia">
         {#if view.actions.look}
-          <Button variant="secondary" tone="dark" size="sm" iconStart="camera" href="/scan">Start a scan</Button>
+          <Button variant="secondary" tone="dark" size="sm" iconStart="camera" href="/scan">Take a scan</Button>
         {/if}
         {#if view.actions.changed}
           <Button variant="secondary" tone="dark" size="sm" iconStart="bar-chart" href="/progress">See what changed</Button>
@@ -182,8 +184,8 @@
   /* ---- top bar ---- */
   .home__top {
     position: absolute;
-    top: 20px;
-    right: 22px;
+    top: var(--topbar-top);
+    right: var(--topbar-right);
     left: 29px;
     z-index: 1;
     display: flex;
@@ -200,11 +202,7 @@
   .home__top-tools {
     display: flex;
     align-items: center;
-    gap: 18px;
-  }
-  .home__top-tools :global(.ev-profile) {
-    width: 222px;
-    min-height: 65px;
+    gap: var(--topbar-gap);
   }
 
   /* ---- greeting, question, CTA ---- */
@@ -333,7 +331,7 @@
 
   /* ---- short windows: tighten the vertical rhythm before anything scrolls ---- */
   /*
-   * Real mode's "Start a scan" / "See what changed" row adds 50px the mockup
+   * Real mode's "Take a scan" / "See what changed" row adds 50px the mockup
    * does not have (sample mode never shows it). On windows up to 900px tall
    * that space comes out of the gaps above the greeting and the button, so
    * the tagline stays in the window.

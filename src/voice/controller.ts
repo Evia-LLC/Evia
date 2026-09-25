@@ -79,7 +79,7 @@ export class VoiceController {
       // `willSpeak` still refuses to mime before iOS has honoured one.
       canSpeak: hasSynthesis() || hasCloned,
       cloned: hasCloned,
-      voiceName: hasCloned ? 'Elohim' : this.speaker.voiceName,
+      voiceName: hasCloned ? 'Evia' : this.speaker.voiceName,
     };
   }
 

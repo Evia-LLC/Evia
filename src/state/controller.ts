@@ -85,9 +85,12 @@ function forgetVisit(): void {
  * stays in memory, the shelf is built for the reading on screen, and nothing
  * is saved. That is the "sample mode never writes to the server" rule.
  *
- * Account housekeeping is not held back: consent decisions, preferences, the
- * export, deletion and signing out are the person acting on their real
- * account, whatever the pages are showing.
+ * The account itself is set aside too. The account pages show no account
+ * details while sample data is on and pause what acts on the account
+ * (consents, the profile's Save, the export, deletion - see
+ * pages/frame/SampleAccountNote.svelte), and a preference changed from a
+ * switch elsewhere (her voice, how she explains) holds for the visit only;
+ * turning sample data off reloads the account as it is stored.
  */
 function localOnly(): boolean {
   return session.guest || sample.on;
@@ -399,8 +402,10 @@ export async function sampleModeChanged(on: boolean): Promise<void> {
     return;
   }
   try {
-    const { messages } = await api.chatHistory();
+    // The account as stored: what the sample visit changed held for it only.
+    const [{ messages }, me] = await Promise.all([api.chatHistory(), api.me()]);
     session.messages = messages;
+    session.user = me.user;
   } catch {
     // Keep what is on screen; the next load refreshes it.
   }
@@ -462,6 +467,8 @@ export async function setVoiceEnabled(enabled: boolean): Promise<void> {
     preferences: { ...session.user.preferences, voiceEnabled: enabled },
   };
   if (!enabled) voice.stopSpeaking();
+  // Sample data on: the switch holds for this visit and is not stored.
+  if (sample.on) return;
   try {
     await api.updatePreferences({ voiceEnabled: enabled });
   } catch {

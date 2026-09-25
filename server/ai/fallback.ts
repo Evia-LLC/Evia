@@ -731,12 +731,12 @@ function respondToOpen(
   if (!hasScans) {
     /*
      * By the time the room opens, the intro sequence has already introduced
-     * her — a second "I'm Elohim" reads as a loop. The one self-introducing
+     * her — a second "I'm Evia" reads as a loop. The one self-introducing
      * variant is reserved for a caller that knows the intro was skipped.
      */
     const lines = opts.introSkipped
       ? [
-          `${greet(name)} I'm Elohim — I look at skin for a living, so to speak. Tell me what's been going on, or I can just take a look.`,
+          `${greet(name)} I'm Evia — I look at skin for a living, so to speak. Tell me what's been going on, or I can just take a look.`,
         ]
       : [
           `So — you found me. Tell me what's been going on, or I can just take a look.`,

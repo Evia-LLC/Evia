@@ -11,7 +11,12 @@
  "plates": [
   {
    "src": "home-2560.webp",
-   "kind": "base"
+   "kind": "base",
+   "widths": [
+    1280,
+    1920,
+    2560
+   ]
   }
  ],
  "surfaces": {

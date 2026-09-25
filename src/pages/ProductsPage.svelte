@@ -1,8 +1,10 @@
 <!--
   Products (ref3.png, products.md; BUILD-PLAN decision 11).
 
-  The hero over the campaign set (the products-hero room: its Blender plate
-  when one exists, its CSS stand-in until then) with the search, the bell and
+  The hero over the campaign set (the products-hero room: its Blender plate,
+  drawn at the mockup's scale - its ref3 hero frame covers the hero box, the
+  plate's safe margin falls outside - over its CSS stand-in until it has
+  decoded) with the search, the bell and
   the profile pill floating on it, the headline, the trust line, and an
   unbranded still life where the mockup had its character (decision 3). Then
   the category chips, the grid, and the detail panel - docked beside the grid
@@ -93,6 +95,10 @@
       savedIds: saved.ids,
     }),
   );
+
+  /* Nothing to show in any section (real mode before a scan, an empty shelf):
+     the empty states sit side by side instead of down the left half. */
+  const allEmpty = $derived(view.sections.length > 1 && view.sections.every((s) => !s.loading && !s.products.length));
 
   const everything = $derived(
     view.sections.flatMap((s) => s.products).filter((p, i, all) => all.findIndex((x) => x.id === p.id) === i),
@@ -231,7 +237,7 @@
 
 <div class="products" class:is-sample={sample.on} bind:clientWidth={width}>
   <header class="phero">
-    <Room room="products-hero" layout="fill" />
+    <Room room="products-hero" layout="fill" fit="ref" />
 
     <div class="phero__bar">
       <form class="search" role="search" onsubmit={(e) => e.preventDefault()}>
@@ -286,7 +292,16 @@
 
   <nav class="chips" aria-label="Product categories" class:has-start={chipMore.start} class:has-end={chipMore.end}>
     <!-- Toggle buttons (aria-pressed): one is on at a time, and each is its own Tab stop. -->
-    <div class="chips__row" role="group" aria-label="Show" bind:this={chipRow} onscroll={measureChips}>
+    <div
+      class="chips__row"
+      class:is-many={view.categories.length > 8}
+      style:--chip-cols2={Math.ceil(view.categories.length / 2)}
+      style:--chip-cols3={Math.ceil(view.categories.length / 3)}
+      role="group"
+      aria-label="Show"
+      bind:this={chipRow}
+      onscroll={measureChips}
+    >
       {#each view.categories as chip (chip.key)}
         <Chip selected={category === chip.key} onclick={() => choose(chip.key)} class="chips__chip">
           <span class="chip-in" class:is-two={chip.lines}>
@@ -314,7 +329,7 @@
   </nav>
 
   <div class="body" class:is-docked={docked && selected}>
-    <div class="list">
+    <div class="list" class:is-empty={allEmpty}>
       {#each view.sections as section, si (section.id)}
         <section class="section" aria-labelledby="products-sec-{section.id}">
           <SectionHeader
@@ -371,7 +386,7 @@
               <EmptyState title={empty.title} body={empty.body} icon={empty.icon} level={3}>
                 {#snippet action()}
                   {#if empty.action}
-                    <Button variant="secondary" size="sm" href={empty.action.href}>{empty.action.label}</Button>
+                    <Button variant="primary" href={empty.action.href} iconStart={empty.action.icon}>{empty.action.label}</Button>
                   {/if}
                 {/snippet}
               </EmptyState>
@@ -432,7 +447,7 @@
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
     min-height: clamp(300px, 29.3cqw, 400px);
-    padding: 16px 20px 26px 28px;
+    padding: var(--topbar-top) var(--topbar-right) 26px 28px;
     border-bottom: 1px solid var(--glass-light-rim-hi);
   }
   .phero > :global(.ev-room) {
@@ -464,12 +479,6 @@
   }
   .search :global(.search__icon) {
     color: var(--ink-800);
-  }
-  /* The Sample data badge is pinned top-centre: the search stops short of it. */
-  @container products (min-width: 600px) {
-    .products.is-sample .search {
-      max-width: max(240px, calc(50vw - var(--shell-nav-w, 0px) - 96px));
-    }
   }
   .search__input {
     flex: 1;
@@ -517,7 +526,7 @@
   .phero__actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--topbar-gap);
     margin-left: auto;
   }
 
@@ -745,6 +754,44 @@
     align-items: center;
     gap: 12px;
   }
+  /*
+   * On a desktop or tablet page every chip stays in view. Where the shared
+   * sidebar (248px against the mockup's 160) leaves too little room for one
+   * row (the mockup's 1222 and 1280), the chips form an even grid of two rows
+   * (three on a tablet) rather than hiding "Treatments" and "Makeup" behind a
+   * scroll arrow or leaving one chip alone on a second row. A phone keeps the
+   * swipeable row.
+   */
+  @container products (min-width: 600px) {
+    .chips__row {
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
+  }
+  @container products (min-width: 600px) and (max-width: 1119px) {
+    .chips__row {
+      display: grid;
+      grid-template-columns: repeat(var(--chip-cols3), minmax(0, 1fr));
+    }
+    .chips__row :global(.chips__chip) {
+      justify-content: center;
+    }
+  }
+  @container products (min-width: 900px) and (max-width: 1119px) {
+    .chips__row {
+      grid-template-columns: repeat(var(--chip-cols2), minmax(0, 1fr));
+    }
+  }
+  /* With the Saved chip there are nine: one row needs about 120px more. */
+  @container products (min-width: 1120px) and (max-width: 1239px) {
+    .chips__row.is-many {
+      display: grid;
+      grid-template-columns: repeat(var(--chip-cols2), minmax(0, 1fr));
+    }
+    .chips__row.is-many :global(.chips__chip) {
+      justify-content: center;
+    }
+  }
   /* Where the shared sidebar takes the mockup's room, the chips tighten a little first. */
   @container products (max-width: 1239px) {
     .chips__row {
@@ -776,8 +823,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
+  /* 350px at least, so the panel's benefit line and its longest row label
+     ("How to use (with demonstration)") each stay on one line. */
   .body.is-docked {
-    grid-template-columns: minmax(0, 1fr) clamp(330px, 30%, 400px);
+    grid-template-columns: minmax(0, 1fr) clamp(350px, 32%, 400px);
   }
   .list {
     container: plist / inline-size;
@@ -822,40 +871,13 @@
     min-width: 0;
   }
   /*
-   * Beside the docked panel at the mockup's size (1222) and at 1280, the
-   * list has 600-740px: four slimmer cards keep the mockup's 4 + 4 rows
-   * instead of 3 + 3 + 2 (the mockup's cards are 166px; these are about
-   * 145-165px), with the card's padding and the shop button tightened to fit.
+   * Beside the docked panel at the mockup's size (1222) and at 1280 the list
+   * has 580-650px. The mockup fits four 166px cards there, but with its 5-10px
+   * text; at the readable sizes (decision 8) four cards of about 145px broke
+   * their badges, ratings and blurbs over extra lines. So the base rule above
+   * gives three cards of 185-210px there (3 + 3 + 2), and four from about
+   * 1440 up, where each is 200px or more.
    */
-  @container plist (min-width: 580px) and (max-width: 741px) {
-    .grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px 8px;
-    }
-    .grid :global(.pcard__body) {
-      padding: 10px 10px 12px;
-    }
-    .grid :global(.pcard__media .pcard__badge) {
-      top: 8px;
-      left: 8px;
-      max-width: calc(100% - 50px);
-      padding-inline: 8px;
-    }
-    .grid :global(.pcard__media .pcard__heart) {
-      top: 2px;
-      right: 2px;
-    }
-    .grid :global(.pcard__shop.ev-btn) {
-      --btn-px: 8px;
-      gap: 4px;
-      padding-block: 4px;
-    }
-    .grid :global(.pcard__shop .ev-btn__label) {
-      white-space: normal;
-      text-align: center;
-      line-height: 1.15;
-    }
-  }
   .more {
     display: flex;
     flex-wrap: wrap;
@@ -913,6 +935,18 @@
   .list :global(.pempty) {
     max-width: 640px;
   }
+  @container products (min-width: 820px) {
+    .list.is-empty {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 28px 20px;
+    }
+    .list.is-empty .section {
+      grid-template-rows: auto 1fr;
+    }
+    .list.is-empty :global(.pempty) {
+      max-width: none;
+    }
+  }
 
   .detail {
     min-width: 0;
@@ -924,10 +958,10 @@
   .detail__inner {
     position: sticky;
     top: 0;
-    max-height: var(--vvh);
+    max-height: calc(var(--vvh) - var(--sample-band, 0px));
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 16px 20px 32px;
+    padding: 16px 18px 32px;
     scrollbar-width: thin;
   }
 

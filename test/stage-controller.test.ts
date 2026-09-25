@@ -67,7 +67,7 @@ const { sample } = await import('../src/sample/mode.svelte.ts');
 
 const account: UserSummary = {
   id: 'user-1',
-  email: 'demo@elohim.local',
+  email: 'demo@evia.local',
   displayName: 'Demo',
   createdAt: '2026-09-01T00:00:00.000Z',
   profile: {

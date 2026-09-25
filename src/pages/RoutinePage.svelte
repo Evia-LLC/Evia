@@ -97,7 +97,6 @@
     container: routine / inline-size;
     max-width: 760px;
     margin: 0 auto;
-    padding-top: var(--sample-space, 0px);
   }
 
   /* Docked beside Home: a fixed column with its own scroll, and the thin light
@@ -126,8 +125,7 @@
   @media (min-width: 820px) and (max-width: 1199px) {
     .rt-scroll {
       max-width: 1080px;
-      /* Keeps the room the Sample data badge needs above the title. */
-      padding: calc(8px + var(--sample-space, 0px)) 24px 0;
+      padding: 0 24px;
     }
   }
 

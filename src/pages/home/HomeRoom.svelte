@@ -9,23 +9,27 @@
   on a phone) inside a box of the render's own shape, so Room's cover fit is
   exact and the wall text lands on its wall.
 
+  Which render: the L1 landscape plate (anchors.json) on wide screens and
+  landscape phones; the L2 phone-portrait plate (anchors-mobile.json,
+  mobile-{720,1080}.webp) in a portrait compact window, where cropping the
+  landscape plate to the seating group would blow it up about 1.8x. The
+  phone render has no wall copy (see showWall).
+
   No character (BUILD-PLAN decision 3): the armchair stays empty.
 
   The decor copy is the mockup's (wall niche, acrylic sign), the same in both
   modes and listed for counsel; it is decoration, so it is hidden from
   assistive technology. It waits for the wall it is printed on: it fades in
-  once the render has decoded, or once the stand-in is known to be what stays
-  (no render published, or the render failed) - never over the bare ground
-  colour while a slow plate is still loading.
+  once the render is on screen, or once the stand-in is known to be what stays
+  (no render published, or the render failed) - never over the stand-in while
+  a slow plate is still loading, where it would jump when the plate lands.
 -->
 <script lang="ts">
-  import { tick } from 'svelte';
   import Room from '@/stage/Room.svelte';
   import RoomSurface from '@/stage/RoomSurface.svelte';
-  import { loadAnchors } from '@/stage/room-anchors.ts';
+  import { hasRender, loadAnchors, type RoomAnchors, type RoomStatus, type RoomVariant } from '@/stage/room-anchors.ts';
   import type { HomeView } from '@/view/home.ts';
-  import { LOUNGE_FALLBACK_FRAME, frameFromAnchors, plateRect, type PlateFrame } from './stage.ts';
-  import RoomProbe from './RoomProbe.svelte';
+  import { LOUNGE_FALLBACK_FRAME, frameFromAnchors, plateRect } from './stage.ts';
 
   interface Props {
     /** The right edge of what Home can show, in window px. */
@@ -37,69 +41,60 @@
   const { right, compact, wall }: Props = $props();
 
   let height = $state(0);
-  let frame = $state<PlateFrame>(LOUNGE_FALLBACK_FRAME);
-  /* Whether Room is showing its stand-in: before the render loads, or if it fails. */
-  let standIn = $state(true);
 
-  /* Whether the anchors question has been answered (they exist or they do not). */
-  let settled = $state(false);
+  /** The phone-portrait render in a portrait compact window. */
+  const variant = $derived<RoomVariant>(
+    compact && right > 0 && height > right * 1.15 && hasRender('lounge', 'mobile') ? 'mobile' : 'desk',
+  );
 
+  /* The chosen render's anchors, once answered (null: there is none). */
+  let anchors = $state.raw<RoomAnchors | null>(null);
   $effect(() => {
+    const want = variant;
     let live = true;
-    void loadAnchors('lounge').then((anchors) => {
-      if (!live) return;
-      frame = frameFromAnchors(anchors);
-      settled = true;
+    anchors = null;
+    void loadAnchors('lounge', want).then((a) => {
+      if (live) anchors = a;
     });
     return () => {
       live = false;
     };
   });
 
-  /* The render's base plate has loaded and decoded. */
-  let plateBox = $state<HTMLElement | null>(null);
-  let plateReady = $state(false);
+  /* Room's own report: loading (stand-in showing, render on its way), plate, or stand-in for good. */
+  let status = $state<RoomStatus>('loading');
 
-  $effect(() => {
-    const el = plateBox;
-    if (standIn || !el) {
-      plateReady = false;
-      return;
-    }
-    let live = true;
-    const ready = () => {
-      if (live) plateReady = true;
-    };
-    void tick().then(() => {
-      const img = el.querySelector<HTMLImageElement>('img.ev-room__plate--base') ?? el.querySelector('img');
-      if (!live || !img) return;
-      const decode = () => void img.decode().then(ready, ready);
-      if (img.complete && img.naturalWidth > 0) decode();
-      else img.addEventListener('load', decode, { once: true });
-    });
-    return () => {
-      live = false;
-    };
-  });
+  /*
+   * The decor copy is set for the landscape render, where it reads at 14-18px.
+   * On the phone-portrait render (no mockup exists for it) the niche and the
+   * acrylic are a tenth of the screen wide, so the same copy would be a
+   * 4-5px smudge: the phone keeps them blank, lit plaster and clear acrylic.
+   */
+  const showWall = $derived(status !== 'loading' && variant === 'desk');
 
-  const showWall = $derived(plateReady || (standIn && settled));
-
-  const active = $derived(standIn ? LOUNGE_FALLBACK_FRAME : frame);
+  /* The box has the render's shape as soon as its anchors are known, so the
+     plate fades in without the box moving; the stand-in's shape otherwise. */
+  const active = $derived(status === 'stand-in' || !anchors ? LOUNGE_FALLBACK_FRAME : frameFromAnchors(anchors));
   const rect = $derived(height > 0 && right > 0 ? plateRect(active, { right, height, compact }) : null);
 </script>
 
-<div class="home-room" class:is-compact={compact} style:width={right > 0 ? `${right}px` : null} bind:clientHeight={height} aria-hidden="true">
+<div
+  class="home-room"
+  class:is-compact={compact}
+  data-variant={variant}
+  style:width={right > 0 ? `${right}px` : null}
+  bind:clientHeight={height}
+  aria-hidden="true"
+>
   {#if rect}
     <div
       class="home-room__plate"
-      bind:this={plateBox}
       style:left="{rect.left}px"
       style:top="{rect.top}px"
       style:width="{rect.width}px"
       style:height="{rect.height}px"
     >
-      <Room room="lounge">
-        <RoomProbe onchange={(fallback) => (standIn = fallback)} />
+      <Room room="lounge" {variant} onstatus={(next) => (status = next)}>
         {#if showWall}
           <RoomSurface name="niche_text" width={156} height={89} decorative>
             <div class="home-room__niche">

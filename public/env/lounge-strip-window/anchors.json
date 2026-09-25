@@ -3,12 +3,19 @@
  "frame": {
   "w": 640,
   "h": 2048,
-  "focus": [0.75, 0.3]
+  "focus": [
+   0.75,
+   0.3
+  ]
  },
  "plates": [
   {
    "src": "/env/lounge/strip-window-640.webp",
-   "kind": "base"
+   "kind": "base",
+   "widths": [
+    320,
+    640
+   ]
   },
   {
    "src": "/env/lounge/strip-window-soft-320.webp",

@@ -153,7 +153,7 @@
     width: 100%;
     max-width: 1560px;
     margin: 0 auto;
-    padding: 16px 24px 24px 27px;
+    padding: var(--topbar-top) var(--topbar-right) 24px 27px;
   }
 
   /* ---- header ------------------------------------------------------------ */
@@ -198,8 +198,7 @@
     grid-area: me;
     display: flex;
     align-items: center;
-    gap: 22px;
-    margin-top: -7px;
+    gap: var(--topbar-gap);
   }
   .pg-head__note {
     grid-area: note;

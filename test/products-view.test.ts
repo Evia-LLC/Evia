@@ -129,7 +129,7 @@ describe('real mode', () => {
   it('asks for a scan before it has picks to show', () => {
     const view = buildProducts(input({ hasScan: false }));
     const picks = view.sections.find((s) => s.id === 'picks')!;
-    expect(picks.empty?.action).toEqual({ label: 'Take a scan', href: '/scan' });
+    expect(picks.empty?.action).toEqual({ label: 'Take a scan', icon: 'camera', href: '/scan' });
   });
 
   it('never shows ratings, reviews, popularity or a match badge', () => {

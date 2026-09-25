@@ -363,7 +363,7 @@
   .pdetail__features ul {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 20px;
+    gap: 10px 16px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -375,7 +375,8 @@
   .pdetail__features li {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    white-space: nowrap;
     font-size: var(--fs-small);
     color: var(--text-secondary);
   }

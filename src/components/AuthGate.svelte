@@ -71,7 +71,7 @@
   }
 
   function useDemo() {
-    email = 'demo@elohim.local';
+    email = 'demo@evia.local';
     password = 'demo1234';
     mode = 'login';
   }
@@ -144,8 +144,7 @@
         <div class="ev-gate__pitch">
           <h1 class="ev-gate__title" id="gate-title">Welcome to Evia</h1>
           <p class="ev-gate__lede">
-            An AI skincare consultant. Ask anything, scan your skin with your own camera, and see what changes over
-            time.
+            An AI skincare consultant. Ask anything, scan your skin with your own camera, and see what changes over time.
           </p>
         </div>
       </div>
@@ -158,7 +157,7 @@
               <span class="ev-gate__note-body">This server is seeded with a demo account and six scans of history.</span>
               <button type="button" class="ev-gate__demo" onclick={useDemo}>
                 <span class="ev-gate__demo-label">Use the demo account</span>
-                <code>demo@elohim.local</code>
+                <code>demo@evia.local</code>
                 <code>demo1234</code>
               </button>
             </li>
@@ -167,8 +166,7 @@
             <li class="ev-gate__note">
               <span class="ev-gate__tag">Local engine</span>
               <span class="ev-gate__note-body">
-                Conversation runs on Evia's built-in engine rather than the full model. Your scans, storage and trends are
-                real either way.
+                Conversation runs on Evia's built-in engine rather than the full model. Your scans, storage and trends are real either way.
               </span>
             </li>
           {/if}
@@ -263,8 +261,7 @@
           <div class="ev-gate__note ev-gate__note--closed" role="status">
             <span class="ev-gate__tag">No database</span>
             <span class="ev-gate__note-body">
-              This deployment has nowhere to keep an account yet, so sign-in is off. The camera, the scan and the readouts
-              all run on your device. Look around.
+              This deployment has nowhere to keep an account yet, so sign-in is off. The camera, the scan and the readouts all run on your device. Look around.
             </span>
           </div>
         {/if}
@@ -322,8 +319,7 @@
           </p>
           <p class="ev-gate__legal">
             Review the placeholder <a href="/legal/terms" use:link>Terms</a> and
-            <a href="/legal/privacy" use:link>Privacy Policy</a>. These drafts are not accepted by signing in or creating
-            an account.
+            <a href="/legal/privacy" use:link>Privacy Policy</a>. These drafts are not accepted by signing in or creating an account.
           </p>
           <AiDisclosure tone="dark" backed={false} />
         </footer>

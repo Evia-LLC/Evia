@@ -1,7 +1,9 @@
 <!--
   "Sample data", pinned top-centre for as long as sample mode is on
   (BUILD-PLAN section 3.1), so the mockups' numbers are never mistaken for the
-  user's own. High contrast, small, and it carries its own off switch.
+  user's own. High contrast, small, and it carries its own off switch. On a
+  framed page it sits in a band the shell keeps free above the page (Shell's
+  `--sample-band`), so it never covers a top bar or scrolled content.
 
   It must show on every screen while sample mode is on - the auth gate
   included, where there is no Shell - so it can be mounted in more than one
@@ -38,11 +40,12 @@
 {/if}
 
 <style>
+  /* Centred over the page (beside the sidebar or rail, when there is one),
+     in the 40px band the shell keeps free for it above a framed page. */
   .ev-sample {
     position: fixed;
-    /* 6px + 28px keeps it clear of a top bar pill that starts at 36px. */
-    top: max(6px, var(--safe-t));
-    left: 50%;
+    top: calc(6px + var(--safe-t));
+    left: calc(50% + var(--shell-nav-w, 0px) / 2);
     z-index: var(--z-badge);
     display: inline-flex;
     align-items: center;

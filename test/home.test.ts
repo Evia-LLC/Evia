@@ -155,6 +155,25 @@ describe('plateRect', () => {
     }
   });
 
+  it('frames the phone-portrait render (anchors-mobile.json) with the armchair in view', () => {
+    const phone = frameFromAnchors(parseAnchors(JSON.parse(readFileSync('public/env/lounge/anchors-mobile.json', 'utf8'))));
+    expect([phone.w, phone.h]).toEqual([1080, 2340]);
+    for (const [w, h] of [
+      [390, 844],
+      [360, 740],
+      [430, 932],
+      [768, 1024],
+    ]) {
+      const r = covers(phone, w, h, true);
+      const seatX = r.left + phone.seat[0] * r.width;
+      const seatY = r.top + phone.seat[1] * r.height;
+      expect(seatX).toBeGreaterThan(w * 0.2);
+      expect(seatX).toBeLessThan(w * 0.8);
+      expect(seatY).toBeGreaterThan(h * 0.3);
+      expect(seatY).toBeLessThan(h * 0.85);
+    }
+  });
+
   it('falls back to the stand-in frame without a render', () => {
     expect(frameFromAnchors(null)).toBe(LOUNGE_FALLBACK_FRAME);
   });

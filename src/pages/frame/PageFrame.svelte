@@ -14,6 +14,11 @@
   width     wide (the dashboard's full content width) or narrow (a reading
             column, for long single-column pages)
 
+  The bell and the pill sit where they sit on every dashboard page (the
+  --topbar-* tokens: 16px down, 24px in), and the title starts at the same
+  height as Progress's. The pill shows on the Profile page too, marked as the
+  current page, so the header does not change shape there.
+
   Phones: the title steps down (the tokens do that below 820px), the profile
   pill shrinks to its avatar, and the header clears the sample-data badge.
 -->
@@ -29,13 +34,11 @@
     subtitle?: string;
     back?: { href: string; label: string };
     width?: 'wide' | 'narrow';
-    /** Hide the profile pill (on the profile page itself it would link to itself). */
-    profile?: boolean;
     actions?: Snippet;
     children: Snippet;
   }
 
-  const { title, subtitle, back, width = 'wide', profile = true, actions, children }: Props = $props();
+  const { title, subtitle, back, width = 'wide', actions, children }: Props = $props();
 </script>
 
 <div class="ev-page ev-page--{width}">
@@ -53,10 +56,8 @@
     <div class="ev-page__tools">
       {#if actions}{@render actions()}{/if}
       <NotificationBell tone="light" />
-      {#if profile}
-        <ProfilePill tone="light" class="ev-page__pill" />
-        <ProfilePill tone="light" compact class="ev-page__pill-compact" />
-      {/if}
+      <ProfilePill tone="light" class="ev-page__pill" />
+      <ProfilePill tone="light" compact class="ev-page__pill-compact" />
     </div>
   </header>
 
@@ -87,19 +88,24 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px 24px;
-    padding: 22px 0 24px 17px;
+    /* The tools' right edge at --topbar-right from the page's edge, whatever
+       the page gutter is at this width. */
+    margin-right: calc(var(--topbar-right) - var(--page-x));
+    padding: var(--topbar-top) 0 24px 17px;
   }
   .ev-page__titles {
     min-width: 0;
-    padding-top: 6px;
   }
+  /* Block-level (not inline-flex in a line box), so its 44px target is laid
+     out in full and the title below starts under it, not across its foot. */
   .ev-page__back {
-    display: inline-flex;
+    display: flex;
+    width: fit-content;
     align-items: center;
     gap: 2px;
     /* A 44px target that reads as a small breadcrumb. */
     min-height: 44px;
-    margin: -10px 0 -2px -6px;
+    margin: -10px 0 2px -6px;
     padding: 0 10px 0 4px;
     border-radius: var(--r-pill);
     color: var(--text-secondary);
@@ -143,8 +149,7 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-top: -13px;
+    gap: var(--topbar-gap);
   }
   .ev-page__tools :global(.ev-page__pill-compact) {
     display: none;
@@ -155,16 +160,6 @@
     gap: 16px;
   }
 
-  /* Tablet: the pill keeps its name but the header tightens. */
-  @media (max-width: 1199px) {
-    .ev-page__head {
-      padding-top: 20px;
-    }
-    .ev-page__tools {
-      gap: 10px;
-    }
-  }
-
   /* Phone: the bell and an avatar-only profile beside the title, and room at
      the top for the sample badge. */
   @media (max-width: 819px) {
@@ -173,6 +168,7 @@
     }
     .ev-page__head {
       position: relative;
+      margin-right: 0;
       padding: calc(12px + var(--sample-space, 0px) + var(--safe-t)) 2px 18px;
     }
     .ev-page__titles {

@@ -42,7 +42,7 @@ calls `node.exe scripts/dev.mjs` directly, which is also what `npm run dev` does
 Demo mode is on by default outside production, so an account already exists:
 
 ```
-demo@elohim.local / demo1234
+demo@evia.local / demo1234
 ```
 
 It comes with six scans across ten weeks and two tracked products, so trends, the noise

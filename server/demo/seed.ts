@@ -8,14 +8,16 @@
  * These numbers are development fixtures and are labelled as such on every scan
  * (`notes`) and in the UI. Nothing here ever runs for a real account.
  */
-import { row } from '../db/index.ts';
+import { row, run } from '../db/index.ts';
 import * as users from '../db/users.ts';
 import * as scansRepo from '../db/scans.ts';
 import * as productsRepo from '../db/products.ts';
 import { SKIN_MODEL_VERSION, type SkinAnalysis } from '../../shared/types.ts';
 import { log } from '../lib/log.ts';
 
-const DEMO_EMAIL = 'demo@elohim.local';
+const DEMO_EMAIL = 'demo@evia.local';
+/** The address the demo account had before the product was renamed Evia. */
+const LEGACY_DEMO_EMAIL = 'demo@elohim.local';
 const DEMO_PASSWORD = 'demo1234';
 
 /**
@@ -34,6 +36,14 @@ const TRACK: Array<{ daysAgo: number; m: Record<string, number>; quality: number
 ];
 
 export async function seedDemoUser(): Promise<{ email: string; password: string } | null> {
+  // A database seeded under the old name keeps its demo account and history;
+  // only the address changes, so the sign-in screen's demo box still works.
+  const legacy = await row<{ id: string }>('SELECT id FROM users WHERE email = ?', LEGACY_DEMO_EMAIL);
+  if (legacy) {
+    const taken = await row<{ id: string }>('SELECT id FROM users WHERE email = ?', DEMO_EMAIL);
+    if (!taken) await run('UPDATE users SET email = ? WHERE id = ?', DEMO_EMAIL, legacy.id);
+  }
+
   const existing = await row<{ id: string }>(
     'SELECT id FROM users WHERE email = ?',
     DEMO_EMAIL,

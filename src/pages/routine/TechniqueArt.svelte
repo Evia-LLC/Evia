@@ -52,6 +52,14 @@
         <stop offset="0.6" stop-color="#b79ad0" stop-opacity="0.18" />
         <stop offset="1" stop-color="#b79ad0" stop-opacity="0" />
       </radialGradient>
+      <!-- The skin swatch the technique is shown on: a soft pink ground with a fine pore grid. -->
+      <linearGradient id="{id}-skin" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#c79aae" stop-opacity="0.34" />
+        <stop offset="1" stop-color="#9b7392" stop-opacity="0.2" />
+      </linearGradient>
+      <pattern id="{id}-pores" width="9" height="9" patternUnits="userSpaceOnUse">
+        <circle cx="4.5" cy="4.5" r="0.8" fill="#f3dbe8" fill-opacity="0.32" />
+      </pattern>
       <filter id="{id}-soft" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur stdDeviation="5" />
       </filter>
@@ -73,6 +81,14 @@
     <circle class="rt-art__orb" cx="125" cy="165" r="74" fill="url(#{id}-orb)" />
 
     {#if variant === 'lesson'}
+      <!-- What the guides act on: a swatch of skin (not a face, decision 3), so the
+           presses and arrows read as a diagram of the technique rather than
+           marks floating in the haze. -->
+      <g class="rt-art__swatch">
+        <rect x="16" y="70" width="186" height="186" rx="30" fill="url(#{id}-skin)" />
+        <rect x="16" y="70" width="186" height="186" rx="30" fill="url(#{id}-pores)" />
+        <rect x="16.5" y="70.5" width="185" height="185" rx="29.5" fill="none" stroke="#ecd3ea" stroke-opacity="0.38" stroke-dasharray="3 4" />
+      </g>
       <!-- The presses: rings rippling out where the palms rest (G2, G3). -->
       <g class="rt-art__press" fill="none" stroke="#f0c3d6" stroke-width="1.4">
         {#each [82, 170] as cx (cx)}

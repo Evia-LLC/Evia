@@ -121,7 +121,7 @@
   .sheet__bar {
     display: flex;
     justify-content: flex-end;
-    padding: calc(8px + var(--safe-t) + var(--sample-space, 0px)) 12px 0;
+    padding: calc(8px + env(safe-area-inset-top, 0px) + var(--sample-overlay, 0px)) 12px 0;
   }
   .sheet__body {
     flex: 1;

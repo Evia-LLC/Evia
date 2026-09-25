@@ -143,7 +143,7 @@
         <EmptyState title={view.title} body={view.body} icon="sparkle" level={3}>
           {#snippet action()}
             {#if view.cta === 'scan'}
-              <Button href="/scan" size={tapSize()} iconStart="camera">Take a scan</Button>
+              <Button variant="primary" href="/scan" iconStart="camera">Take a scan</Button>
             {:else if view.cta === 'range' && onwiderange}
               <Button variant="secondary" size={tapSize()} onclick={onwiderange}>Show all time</Button>
             {/if}

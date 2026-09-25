@@ -42,7 +42,7 @@ export interface IntroBeat {
 
 export const INTRO_BEATS: IntroBeat[] = [
   {
-    title: 'Elohim',
+    title: 'Evia',
     sub: 'A beauty consultant who can actually look at your skin.',
     narration: INTRO_LINES[0],
     seconds: 3.2,

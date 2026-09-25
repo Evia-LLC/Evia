@@ -11,7 +11,11 @@
  "plates": [
   {
    "src": "hero-2552.webp",
-   "kind": "base"
+   "kind": "base",
+   "widths": [
+    1276,
+    2552
+   ]
   }
  ],
  "surfaces": {

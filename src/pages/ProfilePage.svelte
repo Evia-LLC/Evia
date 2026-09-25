@@ -10,9 +10,16 @@
   preferences are saved together by one Save, which sits in a bar that stays
   in view at the foot of the page; room sound is a device setting and applies
   at once, as it always has.
+
+  Sample data on while signed in: the account is set aside (BUILD-PLAN 3.1).
+  The fields show the defaults a guest sees, not the account's values, what
+  Evia remembers is not loaded, and Save is off; a note at the top offers the
+  way back, and turning sample data off fills the fields from the account.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
+  import { sample } from '@/sample/mode.svelte.ts';
   import { api } from '@/lib/api.ts';
   import { listVoiceOptions, previewVoice, refreshVoice, signOut } from '@/state/controller.ts';
   import { forgetIntro } from '@/lib/intro.ts';
@@ -28,6 +35,7 @@
   import PageFrame from './frame/PageFrame.svelte';
   import TextField from './frame/TextField.svelte';
   import SelectField from './frame/SelectField.svelte';
+  import SampleAccountNote from './frame/SampleAccountNote.svelte';
 
   /** Plays the introduction again: forget that it was seen, go home, it plays. */
   function replayIntro() {
@@ -40,14 +48,42 @@
   let saveError = $state<string | null>(null);
   let memories = $state<MemoryRecord[]>([]);
 
-  let skinType = $state<SkinType>(session.user?.profile.skinType ?? 'unknown');
-  let concerns = $state((session.user?.profile.concerns ?? []).join(', '));
-  let sensitivities = $state((session.user?.profile.sensitivities ?? []).join(', '));
-  let pregnancyStatus = $state<PregnancyStatus>(session.user?.profile.pregnancyStatus ?? 'unknown');
-  let style = $state<ExplanationStyle>(session.user?.preferences.explanationStyle ?? 'adaptive');
-  let reducedMotion = $state(session.user?.preferences.reducedMotion ?? false);
-  let voiceEnabled = $state(session.user?.preferences.voiceEnabled ?? false);
-  let voiceURI = $state(session.user?.preferences.voiceURI ?? '');
+  /** A signed-in account while sample data is on: set aside, not shown or saved. */
+  const setAside = $derived(sample.on && !session.guest);
+  /** Nothing on this page can be saved: no account, or the account set aside. */
+  const readOnly = $derived(session.guest || sample.on);
+
+  /** The user whose values fill the form: none while the account is set aside. */
+  const source = () => (sample.on && !session.guest ? null : session.user);
+
+  let skinType = $state<SkinType>(source()?.profile.skinType ?? 'unknown');
+  let concerns = $state((source()?.profile.concerns ?? []).join(', '));
+  let sensitivities = $state((source()?.profile.sensitivities ?? []).join(', '));
+  let pregnancyStatus = $state<PregnancyStatus>(source()?.profile.pregnancyStatus ?? 'unknown');
+  let style = $state<ExplanationStyle>(source()?.preferences.explanationStyle ?? 'adaptive');
+  let reducedMotion = $state(source()?.preferences.reducedMotion ?? false);
+  let voiceEnabled = $state(source()?.preferences.voiceEnabled ?? false);
+  let voiceURI = $state(source()?.preferences.voiceURI ?? '');
+
+  /* Sample data switched on or off from this page: refill from what now shows. */
+  function fill() {
+    const user = source();
+    skinType = user?.profile.skinType ?? 'unknown';
+    concerns = (user?.profile.concerns ?? []).join(', ');
+    sensitivities = (user?.profile.sensitivities ?? []).join(', ');
+    pregnancyStatus = user?.profile.pregnancyStatus ?? 'unknown';
+    style = user?.preferences.explanationStyle ?? 'adaptive';
+    reducedMotion = user?.preferences.reducedMotion ?? false;
+    voiceEnabled = user?.preferences.voiceEnabled ?? false;
+    voiceURI = user?.preferences.voiceURI ?? '';
+  }
+  let sampleWas = sample.on;
+  $effect(() => {
+    const on = sample.on;
+    if (on === sampleWas) return;
+    sampleWas = on;
+    untrack(fill);
+  });
   let voiceOptions = $state<Array<{ uri: string; name: string; lang: string }>>([]);
   let sound = $state(soundEnabled());
 
@@ -95,6 +131,7 @@
       .filter(Boolean);
 
   async function save() {
+    if (readOnly) return;
     saving = true;
     saved = false;
     saveError = null;
@@ -124,11 +161,15 @@
   }
 
   async function loadMemories() {
-    if (session.guest) return;
+    if (session.guest || sample.on) {
+      memories = [];
+      return;
+    }
     memories = (await api.memories()).memories;
   }
 
   async function forget(id: string) {
+    if (readOnly) return;
     await api.forget(id);
     await loadMemories();
   }
@@ -141,7 +182,10 @@
   const kindLabel = (kind: string) => kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, ' ');
 
   $effect(() => {
+    void sample.on;
     void loadMemories();
+  });
+  $effect(() => {
     void listVoiceOptions().then((options) => (voiceOptions = options));
   });
 </script>
@@ -150,8 +194,9 @@
   title="Profile"
   subtitle="What Evia works from. Correct anything that is wrong, and the next answer uses the correction."
   back={{ href: '/settings', label: 'Settings' }}
-  profile={false}
 >
+  {#if setAside}<SampleAccountNote action="see and change your profile" />{/if}
+
   <div class="profile">
     <div class="profile__col">
       <Card aria-labelledby="pro-skin">
@@ -215,6 +260,8 @@
             title="Nothing yet"
             body={session.guest
               ? 'Nothing is remembered while you are looking around without an account.'
+              : sample.on
+              ? 'Your account is set aside while sample data is on, so what Evia remembers is not shown.'
               : 'As you talk, Evia keeps the things worth keeping — what you use, what flares, what you are working towards. They show up here, and you can strike any of them.'}
           />
         {/if}
@@ -285,14 +332,20 @@
         <SectionHeader id="pro-account" title="Account" icon="user" />
         <div class="line line--account">
           <div class="line__text">
-            <span class="line__title line__title--strong">{session.guest ? 'Looking around' : session.user?.email}</span>
+            <span class="line__title line__title--strong">
+              {session.guest ? (sample.on ? 'Sample preview' : 'Looking around') : setAside ? 'Sample preview' : session.user?.email}
+            </span>
             {#if session.guest}
               <span class="line__sub">No account, nothing saved</span>
+            {:else if setAside}
+              <span class="line__sub">Your account is set aside while sample data is on</span>
             {:else if since}
               <span class="line__sub">Member since {since}</span>
             {/if}
           </div>
-          <Button variant="secondary" size="sm" onclick={() => signOut()}>{session.guest ? 'Leave' : 'Sign out'}</Button>
+          {#if !setAside}
+            <Button variant="secondary" size="sm" onclick={() => signOut()}>{session.guest ? 'Leave' : 'Sign out'}</Button>
+          {/if}
         </div>
       </Card>
     </div>
@@ -306,11 +359,13 @@
         <span class="savebar__error">{saveError}</span>
       {:else if session.guest}
         <span class="savebar__note">Nothing is saved while you are looking around.</span>
+      {:else if sample.on}
+        <span class="savebar__note">Nothing is saved while sample data is on.</span>
       {:else}
         <span class="savebar__note">Skin details and how Evia talks are saved together.</span>
       {/if}
     </div>
-    <Button variant="primary" onclick={save} disabled={saving || session.guest}>
+    <Button variant="primary" onclick={save} disabled={saving || readOnly}>
       {saving ? 'Saving…' : 'Save changes'}
     </Button>
   </div>
