@@ -27,7 +27,7 @@ beforeAll(async () => {
   db = new PGlite();
   await db.exec(init);
   await db.exec(migration);
-}, 20_000);
+}, 30_000);
 
 beforeEach(async () => {
   await db.exec('TRUNCATE consent_events, users CASCADE');

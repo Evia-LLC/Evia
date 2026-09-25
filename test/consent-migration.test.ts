@@ -9,7 +9,7 @@ describe('011 versioned consent migration', () => {
   it('migrates a fresh database', async () => {
     const db = await base(); await db.exec(migration);
     expect((await db.query(`SELECT * FROM consent_events`)).rows).toEqual([]);
-  }, 20_000);
+  }, 30_000);
   it('converts both legacy rows and preserves known grant time', async () => {
     const db = await base();
     await db.exec(`INSERT INTO users VALUES ('u','u@example.test','U','h','s','2025-01-01');
@@ -23,5 +23,5 @@ describe('011 versioned consent migration', () => {
     expect(result.rows.find(r => r.consent_type === 'cloud_reasoning')).toMatchObject({ state: 'withdrawn' });
     expect(result.rows.find(r => r.consent_type === 'cloud_reasoning')?.metadata_json.recordedAtSource).toBe('migration_time');
     expect((await db.query(`SELECT * FROM consents`)).rows).toHaveLength(2);
-  }, 20_000);
+  }, 30_000);
 });

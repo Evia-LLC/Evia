@@ -1,3 +1,4 @@
+import { selectAnalysis } from '@/skin-analysis/provider.ts';
 /**
  * Application glue.
  *
@@ -9,7 +10,7 @@
 import { api, ApiError, setToken } from '@/lib/api.ts';
 import { session, type ScanKind } from './session.svelte.ts';
 import type { Director } from '@/stage/director.ts';
-import { sample, setSample } from '@/sample/mode.svelte.ts';
+import { SAMPLE_ONLY_DEPLOYMENT, resetSample, sample, sampleForRestoredAccount, setSample } from '@/sample/mode.svelte.ts';
 import { analyseFace, CaptureRejected } from '@/skin-analysis/pipeline.ts';
 import {
   analyseBody,
@@ -296,6 +297,7 @@ export async function bootstrap(): Promise<void> {
         });
       void within(api.me(), 8000).then((me) => {
         if (me) {
+          sampleForRestoredAccount();
           session.user = me.user;
           session.modelAvailable = me.modelAvailable;
           void loadUserData();
@@ -321,6 +323,7 @@ export async function bootstrap(): Promise<void> {
 
   try {
     const me = await api.me();
+    sampleForRestoredAccount();
     session.user = me.user;
     session.modelAvailable = me.modelAvailable;
     await loadUserData();
@@ -346,8 +349,10 @@ export async function register(
   email: string,
   password: string,
   displayName: string,
+  dateOfBirth: string,
+  termsAccepted: boolean,
 ): Promise<void> {
-  const { token, user } = await api.register(email, password, displayName);
+  const { token, user } = await api.register(email, password, displayName, dateOfBirth, termsAccepted);
   setToken(token);
   session.guest = false;
   session.user = user;
@@ -367,9 +372,14 @@ export async function signOut(): Promise<void> {
   forgetVisit();
   // The capture, the reading on display and her mood go with the session.
   director?.reset();
-  // A sample preview was the guest visit; it ends with it. An account that
-  // chose sample data keeps the choice.
-  if (wasGuest) setSample(false);
+  // A sample-only deployment: an account set sample data aside while signed
+  // in (AuthGate), and a live guest set it aside for the visit
+  // (enterLiveGuest); either way the gate after it starts as every visit
+  // there does, in sample mode.
+  if (SAMPLE_ONLY_DEPLOYMENT) resetSample();
+  // Elsewhere a sample preview was the guest visit, and it ends with it. An
+  // account that chose sample data keeps the choice.
+  else if (wasGuest) setSample(false);
 }
 
 /**
@@ -456,6 +466,23 @@ export function enterGuestMode(): void {
  */
 export function enterSamplePreview(): void {
   setSample(true);
+  enterGuestMode();
+}
+
+/**
+ * "Look around without an account": the live guest visit, where Evia talks,
+ * scans and reads (the gate's other way in is the sample preview above).
+ *
+ * A sample-only deployment starts every visitor in sample mode, so here the
+ * guest way sets sample data aside for the visit: the guest's chat and /scan
+ * then run on the live local paths - facial scan consent, the camera, the
+ * local reading - as Ugochukwu's DEMO_USER_TEST step 5 expects, instead of
+ * the sample consultation. Signing out goes back to the deployment's default
+ * (`signOut`). Anywhere else the guest visit leaves sample mode as it is, so a
+ * `?sample=1` review link still previews what it was sent to preview.
+ */
+export function enterLiveGuest(): void {
+  if (SAMPLE_ONLY_DEPLOYMENT && sample.on) setSample(false);
   enterGuestMode();
 }
 
@@ -1055,12 +1082,28 @@ export async function runAnalysis(
     return;
   }
 
-  const previous: SkinAnalysis | null = session.latestScan;
+  let previous: SkinAnalysis | null = session.latestScan;
 
   try {
-    const { analysis, imageBase64 } = await analyseFace(source, (progress, stage) => {
+    const localResult = await analyseFace(source, (progress, stage) => {
       director?.setScanProgress(progress, stage);
     });
+
+    const { imageBase64 } = localResult;
+    director?.setScanProgress(0.95, 'checking the analysis provider');
+    // Provider selection is main's (Section 1): a signed-in account may have
+    // its capture read by Perfect Corp, a guest is told why it is on the local
+    // backup. Sample mode never talks to the server (BUILD-PLAN 3.1), so a
+    // sample visit does not even ask which provider is configured: its reading
+    // is the local one, labelled "Local analysis".
+    const selected = sample.on
+      ? { analysis: localResult.analysis, notice: '' }
+      : await selectAnalysis(localResult.analysis, localResult.providerImageBase64, !session.guest && Boolean(session.user));
+    localResult.providerImageBase64 = null;
+    const analysis = selected.analysis;
+    session.analysisNotice = selected.notice;
+    // No narrated or hologram deltas across provider/formula versions.
+    if (previous?.modelVersion !== analysis.modelVersion) previous = null;
 
     session.pendingCapture = {
       imageBase64,
@@ -1072,8 +1115,7 @@ export async function runAnalysis(
     /*
      * A guest keeps the reading in memory and nowhere else.
      *
-     * The measurement itself is identical — it was computed on this device
-     * either way — so what is shown on the cards is the real thing. What a
+     * Guest measurement is local; signed-in sample accounts can use Perfect Corp — so what is shown on the cards is the real thing. What a
      * guest does not get is the summary, because a longitudinal summary of one
      * scan that will not survive the tab closing is not a summary of anything.
      * A sample visit is kept the same way, so its capture is never offered

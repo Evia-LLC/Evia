@@ -17,13 +17,30 @@
   body          a body reading: her words and the ways forward.
   empty         the room without a head: "Scan to see your map".
 
-  The AI disclosure is always on screen (SRS section 6), where the mockup has
-  free floor: bottom-right on desktop, in the flow on smaller screens.
+  The AI disclosure is always on screen (SRS section 6). It is the Consent
+  Wording Pack's section 8 notice (main, Section 5): the consultation label,
+  the result disclaimer and the escalation line, verbatim - three sentences,
+  too tall for the bottom-right corner beside the tray at the smaller desk
+  sizes. So on the desk consultation it sits on the free floor at the lower
+  left, under the left callouts and clear of the tray (where her words, the
+  reading dock, stand above it in real mode); in the flow elsewhere on larger
+  screens, in a footer bar on the tablet composition, in the sheet on a phone;
+  under the facial scan consent while it is unanswered, and in the capture
+  panel's foot once the camera is on.
+
+  From main (Section 1): the camera is not mounted until the facial scan
+  consent has been answered on this visit (FacialScanConsent, the pack's
+  section 1 screen, verbatim); "Not now" goes back Home. A signed-in account
+  outside sample mode may then have its capture analysed by Perfect Corp
+  through Evia's server, with the local reading as the visible backup; the
+  reading dock says which analysis the reading came from.
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import type { FaceRegionKey } from '@shared/types.ts';
-  import AiDisclosure from '@/shell/AiDisclosure.svelte';
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
+  import FacialScanConsent from '@/components/legal/FacialScanConsent.svelte';
+  import { router } from '@/router/router.svelte.ts';
   import Button from '@/ui/Button.svelte';
   import ScanCapture from '@/scan/ScanCapture.svelte';
   import { director } from '@/stage/director.ts';
@@ -48,14 +65,24 @@
   const REF_H = 941;
 
   /**
-   * The desk stage is the ref4 frame contained in the window. Below about 0.76 of
-   * it (narrower than about 1270 px, or shorter than about 715) the readable type
-   * no longer fits around the head without panels running into each other, so
-   * those windows get the tablet composition, which scrolls.
+   * The desk stage is the ref4 frame contained in the window. Below 0.8 of it
+   * (narrower than about 1340 px, or shorter than about 755) the readable type
+   * no longer fits around the head without the right callouts running into the
+   * OBSERVED CONCERNS panel, so those windows get the tablet composition, which
+   * scrolls. Above it, Consultation still measures the right column and reports
+   * a misfit, should a font or a longer reading need more room than that.
    */
   const fitU = $derived(Math.min(width / REF_W, height / REF_H));
+  /*
+   * A window the desk stage was measured not to fit (Consultation's
+   * `onmisfit`: its right column would run into the panels or the tray). That
+   * size and anything no larger in both directions gets the tablet
+   * composition; a larger window tries the desk again.
+   */
+  let misfit = $state<{ w: number; h: number } | null>(null);
+  const deskFits = $derived(!misfit || width > misfit.w || height > misfit.h);
   const layout = $derived<'desk' | 'tablet' | 'phone'>(
-    fitU >= 0.76 && width / Math.max(1, height) >= 1.3 ? 'desk' : width >= 600 ? 'tablet' : 'phone',
+    fitU >= 0.8 && width / Math.max(1, height) >= 1.3 && deskFits ? 'desk' : width >= 600 ? 'tablet' : 'phone',
   );
   /** CSS px per ref px on the desk stage. */
   const u = $derived(layout === 'desk' ? fitU : 1);
@@ -72,13 +99,14 @@
   const compact = $derived(layout === 'desk' && u < 1);
 
   /**
-   * The reading dock (real mode, desk): her words and the ways forward, on the
-   * free floor at the stage's lower left, where the character stood in the
-   * mockup. It must clear the card tray to its right (which starts at ref x 523)
-   * and the lowest left callout above it, whatever the window size and however
-   * long her reply is: its width stops short of the tray, its top under the
-   * callouts (measured, since their height follows the readable type and the
-   * number of lines), and a long reply scrolls inside it.
+   * The floor (desk): the free floor at the stage's lower left, where the
+   * character stood in the mockup. It holds the AI disclosure and, in real
+   * mode, the reading dock above it (her words and the ways forward). It must
+   * clear the card tray to its right (which starts at ref x 523) and the lowest
+   * left callout above it, whatever the window size and however long her reply
+   * is: its width stops short of the tray, its top under the callouts
+   * (measured, since their height follows the readable type and the number of
+   * lines), and a long reply scrolls inside the dock while the disclosure stays.
    */
   let scanEl: HTMLElement | undefined = $state();
   let calloutsBottom = $state(0);
@@ -100,6 +128,20 @@
     const top = Math.max(stage.y + 0.45 * stage.h, calloutsBottom + 12);
     return { left, bottom, width, maxHeight: Math.max(150, height - bottom - top) };
   });
+
+  /** The tablet composition's disclosure bar, measured so the reading can scroll clear of it. */
+  let aibarH = $state(0);
+
+  /** The facial scan consent, answered on this visit (main, Section 1). */
+  let facialAccepted = $state(false);
+
+  /**
+   * main's lede for the capture phase (its Page header while capturing), word
+   * for word: above the consent while it is unanswered, then in the capture
+   * panel's foot beside the section 8 notice.
+   */
+  const CAPTURE_LEDE =
+    'After your consent, Perfect Corp can analyse your capture through Evia. Local analysis is available as a backup.';
 
   const consulting = $derived(view.phase === 'consultation');
   const capturing = $derived(view.mode === 'real' && (view.phase === 'capture' || view.phase === 'reading'));
@@ -125,7 +167,7 @@
 
   $effect(() => {
     void [width, height, view.callouts, layout];
-    if (!(layout === 'desk' && consulting && view.mode === 'real')) return;
+    if (!(layout === 'desk' && consulting)) return;
     // Now, and again once the callouts' build-in has settled and the fonts are in.
     const raf = requestAnimationFrame(measureCallouts);
     const t = setTimeout(measureCallouts, 1900);
@@ -194,39 +236,66 @@
         style:--u={u}
       >
         <StatusHeader status={view.status} class="scan__status scan__status--desk" />
-        <Consultation {view} {layout} {u} {compact} liveMesh={director.hologram.mesh} {crops} />
+        <Consultation
+          {view}
+          {layout}
+          {u}
+          {compact}
+          liveMesh={director.hologram.mesh}
+          {crops}
+          onmisfit={() => (misfit = { w: width, h: height })}
+        />
       </div>
-      {#if view.mode === 'real' && dock}
+      {#if dock}
         <div
-          class="scan__dock"
+          class="scan__floor"
           style:left="{dock.left}px"
           style:bottom="{dock.bottom}px"
           style:width="{dock.width}px"
           style:max-height="{dock.maxHeight}px"
         >
-          <ReadingDock />
+          {#if view.mode === 'real'}
+            <div class="scan__dock"><ReadingDock /></div>
+          {/if}
+          <AIDisclosure consultation result tone="holo" class="scan__ai scan__ai--floor" />
         </div>
       {/if}
-      <AiDisclosure tone="holo" class="scan__ai" />
     {:else if consulting}
-      <div class="scan__scroll" class:is-fixed={layout === 'phone'}>
+      <div class="scan__scroll" class:is-fixed={layout === 'phone'} style:--aibar-h="{layout === 'tablet' ? aibarH : 0}px">
         <StatusHeader status={view.status} class="scan__status" />
         <Consultation {view} {layout} u={1} compact={false} liveMesh={director.hologram.mesh} {crops} />
       </div>
       {#if layout === 'tablet'}
-        <!-- A footer bar with its own scrim: the reading scrolls under it, never text on text. -->
-        <div class="scan__aibar"><AiDisclosure tone="holo" /></div>
+        <!-- A footer bar with its own scrim: the reading scrolls under it, never text on text,
+             and the reading's own foot is padded by the bar's height so its end can scroll clear. -->
+        <div class="scan__aibar" bind:clientHeight={aibarH}><AIDisclosure consultation result tone="holo" /></div>
       {/if}
     {:else}
       <div class="scan__scroll scan__scroll--center" class:is-fixed={layout === 'phone'}>
         <!-- First in the DOM (it is the page's h1); on the phone it floats over the capture by z-index. -->
         <StatusHeader status={view.status} backed class="scan__status {layout === 'phone' ? 'scan__status--over' : ''}" />
         {#if capturing}
-          <div class="scan__capture">
-            <ScanCapture {layout}>
-              <AiDisclosure tone="holo" />
-            </ScanCapture>
-          </div>
+          {#if facialAccepted}
+            <div class="scan__capture">
+              <ScanCapture {layout}>
+                <!-- Not in the phone's fixed sheet: every line there shrinks the face oval
+                     above it (this one by about a third at 390x844), and the phone showed it
+                     on the consent step just before. The sheet keeps main's two capture lines. -->
+                {#if layout !== 'phone'}<p class="scan__caplede">{CAPTURE_LEDE}</p>{/if}
+                <AIDisclosure consultation result tone="holo" />
+              </ScanCapture>
+            </div>
+          {:else}
+            <!-- The consent stands in for the camera: main's capture lede above it and the
+                 section 8 notice under it, in its own column (on a phone, its own scroller). -->
+            <div class="scan__consent">
+              <div class="scan__consent-col">
+                <p class="scan__lede scan__lede--consent">{CAPTURE_LEDE}</p>
+                <FacialScanConsent tone="holo" onAccepted={() => { facialAccepted = true; }} onDeclined={() => router.go('/')} />
+                <AIDisclosure consultation result tone="holo" class="scan__ai scan__ai--consent" />
+              </div>
+            </div>
+          {/if}
         {:else if view.phase === 'body'}
           <div class="scan__solo">
             <p class="scan__lede">Body readings are told in words: the face map is for skin scans.</p>
@@ -237,7 +306,11 @@
             <h2 class="scan__empty-title">Nothing to map yet</h2>
             <p class="scan__lede">
               Your face map is drawn from a live scan and is never stored, so there is nothing to show until you
-              take one. The photo is read here, in this browser.
+              take one.
+            </p>
+            <!-- main's ready card, word for word. -->
+            <p class="scan__lede">
+              Even light, face in the oval, hold still. Your capture is sent to Perfect Corp only after your consent. Local backup analysis is available.
             </p>
             {#if session.chatError}
               <p class="scan__lede" role="alert">{session.chatError}</p>
@@ -248,11 +321,11 @@
           </div>
         {/if}
         {#if layout !== 'phone' && !capturing}
-          <AiDisclosure tone="holo" class="scan__ai scan__ai--flow" />
+          <AIDisclosure consultation result tone="holo" class="scan__ai scan__ai--flow" />
         {/if}
       </div>
       {#if layout === 'phone' && !capturing}
-        <AiDisclosure tone="holo" class="scan__ai scan__ai--phone" />
+        <AIDisclosure consultation result tone="holo" class="scan__ai scan__ai--phone" />
       {/if}
     {/if}
   {/if}
@@ -305,8 +378,19 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 140px 16px 72px;
+    justify-content: flex-start;
+    /* Clear of the floating status header (76px down, about 67px tall, plus
+       the top inset, which includes a sample-only deployment's notice strip). */
+    padding: calc(156px + var(--safe-t)) 16px 72px;
+  }
+  /* Centred when it fits, and scrolled from its top when it does not: two
+     growing spacers rather than flex centring, which pushes the top of a
+     taller column (the capture with its guidance, the consent) out of reach
+     under the header. */
+  .scan__scroll--center::before,
+  .scan__scroll--center::after {
+    content: '';
+    flex: 1 1 0;
   }
   .scan[data-layout='phone'] .scan__scroll--center {
     padding: 0;
@@ -326,6 +410,30 @@
   .scan[data-layout='phone'] .scan__capture {
     position: absolute;
     inset: 0;
+  }
+  /* The facial scan consent (main, Section 1) before the camera: a long,
+     verbatim screen. On the desk and tablet compositions it is centred when it
+     fits and scrolls from its top when it does not (the spacers above); on a
+     phone it is its
+     own scroller under the floating header, so no line of it runs beneath the
+     Back control or the status. */
+  .scan__consent {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+  .scan[data-layout='phone'] .scan__consent {
+    position: absolute;
+    top: calc(var(--safe-t) + 144px);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    width: auto;
+    margin: 0;
+    padding: 4px max(16px, var(--safe-r)) calc(24px + var(--safe-b)) max(16px, var(--safe-l));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .scan__solo {
     display: grid;
@@ -369,14 +477,27 @@
     gap: 10px;
   }
 
-  /* The dock and the disclosure, on the desk stage's free floor. */
-  /* Anchored by its bottom edge, so a short reply sits on the floor and a long one scrolls. */
-  .scan__dock {
+  /* The dock and the disclosure, on the desk stage's free floor. Anchored by its
+     bottom edge, so a short reply sits on the floor and a long one scrolls inside
+     the dock; the disclosure under it never scrolls away. */
+  .scan__floor {
     position: absolute;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .scan__dock {
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     border-radius: 14px;
-    z-index: 3;
+  }
+  .scan .scan__floor > :global(.scan__ai--floor) {
+    position: static;
+    flex: none;
   }
   .scan :global(.scan__ai) {
     position: absolute;
@@ -410,5 +531,35 @@
     right: 16px;
     bottom: calc(12px + var(--safe-b));
     justify-content: center;
+  }
+
+  /* The facial scan consent's column: main's capture lede, the consent, then
+     the section 8 notice in the flow under it (never pinned over the room). */
+  .scan__consent-col {
+    display: grid;
+    gap: 14px;
+    width: 100%;
+    max-width: 46rem;
+    min-width: 0;
+  }
+  /* On the room's picture, so on navy glass like every other line there. */
+  .scan__consent-col > .scan__lede--consent {
+    max-width: none;
+    padding: 10px 14px;
+    border-radius: var(--r-md);
+    background: var(--glass-holo);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    color: #e6edf9;
+  }
+  .scan .scan__consent-col > :global(.scan__ai--consent) {
+    position: static;
+  }
+  /* The capture panel's foot: main's lede, then the section 8 notice. */
+  .scan__caplede {
+    margin: 0;
+    font-size: var(--fs-body-sm);
+    line-height: 1.5;
+    color: #d3dcef;
   }
 </style>

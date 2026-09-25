@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CookieBanner from '@/components/legal/CookieBanner.svelte';
   import { onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
   import {
@@ -16,6 +17,8 @@
   import { sample } from '@/sample/mode.svelte.ts';
   import Shell from '@/shell/Shell.svelte';
   import SampleBadge from '@/shell/SampleBadge.svelte';
+  import DemoDeploymentNotice from '@/shell/DemoDeploymentNotice.svelte';
+  import AgeAssurancePage from '@/pages/legal/AgeAssurancePage.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
   import Intro from '@/components/Intro.svelte';
   import HoloPanel from '@/components/HoloPanel.svelte';
@@ -197,7 +200,8 @@
     <div class="auth"><div class="auth__mark">Evia</div></div>
   {:else if isLegalRoute(router.id)}
     {#key router.id}
-      {#if router.is('legal-terms')}<TermsPage />
+      {#if router.is('legal-age-assurance')}<AgeAssurancePage />
+      {:else if router.is('legal-terms')}<TermsPage />
       {:else if router.is('legal-privacy')}<PrivacyPolicyPage />
       {:else if router.is('legal-facial-scan')}<FacialScanConsentPage />
       {:else if router.is('legal-health')}<HealthConsentPage />
@@ -252,3 +256,11 @@
        included. The badge is a singleton, so the Shell's own copy defers. -->
   <SampleBadge />
 </div>
+
+<!-- The cookie choice (LEGAL_PROMISE_TRACKER P-12): its first layer until a
+     choice is made, and the "Cookie settings" control afterwards. -->
+<CookieBanner />
+
+<!-- A sample-only deployment (VITE_SAMPLE_DEMO=1, required by the
+     `sample_demo` legal release profile) says so on every screen. -->
+<DemoDeploymentNotice />

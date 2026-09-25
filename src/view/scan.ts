@@ -365,6 +365,12 @@ export interface ScanInput {
   speaking: boolean;
   /** What the capture's camera is doing (capture phase). Defaults to 'live'. */
   camera?: CameraState;
+  /**
+   * A signed-in account, whose capture the configured provider (Perfect Corp,
+   * main's Section 1) may read through Evia's server after the facial scan
+   * consent. The capture header then does not say "read on this device".
+   */
+  providerMayRead?: boolean;
 }
 
 function timeOf(iso: string | null): string {
@@ -383,11 +389,23 @@ const CAMERA_EYEBROW: Record<CameraState, string> = {
   photo: 'PHOTO CHOSEN · READ ON THIS DEVICE',
 };
 
+/** The same, where the provider may read the capture: what the camera does, and no claim about where. */
+const CAMERA_EYEBROW_PROVIDER: Record<CameraState, string> = {
+  ...CAMERA_EYEBROW,
+  idle: 'CAMERA OFF',
+  live: 'LIVE CAMERA',
+  photo: 'PHOTO CHOSEN',
+};
+
 /** The live header: what the pipeline, or her explanation, is doing now. */
 function statusFor(input: ScanInput, phase: ScanPhase, capturedAt: string | null): ScanStatus {
   switch (phase) {
     case 'capture':
-      return { title: 'Scan to see your map', eyebrow: CAMERA_EYEBROW[input.camera ?? 'live'], live: false };
+      return {
+        title: 'Scan to see your map',
+        eyebrow: (input.providerMayRead ? CAMERA_EYEBROW_PROVIDER : CAMERA_EYEBROW)[input.camera ?? 'live'],
+        live: false,
+      };
     case 'reading': {
       const stage = (input.scanStage || 'measuring').toUpperCase();
       return { title: 'Reading your skin', eyebrow: `${stage} · ${Math.round(input.scanProgress * 100)}%`, live: true };
@@ -529,5 +547,6 @@ export function scanView(): ScanView {
     revealing: h.revealed.length < h.revealQueue.length,
     speaking: session.speaking,
     camera: captureStatus.camera,
+    providerMayRead: !session.guest && session.user !== null,
   });
 }

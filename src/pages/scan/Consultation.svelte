@@ -27,7 +27,7 @@
   import type { ScanMesh } from '@/scan/mesh.ts';
   import { thumbLabel, type CalloutSlot, type ScanView } from '@/view/scan.ts';
   import Icon from '@/ui/Icon.svelte';
-  import AiDisclosure from '@/shell/AiDisclosure.svelte';
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   import HoloCanvas from './HoloCanvas.svelte';
   import Callout from './Callout.svelte';
   import ConcernsPanel from './ConcernsPanel.svelte';
@@ -49,9 +49,15 @@
     /** The live session mesh, when the view says there is one. */
     liveMesh: ScanMesh | null;
     crops: CropSet;
+    /**
+     * Desk: the right column cannot be kept clear of the panels and the tray
+     * at this window size (see `fitRight`); the page then uses the tablet
+     * composition here.
+     */
+    onmisfit?: () => void;
   }
 
-  const { view, layout, u, compact, liveMesh, crops }: Props = $props();
+  const { view, layout, u, compact, liveMesh, crops, onmisfit }: Props = $props();
 
   const LEFT: CalloutSlot[] = ['forehead', 'tzone', 'cheeks'];
   const leftCallouts = $derived(view.callouts.filter((c) => LEFT.includes(c.slot)));
@@ -114,6 +120,65 @@
     ports = next;
     const sheet = layout === 'phone' ? root.querySelector<HTMLElement>('.sheet') : null;
     sheetTop = sheet ? sheet.getBoundingClientRect().top - r.top : null;
+    if (layout === 'desk') fitRight(r);
+  }
+
+  /* ---- desk: the right column never runs into the panels ------------------ */
+  /*
+   * UNDER-EYES and CHIN sit at ref4's x, between the head and the panels, and
+   * their width follows the readable type (and the font), not the stage. So
+   * after layout the right column is measured against its neighbours, and
+   * whatever it would run into moves instead of covering it:
+   *  - the SKIN MAP card above: the two callouts step down below it;
+   *  - OBSERVED CONCERNS beside them: the panel steps right, into the free
+   *    wall under the SKIN MAP, as far as the stage edge allows;
+   *  - the card tray below: nothing can move, so that is a misfit.
+   * A misfit (no room left at this window size) asks the page for the tablet
+   * composition instead. Everything is read from layout boxes that the
+   * build-in animations do not move sideways (the slots, the shelf), and a
+   * misfit is only reported once the fonts are in, so a first frame drawn in
+   * a stand-in font cannot send the reference size to the tablet layout.
+   */
+  const FIT_GAP = 12;
+  const FIT_EDGE = 10;
+  const FIT_TRAY_GAP = 4;
+  let concernsShift = $state(0);
+  let rightDrop = $state(0);
+
+  function fitRight(r: DOMRect) {
+    if (!root) return;
+    const slots = [...root.querySelectorAll<HTMLElement>('.col-right .slot')];
+    const concerns = root.querySelector<HTMLElement>('.panels .concerns');
+    if (!slots.length || !concerns) return;
+    const boxes = slots.map((el) => el.getBoundingClientRect());
+    // Where the column is without this function's own adjustments.
+    const top = Math.min(...boxes.map((b) => b.top)) - rightDrop;
+    const bottom = Math.max(...boxes.map((b) => b.bottom)) - rightDrop;
+    const left = Math.min(...boxes.map((b) => b.left));
+    const reach = Math.max(...boxes.map((b) => b.right));
+
+    const map = root.querySelector<HTMLElement>('.panels .skinmap')?.getBoundingClientRect();
+    const drop = map && map.left < reach + FIT_GAP ? Math.max(0, map.bottom + FIT_GAP - top) : 0;
+
+    const c = concerns.getBoundingClientRect();
+    const baseLeft = c.left - concernsShift;
+    const baseRight = c.right - concernsShift;
+    const need = Math.max(0, reach + FIT_GAP - baseLeft);
+    const room = Math.max(0, r.right - FIT_EDGE - baseRight);
+    const shift = Math.min(need, room);
+
+    const shelf = root.querySelector<HTMLElement>('.shelf')?.getBoundingClientRect();
+    // The chin callout may sit close above the tray (8 px at 1366 x 768, as designed), never on it.
+    const underTray = !!shelf && left < shelf.right && reach > shelf.left && bottom + drop + FIT_TRAY_GAP > shelf.top;
+
+    if (Math.abs(shift - concernsShift) > 0.5) concernsShift = shift;
+    if (Math.abs(drop - rightDrop) > 0.5) {
+      rightDrop = drop;
+      // The leader lines start at the callouts' thumbnails: measure them again where they now are.
+      void tick().then(measure);
+    }
+    const fontsIn = typeof document === 'undefined' || !document.fonts || document.fonts.status === 'loaded';
+    if (fontsIn && (need > room + 0.5 || underTray)) onmisfit?.();
   }
 
   onMount(() => {
@@ -214,6 +279,8 @@
   data-layout={layout}
   class:is-compact={compact}
   style:--u={u}
+  style:--concerns-shift="{layout === 'desk' ? concernsShift : 0}px"
+  style:--right-drop="{layout === 'desk' ? rightDrop : 0}px"
   bind:this={root}
 >
   {#if layout === 'desk'}
@@ -321,7 +388,7 @@
       >
         <span aria-hidden="true"></span>
       </button>
-      <div class="sheet__ai"><AiDisclosure tone="holo" /></div>
+      <div class="sheet__ai"><AIDisclosure consultation result tone="holo" /></div>
       <div class="sheet__scroll">
         {#if current}
           <div class="region" data-slot={current.slot} aria-live="polite">
@@ -445,7 +512,7 @@
   .col-right .slot {
     position: absolute;
     left: calc(var(--lx) * 1px * var(--u));
-    top: calc(var(--ty) * 1px * var(--u));
+    top: calc(var(--ty) * 1px * var(--u) + var(--right-drop, 0px));
   }
   /* Lower than ref4 (305 / 437): the SKIN MAP card above them is taller with the
      readable type and its "illustration" caption. */
@@ -504,6 +571,9 @@
      single lines); still narrower than the SKIN MAP card above. */
   .panels :global(.concerns) {
     width: max(288px, calc(270px * var(--u)));
+    /* Measured (fitRight): as far right as the callouts beside it need. */
+    position: relative;
+    left: var(--concerns-shift, 0px);
   }
   .is-compact .panels {
     right: 10px;
@@ -595,7 +665,8 @@
   [data-layout='tablet'] {
     position: relative;
     inset: auto;
-    padding: 132px 16px 88px;
+    /* The foot clears the page's disclosure bar (its measured height, --aibar-h). */
+    padding: 132px 16px max(88px, calc(var(--aibar-h, 0px) + 24px));
   }
   /* Tablet and phone are the touch compositions (BUILD-PLAN decision 7): the
      Detailed / Gen-Z switch and the skin-layer tabs are full 44 px targets

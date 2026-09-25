@@ -20,7 +20,7 @@
 export type RouteId =
   | 'home' | 'scan' | 'routine' | 'progress' | 'products' | 'learn' | 'settings'
   | 'profile' | 'privacy' | 'data'
-  | 'legal-terms' | 'legal-privacy' | 'legal-facial-scan' | 'legal-health'
+  | 'legal-age-assurance' | 'legal-terms' | 'legal-privacy' | 'legal-facial-scan' | 'legal-health'
   | 'legal-safety-lifestyle' | 'legal-progress-photo' | 'legal-subscription' | 'legal-cancellation';
 
 export interface Route {
@@ -50,6 +50,7 @@ export const ROUTES: readonly Route[] = [
   { id: 'profile', path: '/profile', label: 'Profile', title: 'Profile — Evia', nav: false },
   { id: 'privacy', path: '/privacy', label: 'Privacy', title: 'Privacy — Evia', nav: false },
   { id: 'data', path: '/settings/data', label: 'Your data', title: 'Your data — Evia', nav: false },
+  { id: 'legal-age-assurance', path: '/legal/age-assurance', label: 'Age and guardian approval', title: 'Age and guardian approval — Evia', nav: false },
   // Review-only shells: addresses and rendering, with no feature activation.
   { id: 'legal-terms', path: '/legal/terms', label: 'Terms', title: 'Terms of Use — Evia', nav: false },
   { id: 'legal-privacy', path: '/legal/privacy', label: 'Privacy policy', title: 'Privacy Policy — Evia', nav: false },

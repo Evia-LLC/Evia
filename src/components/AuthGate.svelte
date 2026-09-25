@@ -19,19 +19,38 @@
   saved), or preview every screen with the design's sample data (the same
   guest visit, with the "Sample data" badge on screen throughout). The legal
   links go to the placeholder drafts, which signing in does not accept.
+
+  Registration carries main's Section 2 (7d776c7), logic and wording
+  unchanged: a date of birth first, with the pack's eligibility line; under 16
+  is refused before anything is stored (the fields are cleared and the ways
+  in without an account close); 16 or 17 opens the guardian walkthrough
+  (AgeGuardianFlow, step 3) in the card instead of creating an account; 18 and
+  over sees the name and password fields and the separate, unticked Terms
+  choice, and a sample registration goes on to /legal/age-assurance. On a
+  sample-only deployment every account is a sample account and the gate says
+  so; signing in there leaves sample data, since the account is what is being
+  tried.
 -->
 <script lang="ts">
   import { cubicOut, expoOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
-  import { register, signIn, enterGuestMode, enterSamplePreview } from '@/state/controller.ts';
+  import { register, signIn, enterLiveGuest, enterSamplePreview } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
-  import { link } from '@/router/router.svelte.ts';
+  import { link, router } from '@/router/router.svelte.ts';
+  import { SAMPLE_ONLY_DEPLOYMENT, setSample } from '@/sample/mode.svelte.ts';
+  import AgeGuardianFlow from '@/components/legal/AgeGuardianFlow.svelte';
+  import { openCookieSettings } from '@/lib/cookie-preferences.ts';
+  import { AGE_FLOW_COPY, ageOnDate } from '@shared/age-flow.ts';
   import Room from '@/stage/Room.svelte';
   import Logo from '@/shell/Logo.svelte';
-  import AiDisclosure from '@/shell/AiDisclosure.svelte';
   import SegmentedTabs from '@/ui/SegmentedTabs.svelte';
   import Icon from '@/ui/Icon.svelte';
 
+  let dateOfBirth = $state('');
+  let termsAccepted = $state(false);
+  let lockedPreview = $state(false);
+  let ageBlocked = $state(false);
+  const signupAge = $derived(ageOnDate(dateOfBirth));
   let mode = $state<'login' | 'register'>('login');
   let email = $state('');
   let password = $state('');
@@ -48,7 +67,7 @@
 
   const cta = $derived(busy ? 'One moment' : mode === 'login' ? 'Sign in' : 'Create account');
   const closed = $derived(!session.serverReachable || !session.databaseAvailable);
-  const hasNotes = $derived(session.demoMode || !session.modelAvailable);
+  const hasNotes = $derived(SAMPLE_ONLY_DEPLOYMENT || session.demoMode || !session.modelAvailable);
 
   const MODES = [
     { id: 'login', label: 'Sign in' },
@@ -61,7 +80,22 @@
     error = null;
     try {
       if (mode === 'login') await signIn(email, password);
-      else await register(email, password, displayName);
+      else {
+        const age = ageOnDate(dateOfBirth);
+        if (age === null) throw new Error('A valid date of birth is required.');
+        if (age < 16) {
+          email = ''; password = ''; displayName = ''; dateOfBirth = ''; termsAccepted = false;
+          ageBlocked = true;
+          throw new Error(AGE_FLOW_COPY.under16);
+        }
+        if (age < 18) { password = ''; displayName = ''; termsAccepted = false; lockedPreview = true; return; }
+        if (!termsAccepted) throw new Error('Please make the separate Terms choice before continuing.');
+        await register(email, password, displayName, dateOfBirth, termsAccepted);
+        router.go('/legal/age-assurance');
+      }
+      // A sample-only deployment's accounts are its sample accounts: once one
+      // is signed in, it is shown as stored, not the designed sample.
+      if (SAMPLE_ONLY_DEPLOYMENT) setSample(false);
       leaving = true;
     } catch (err) {
       error = err instanceof Error ? err.message : 'That did not work.';
@@ -137,7 +171,7 @@
   <div class="ev-gate__scroll">
     <div class="ev-gate__air" aria-hidden="true"></div>
 
-    <main class="ev-gate__card on-dark" class:has-notes={hasNotes} aria-labelledby="gate-title">
+    <main class="ev-gate__card on-dark" class:has-notes={hasNotes} class:is-locked={lockedPreview} aria-labelledby="gate-title">
       <div class="ev-gate__head">
         <Logo />
 
@@ -151,6 +185,14 @@
 
       {#if hasNotes}
         <ul class="ev-gate__notes" role="list">
+          {#if SAMPLE_ONLY_DEPLOYMENT}
+            <li class="ev-gate__note">
+              <span class="ev-gate__tag">Sample-only demo</span>
+              <span class="ev-gate__note-body">
+                Every account here is a sample account. Use sample details only (an example.test email, a sample date of birth), never real personal data.
+              </span>
+            </li>
+          {/if}
           {#if session.demoMode}
             <li class="ev-gate__note">
               <span class="ev-gate__tag">Demo mode</span>
@@ -173,6 +215,12 @@
         </ul>
       {/if}
 
+      {#if lockedPreview}
+        <div class="ev-gate__form ev-gate__locked">
+          <AgeGuardianFlow initialStep={3} initialEmail={email} initialDOB={dateOfBirth} tone="dark" />
+          <button type="button" class="ev-gate__quiet" onclick={() => { lockedPreview = false; email = ''; dateOfBirth = ''; }}>Close preview</button>
+        </div>
+      {:else}
       <form class="ev-gate__form" onsubmit={submit}>
         <SegmentedTabs
           options={MODES}
@@ -184,6 +232,13 @@
         />
 
         {#if mode === 'register'}
+          <div class="ev-gate__field" transition:makeRoom>
+            <label class="ev-gate__label" for="auth-dob">Date of birth</label>
+            <input id="auth-dob" class="ev-gate__input ev-gate__input--date" type="date" bind:value={dateOfBirth} required />
+            <p class="ev-gate__hint">{AGE_FLOW_COPY.eligibility}</p>
+          </div>
+        {/if}
+        {#if mode === 'register' && (signupAge ?? 0) >= 18}
           <div class="ev-gate__field" transition:makeRoom>
             <label class="ev-gate__label" for="auth-name">What should Evia call you?</label>
             <input
@@ -208,6 +263,7 @@
           />
         </div>
 
+        {#if mode === 'login' || (signupAge ?? 0) >= 18}
         <div class="ev-gate__field">
           <label class="ev-gate__label" for="auth-password">Password</label>
           <!-- Not `bind:value`: a two-way binding forbids a dynamic `type`, and
@@ -235,12 +291,16 @@
           </div>
         </div>
 
-        {#if mode === 'register'}
-          <!-- Planning boundary only. A later approved flow can mount decisions
-               here after credentials; creating an account does not accept them. -->
-          <div class="ev-gate__legal-step" data-future-legal-step>
-            <span class="ev-gate__tag">Legal review step (not active)</span>
-            <span class="ev-gate__note-body">No agreement is collected on this screen.</span>
+        {/if}
+        {#if mode === 'register' && (signupAge ?? 0) >= 18}
+          <!-- The separate Terms choice (main, Section 2): unticked, required,
+               and as easy to refuse ("Not now") as to make. -->
+          <div class="ev-gate__legal-step">
+            <p class="ev-gate__note-body">Sample-data registration. Legal wording is for review and is not approved for production.</p>
+            <label class="ev-gate__check"><input type="checkbox" bind:checked={termsAccepted} required /><span>{AGE_FLOW_COPY.terms}</span></label>
+            <p class="ev-gate__doclinks"><a href="/legal/terms" use:link>Terms of Service</a> <span aria-hidden="true">·</span> <a href="/legal/privacy" use:link>Privacy Policy</a></p>
+            <details class="ev-gate__details"><summary>Health, Wellness and AI Disclaimer | Cookie Policy</summary><p>Full notice publication is pending. These notices are not additional contracts or bundled consent.</p></details>
+            <button type="button" class="ev-gate__quiet" onclick={() => { termsAccepted = false; setMode('login'); }}>Not now</button>
           </div>
         {/if}
 
@@ -279,14 +339,17 @@
           </span>
         </button>
       </form>
+      {/if}
 
       <div class="ev-gate__alt">
         <p class="ev-gate__or"><span>or</span></p>
 
         <div class="ev-gate__ways">
           <!-- The way in without an account. What it costs is said on the
-               button rather than discovered afterwards. -->
-          <button type="button" class="ev-gate__way" onclick={enterGuestMode}>
+               button rather than discovered afterwards. It is the live visit:
+               on a sample-only deployment it sets sample data aside
+               (enterLiveGuest), so the two ways in stay different. -->
+          <button type="button" class="ev-gate__way" disabled={ageBlocked} onclick={enterLiveGuest}>
             <span class="ev-gate__way-text">
               <span class="ev-gate__way-title">Look around without an account</span>
               <span class="ev-gate__way-sub">
@@ -303,7 +366,7 @@
           <!-- Every screen as designed, with the mockups' own sample data and a
                "Sample data" badge on screen the whole time. Same guest visit as
                above: nothing is saved. -->
-          <button type="button" class="ev-gate__way" onclick={enterSamplePreview}>
+          <button type="button" class="ev-gate__way" disabled={ageBlocked} onclick={enterSamplePreview}>
             <span class="ev-gate__way-text">
               <span class="ev-gate__way-title">Preview with sample data</span>
               <span class="ev-gate__way-sub">Every screen filled in with clearly labelled sample data.</span>
@@ -317,11 +380,14 @@
             <Icon name="lock" size={16} stroke={1.8} />
             <span>Skin scans are analysed on your device. The photo never leaves it unless you say so.</span>
           </p>
+          <p class="ev-gate__legal"><a href="/legal/age-assurance" use:link>Preview age and guardian approval</a></p>
           <p class="ev-gate__legal">
             Review the placeholder <a href="/legal/terms" use:link>Terms</a> and
-            <a href="/legal/privacy" use:link>Privacy Policy</a>. These drafts are not accepted by signing in or creating an account.
+            <a href="/legal/privacy" use:link>Privacy Policy</a>. Signing in does not accept these drafts. Sample registration records the separate Terms choice without approving the drafts.
           </p>
-          <AiDisclosure tone="dark" backed={false} />
+          <!-- main's cookie choice (P-12), reopened from the gate's own footer
+               rather than a floating control over the form. -->
+          <p class="ev-gate__legal"><button type="button" class="ev-gate__cookies" onclick={openCookieSettings}>Cookie settings</button></p>
         </footer>
       </div>
     </main>
@@ -424,8 +490,7 @@
     margin: 0;
     padding: 0;
   }
-  .ev-gate__note,
-  .ev-gate__legal-step {
+  .ev-gate__note {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -436,6 +501,101 @@
     box-shadow: inset 0 0 0 1px var(--glass-dark-rim);
     list-style: none;
   }
+  /* The Terms choice: its note, the unticked checkbox row, the documents. */
+  .ev-gate__legal-step {
+    display: grid;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--r-md);
+    background: var(--tint-hover-dark);
+    box-shadow: inset 0 0 0 1px var(--glass-dark-rim);
+  }
+  .ev-gate__legal-step .ev-gate__note-body {
+    margin: 0;
+  }
+  .ev-gate__check {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--r-md);
+    background: rgba(31, 17, 12, 0.3);
+    box-shadow: inset 0 0 0 1px var(--border-on-dark-strong);
+    color: var(--text-on-dark-strong);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-normal);
+    cursor: pointer;
+  }
+  .ev-gate__check:has(input:checked) {
+    background: var(--tint-press-dark);
+  }
+  .ev-gate__check input {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin: 1px 0 0;
+    accent-color: var(--rose-gold-300);
+  }
+  .ev-gate__doclinks {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 8px;
+    margin: 0;
+    color: var(--text-on-dark-muted);
+  }
+  .ev-gate__doclinks a,
+  .ev-gate__details summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--text-on-dark-strong);
+    font-size: var(--fs-body-sm);
+    font-weight: var(--fw-medium);
+    text-underline-offset: 3px;
+  }
+  .ev-gate__details {
+    font-size: var(--fs-body-sm);
+    color: var(--text-on-dark);
+  }
+  .ev-gate__details summary {
+    cursor: pointer;
+  }
+  .ev-gate__details p {
+    margin: 0 0 6px;
+  }
+  .ev-gate__hint {
+    margin: 0;
+    font-size: var(--fs-body-sm);
+    color: var(--text-on-dark);
+  }
+  /* A plain text button ("Not now", "Close preview"), as easy to find as the
+     choice it declines. */
+  .ev-gate__quiet {
+    justify-self: start;
+    min-height: 44px;
+    padding: 0 18px;
+    border: 1px solid var(--border-on-dark-strong);
+    border-radius: var(--r-pill);
+    background: transparent;
+    color: var(--text-on-dark-strong);
+    font-family: var(--font-sans);
+    font-size: var(--fs-body-sm);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+  }
+  @media (hover: hover) {
+    .ev-gate__quiet:hover {
+      background: var(--tint-hover-dark);
+    }
+  }
+  .ev-gate__locked {
+    align-content: start;
+  }
+  .ev-gate__input--date {
+    color-scheme: dark;
+  }
+
   .ev-gate__tag {
     flex: none;
     font-size: var(--fs-micro);
@@ -549,6 +709,10 @@
     cursor: pointer;
   }
   .ev-gate__peek:focus-visible,
+  .ev-gate__quiet:focus-visible,
+  .ev-gate__check input:focus-visible,
+  .ev-gate__doclinks a:focus-visible,
+  .ev-gate__details summary:focus-visible,
   .ev-gate__demo:focus-visible,
   .ev-gate__way:focus-visible,
   .ev-gate__cta:focus-visible,
@@ -656,12 +820,16 @@
     transition: background-color var(--dur-base) var(--ease-out);
   }
   @media (hover: hover) {
-    .ev-gate__way:hover {
+    .ev-gate__way:hover:not(:disabled) {
       background: var(--tint-hover-dark);
     }
   }
-  .ev-gate__way:active {
+  .ev-gate__way:active:not(:disabled) {
     background: var(--tint-press-dark);
+  }
+  .ev-gate__way:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
   .ev-gate__way-text {
     display: grid;
@@ -717,6 +885,23 @@
     color: var(--text-on-dark-strong);
     font-weight: var(--fw-medium);
     text-underline-offset: 3px;
+  }
+  .ev-gate__cookies {
+    min-height: 44px;
+    padding: 0 4px;
+    margin: -10px -4px;
+    border: 0;
+    background: none;
+    color: var(--text-on-dark-strong);
+    font: inherit;
+    font-weight: var(--fw-medium);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .ev-gate__cookies:focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring-on-dark);
+    outline-offset: 2px;
   }
 
   /* Tablet portrait and phones: the room shows above, the card rises over it
@@ -793,6 +978,15 @@
     }
     .ev-gate__ways {
       grid-template-columns: minmax(0, 1fr);
+    }
+    /* The 16/17 walkthrough needs the card's full width; the other ways in
+       follow below it. */
+    .ev-gate__card.is-locked .ev-gate__form {
+      grid-area: 2 / 1 / auto / span 2;
+    }
+    .ev-gate__card.is-locked .ev-gate__alt {
+      grid-area: 3 / 1 / auto / span 2;
+      align-self: start;
     }
   }
 </style>

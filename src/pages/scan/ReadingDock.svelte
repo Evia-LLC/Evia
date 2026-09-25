@@ -13,6 +13,11 @@
 
   No composite "skin health" score and no confidence ring: the reading is the
   observations on the hologram and the cards.
+
+  From main (Section 1): which analysis a face reading came from - Perfect
+  Corp, or the local reading as the selected or backup analysis, with the
+  reason ("using backup analysis - ...") - and, for a Perfect Corp reading,
+  its mapping disclosure. Shown as a quiet status line above her words.
 -->
 <script lang="ts" module>
   /*
@@ -85,12 +90,20 @@
     }
   }
 
+  const scan = $derived(session.latestScan);
+
   const hasPlan = $derived(!!session.plan?.suggestions.length && session.scanKind === 'face');
   const canSave = $derived(session.scanKind === 'face' && session.pendingCapture?.state === 'save-available');
   const photosApproved = $derived(approvedConsent(session.user?.consents[CONSENT_KEYS.PROGRESS_PHOTOS]));
 </script>
 
 <section class="dock on-holo {className}" aria-label="What Evia says about this reading">
+  {#if session.scanKind === 'face' && scan}
+    <div class="dock__provider">
+      <p role="status">{session.analysisNotice || (scan?.modelVersion === 'perfectcorp-v2.1' ? 'Perfect Corp analysis' : 'Local analysis')}</p>
+      {#if scan?.modelVersion === 'perfectcorp-v2.1'}<p class="dock__provider-note">{scan.notes}</p>{/if}
+    </div>
+  {/if}
   <p class="dock__words" aria-live="polite">
     {#if session.thinking}
       <span class="dock__thinking">Thinking</span>
@@ -155,6 +168,23 @@
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     color: var(--holo-ink-body);
+  }
+  /* Which analysis this is: an eyebrow-weight line above her words. */
+  .dock__provider {
+    display: grid;
+    gap: 2px;
+  }
+  .dock__provider p {
+    margin: 0;
+    font-size: var(--fs-meta);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+    color: var(--holo-ink-muted);
+  }
+  .dock__provider .dock__provider-note {
+    font-weight: var(--fw-regular);
+    letter-spacing: 0;
   }
   .dock__words {
     margin: 0;

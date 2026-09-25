@@ -12,6 +12,8 @@
 import './lib/env.ts';
 
 import express from 'express';
+import { analysisRouter } from './routes/analysis.ts';
+import { analysisProvider, perfectCorpAvailable, sampleDemoEnabled } from './ai/perfectcorp.ts';
 import { migrate } from './db/index.ts';
 import { authRouter } from './routes/auth.ts';
 import { apiRouter } from './routes/api.ts';
@@ -30,7 +32,7 @@ export const app = express();
 
 // Only the two routes that carry an image get the large body limit; every
 // other endpoint was accepting 12 MB of JSON for no reason.
-const IMAGE_ROUTES = ['/api/scans', '/api/products/read-label', '/api/admin/catalogue/import'];
+const IMAGE_ROUTES = ['/api/analysis/face', '/api/scans', '/api/products/read-label', '/api/admin/catalogue/import'];
 const largeBody = express.json({ limit: '12mb' });
 const smallBody = express.json({ limit: '64kb' });
 app.use((req, res, next) =>
@@ -53,6 +55,11 @@ app.get('/api/health', async (_req, res) => {
   });
 });
 
+app.get('/api/public/analysis', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ provider: analysisProvider(), available: perfectCorpAvailable(), sampleDemo: sampleDemoEnabled() });
+});
+app.use('/api/analysis', analysisRouter);
 app.use('/api/auth', authRouter);
 
 /*

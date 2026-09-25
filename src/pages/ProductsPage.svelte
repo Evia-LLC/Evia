@@ -93,6 +93,7 @@
       category,
       query: sample.on ? query : settledQuery,
       savedIds: saved.ids,
+      savedKept: saved.kept,
     }),
   );
 

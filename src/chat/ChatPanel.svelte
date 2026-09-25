@@ -23,6 +23,8 @@
   the designed sample (transcript.ts).
 -->
 <script lang="ts">
+  import { AI_COPY } from '@shared/legal-screen-copy.ts';
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   import { onDestroy } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
   import { notifyTyping, sendMessage, startScanFlow, stopSpeaking, toggleListening } from '@/state/controller.ts';
@@ -172,6 +174,10 @@
 </script>
 
 <div class="ev-chat">
+  <!-- The Consent Wording Pack's section 8 notice (main, Section 5): the
+       consultation label and the escalation line, above the conversation. -->
+  <AIDisclosure consultation tone="dark" class="ev-chat__ai" />
+
   <div
     class="ev-chat__log"
     bind:this={transcript}
@@ -215,6 +221,7 @@
           <span class="visually-hidden">{hers ? 'Evia: ' : 'You: '}</span>{message.content}
         </div>
       {/if}
+      {#if message.role === 'elohim'}<p class="ev-chat__legal">{AI_COPY.result}</p>{/if}
     {/each}
 
     {#if session.thinking}
@@ -340,6 +347,23 @@
     box-shadow: inset 0 0 0 1px var(--cta-rim);
     color: var(--cta-ink);
   }
+  /* Under each of her lines, the section 8 result disclaimer (main): meta
+     size, the muted cream, tucked up against the bubble it qualifies. */
+  .ev-chat__legal {
+    align-self: flex-start;
+    max-width: min(86%, 34em);
+    margin: -4px 0 2px 4px;
+    font-size: var(--fs-meta);
+    line-height: 1.4;
+    color: var(--text-on-dark-muted);
+  }
+  /* The notice above the log: its own strip, divided from the conversation. */
+  .ev-chat :global(.ev-chat__ai) {
+    flex: none;
+    padding: 10px 20px 12px;
+    border-bottom: 1px solid var(--glass-dark-rim);
+  }
+
   /* Consecutive lines from the same side read as one turn. */
   .ev-chat__bubble--her + .ev-chat__bubble--her,
   .ev-chat__bubble--you + .ev-chat__bubble--you {

@@ -586,7 +586,7 @@
       {:else if framedCopy}
         <p class="cap__stage" class:cap__stage--locked={framed}>{framedCopy}</p>
       {:else}
-        <p class="cap__stage">Even light, face in the oval, hold still. Everything is measured on your device.</p>
+        <p class="cap__stage">Even light, face in the oval, hold still. Your selected analysis provider will read the capture.</p>
       {/if}
     </div>
 
@@ -641,7 +641,7 @@
       </p>
     {:else}
       <p class="cap__aside">
-        One frame, read on your device …or
+        One frame, analysed after your consent …or
         <button class="cap__link" onclick={notNow} disabled={running}>not now</button>.
       </p>
     {/if}
@@ -1057,8 +1057,9 @@
   }
 
   .cap__foot {
-    display: flex;
-    justify-content: flex-start;
+    display: grid;
+    justify-items: start;
+    gap: 10px;
   }
 
   @keyframes count {

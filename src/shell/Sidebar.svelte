@@ -22,6 +22,7 @@
   import Icon from '@/ui/Icon.svelte';
   import Logo from './Logo.svelte';
   import TalkCard from './TalkCard.svelte';
+  import { openCookieSettings } from '@/lib/cookie-preferences.ts';
   import { NAV, navFor } from './nav.ts';
 
   interface Props {
@@ -92,14 +93,21 @@
       {/each}
     </ul>
 
-    {#if talk}
-      <!-- The full sidebar (>= 1200) shows Routine docked beside Home (ref1),
-           whose own "Talk to Evia" is on screen: no second one here. -->
-      {#if route !== 'routine'}
-        <div class="ev-side__foot ev-side__foot--full"><TalkCard /></div>
+    <div class="ev-side__end">
+      {#if talk}
+        <!-- The full sidebar (>= 1200) shows Routine docked beside Home (ref1),
+             whose own "Talk to Evia" is on screen: no second one here. -->
+        {#if route !== 'routine'}
+          <div class="ev-side__foot ev-side__foot--full"><TalkCard /></div>
+        {/if}
+        <div class="ev-side__foot ev-side__foot--rail"><TalkCard variant="button" /></div>
       {/if}
-      <div class="ev-side__foot ev-side__foot--rail"><TalkCard variant="button" /></div>
-    {/if}
+      <!-- main's cookie choice (P-12), reopened from the foot of the sidebar
+           rather than a control floating over the page. -->
+      <div class="ev-side__cookies">
+        <button type="button" class="ev-side__cookie-btn" onclick={openCookieSettings}>Cookie settings</button>
+      </div>
+    </div>
   </div>
 </nav>
 
@@ -211,6 +219,40 @@
   }
   .ev-side__foot--rail {
     display: none;
+  }
+  /* The foot: the Talk card (where there is one) and the cookie control under it. */
+  .ev-side__end {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ev-side__cookies {
+    display: flex;
+    justify-content: center;
+  }
+  .ev-side__cookie-btn {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 0;
+    background: none;
+    color: var(--text-on-dark-muted);
+    font-family: var(--font-sans);
+    font-size: var(--fs-meta);
+    font-weight: var(--fw-medium);
+    line-height: 1.25;
+    text-align: center;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .ev-side__cookie-btn:hover {
+    color: var(--text-on-dark-strong);
+  }
+  .ev-side__cookie-btn:focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring-on-dark);
+    outline-offset: 2px;
   }
 
   /* Short windows: tighter rhythm, and the Talk card goes before the nav would. */

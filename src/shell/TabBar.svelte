@@ -4,6 +4,9 @@
   Settings. The same dark rose-brown glass as the sidebar, sitting above the
   home indicator (safe-area inset).
 
+  The sheet ends with "Cookie settings" (main's cookie choice, P-12), which
+  on a phone lives here rather than floating over the page.
+
   The More sheet is a native <dialog> opened modally, so focus is held in it,
   Escape closes it and the page behind is inert; it also closes itself when
   the route changes.
@@ -11,6 +14,7 @@
 <script lang="ts">
   import { link, ROUTES, type RouteId } from '@/router/router.svelte.ts';
   import Icon from '@/ui/Icon.svelte';
+  import { openCookieSettings } from '@/lib/cookie-preferences.ts';
   import { MORE_IDS, NAV, TAB_IDS, navFor } from './nav.ts';
 
   interface Props {
@@ -102,6 +106,21 @@
           </a>
         </li>
       {/each}
+      <!-- main's cookie choice (P-12): on a phone it is reopened from here,
+           not from a control floating over the page. -->
+      <li>
+        <button
+          type="button"
+          class="ev-sheet__item ev-sheet__item--quiet"
+          onclick={() => {
+            close();
+            openCookieSettings();
+          }}
+        >
+          <Icon name="sliders" size={24} />
+          <span>Cookie settings</span>
+        </button>
+      </li>
     </ul>
   </div>
 </dialog>
@@ -263,6 +282,15 @@
     font-weight: var(--fw-medium);
     text-decoration: none;
     background: var(--tint-hover-dark);
+  }
+  .ev-sheet__item--quiet {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--glass-dark-rim);
+    font-family: var(--font-sans);
+    text-align: left;
+    cursor: pointer;
   }
   .ev-sheet__item :global(.ev-sheet__chev) {
     margin-left: auto;

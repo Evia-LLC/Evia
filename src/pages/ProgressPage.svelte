@@ -13,6 +13,10 @@
   beside the score and key improvements, then timeline and recent scans, then
   milestones and insights), one column below that in the phone order (readings
   first, then what changed, then the comparison, timeline and the rest).
+
+  Under the readings sits the Consent Wording Pack's section 8 result notice
+  (main, Section 5): "Cosmetic observations only..." and the escalation line,
+  verbatim, on every Progress view, sample or real.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -33,6 +37,7 @@
   import ProgressToast from './progress/ProgressToast.svelte';
   import ScanHistory from './progress/ScanHistory.svelte';
   import BodyHistory from '@/history/BodyHistory.svelte';
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   import { api } from '@/lib/api.ts';
   import { askElohim } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
@@ -131,6 +136,8 @@
     <InsightsCard class="pg-a-ins" view={view.insights} onask={(q) => void askElohim(q)} />
   </div>
 
+  <AIDisclosure result class="pg-ai" />
+
   {#if showAll}
     <div class="pg-more">
       <ScanHistory sampleItems={view.mode === 'sample' ? view.recent.items : null} onclose={() => (showAll = false)} />
@@ -148,6 +155,15 @@
 </div>
 
 <style>
+  /* The section 8 result notice, under the grid, on the page wash. */
+  .pg :global(.pg-ai) {
+    margin: 16px 0 0 17px;
+  }
+  @container pg (max-width: 700px) {
+    .pg :global(.pg-ai) {
+      margin-left: 0;
+    }
+  }
   .pg {
     container: pg / inline-size;
     width: 100%;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   /**
    * Body readings over time.
    *
@@ -117,6 +118,8 @@
     await refreshBodyScans();
   }
 </script>
+<!-- main (Section 5): the section 8 result notice on the body history too. -->
+<AIDisclosure result class="bh-ai" />
 
 {#if latest}
 <div class="bh">
@@ -245,6 +248,9 @@
 {/if}
 
 <style>
+  :global(.bh-ai) {
+    margin-bottom: 14px;
+  }
   /*
    * Rendered on a light Progress card now. The shared row, bar and history
    * rules it uses (app.css) were written for the old dark ground and read the

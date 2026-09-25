@@ -2,12 +2,20 @@
   The persistent AI disclosure the SRS asks for on Home, chat and Scan: one
   small line, placed by the page where the mockup has free space.
 
+  Its words are the Consent Wording Pack's section 8 consultation label,
+  verbatim (AI_COPY, brought in from main): the pack controls where it and the
+  SRS differ, so the earlier paraphrase ("Evia is an AI. General skincare
+  guidance, not medical advice.") is gone. Where a screen shows the full
+  section 8 notice (components/legal/AIDisclosure.svelte) this line is not
+  repeated.
+
   tone: light (on light pages), dark (over the room or dark glass), holo (the
   scan's navy). Its text is 12px, the meta floor, and always meets 4.5:1 on
   its own backing.
 -->
 <script lang="ts">
   import Icon from '@/ui/Icon.svelte';
+  import { AI_COPY } from '@shared/legal-screen-copy.ts';
 
   interface Props {
     tone?: 'light' | 'dark' | 'holo';
@@ -23,7 +31,7 @@
 
 <p class="ev-ai ev-ai--{tone} {className}" class:is-backed={withBacking}>
   <Icon name="info" size={14} stroke={1.8} />
-  <span>Evia is an AI. General skincare guidance, not medical advice.</span>
+  <span>{AI_COPY.consultation}</span>
 </p>
 
 <style>

@@ -1239,12 +1239,6 @@
  * one line on this screen — the lowercase italic wordmark at 34px. The display
  * line under it is the interface face one weight lighter, not a second serif.
  *
- * Both families come from Google Fonts through the <link> tags in index.html.
- * The fonts.googleapis.com link is allowed here now because tokens.css declares
- * metric-matched local fallbacks ('Manrope Fallback', 'Cormorant Garamond
- * Fallback') for each family, so the page composes correctly before the
- * webfont lands and does not reflow when it swaps in. Because the same family
- * names are used throughout, self-hosting later is a drop-in: replace the link
- * with four @font-face rules pointing at public/fonts/ and nothing in this
- * file changes.
+ * External Google Fonts requests are disabled in the demo. The metric-matched
+ * local fallbacks in tokens.css keep this layout independent of cookie consent.
  * =========================================================================== */

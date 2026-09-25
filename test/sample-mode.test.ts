@@ -3,9 +3,11 @@
  *
  * On from `?sample=1` (read once, then stripped from the address because the
  * router has no query support) or from the stored choice; remembered on the
- * device; and never a crash when storage is blocked.
+ * device only with the Functional cookie category allowed (main, Section 5);
+ * and never a crash when storage is blocked.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { saveCookies } from '../src/lib/cookie-preferences.ts';
 import { readSampleAtBoot, sample, setSample } from '../src/sample/mode.svelte.ts';
 import { session } from '../src/state/session.svelte.ts';
 
@@ -37,6 +39,7 @@ describe('sample mode', () => {
   it('turns on from ?sample=1, strips the query and remembers the choice', () => {
     const storage = new Map<string, string>();
     const replaceState = stubBrowser('http://127.0.0.1:5495/progress?sample=1#top', storage);
+    saveCookies({ functional: true });
     readSampleAtBoot();
     expect(sample.on).toBe(true);
     expect(replaceState).toHaveBeenCalledWith(null, '', '/progress#top');
@@ -50,6 +53,7 @@ describe('sample mode', () => {
   it('keeps any other query, and turns off from ?sample=0', () => {
     const storage = new Map([['evia.sample', '1']]);
     const replaceState = stubBrowser('http://127.0.0.1:5495/?sample=0&ref=mail', storage);
+    saveCookies({ functional: true });
     readSampleAtBoot();
     expect(sample.on).toBe(false);
     expect(replaceState).toHaveBeenCalledWith(null, '', '/?ref=mail');
@@ -58,9 +62,30 @@ describe('sample mode', () => {
 
   it('reads the stored choice when the address says nothing', () => {
     const replaceState = stubBrowser('http://127.0.0.1:5495/scan', new Map([['evia.sample', '1']]));
+    saveCookies({ functional: true });
     readSampleAtBoot();
     expect(sample.on).toBe(true);
     expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it('stores nothing without functional storage allowed, and clears a choice stored before', () => {
+    const storage = new Map([['evia.sample', '1']]);
+    stubBrowser('http://127.0.0.1:5495/scan', storage);
+    readSampleAtBoot();
+    expect(sample.on).toBe(false);
+    expect(storage.has('evia.sample')).toBe(false);
+
+    // The choice still holds for the tab.
+    setSample(true);
+    expect(sample.on).toBe(true);
+    expect(storage.has('evia.sample')).toBe(false);
+
+    // Refusing the category later clears what an earlier permission stored.
+    saveCookies({ functional: true });
+    setSample(true);
+    expect(storage.get('evia.sample')).toBe('1');
+    saveCookies({ functional: false });
+    expect(storage.has('evia.sample')).toBe(false);
   });
 
   it('survives blocked storage', () => {

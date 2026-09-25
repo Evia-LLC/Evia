@@ -48,6 +48,7 @@ export interface PendingCapture {
 
 class SessionState {
   user = $state<UserSummary | null>(null);
+  analysisNotice = $state('');
   modelAvailable = $state(false);
   demoMode = $state(false);
   imageStorage = $state(false);
@@ -203,6 +204,7 @@ class SessionState {
   }
 
   reset(): void {
+    this.analysisNotice = '';
     this.clearScanArtifacts();
     this.user = null;
     /*

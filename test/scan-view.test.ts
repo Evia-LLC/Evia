@@ -175,6 +175,15 @@ describe('scan view: real mode', () => {
     expect(at('idle')).toBe('CAMERA OFF · READ ON THIS DEVICE');
   });
 
+  it('makes no on-device claim where the analysis provider may read the capture', () => {
+    const at = (camera: ScanInput['camera']) =>
+      buildScanView(input({ analysis: null, scanActive: true, camera, providerMayRead: true })).status.eyebrow;
+    expect(at('live')).toBe('LIVE CAMERA');
+    expect(at('photo')).toBe('PHOTO CHOSEN');
+    expect(at('idle')).toBe('CAMERA OFF');
+    expect(at('blocked')).toBe('NO CAMERA ACCESS · A PHOTO WORKS TOO');
+  });
+
   it('names the part of the photo a thumbnail shows, not a claim about where it was measured', () => {
     expect(thumbLabel({ heading: 'T-ZONE', thumb: { kind: 'capture', region: 'nose' } })).toBe("T-zone: the nose, cut from this scan's photo");
     expect(thumbLabel({ heading: 'CHEEKS', thumb: { kind: 'none' } })).toBe('Cheeks: no photo');

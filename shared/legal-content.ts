@@ -1,3 +1,4 @@
+import { HEALTH_COPY, SAFETY_COPY, PHOTO_COPY } from './legal-screen-copy.ts';
 import { CONSENT_KEYS } from './consent-keys.ts';
 import type { ConsentSummary } from './types.ts';
 
@@ -28,6 +29,8 @@ export interface LegalContentRecord {
   wordingVersionId: string;
   title: string;
   body: readonly string[];
+  checkbox?: string;
+  footer?: string;
   acceptLabel?: string;
   declineLabel?: string;
   skipLabel?: string;
@@ -62,28 +65,39 @@ export const LEGAL_CONTENT: Readonly<Record<LegalContentId, LegalContentRecord>>
     applicability: { jurisdictions: ['TBD'], audience: 'All visitors and account holders', requirement: 'informational' },
   }),
   'facial-scan-consent': placeholder({
-    id: 'facial-scan-consent', wordingVersionId: 'facial-scan-draft-2026-09-23.1', title: 'Facial Scan Consent',
-    body: ['Draft consent language for facial scan processing will appear here.', 'No production facial-scan gate may be satisfied with this draft.'],
-    acceptLabel: 'Accept facial scan consent', declineLabel: 'Decline facial scan consent',
-    applicability: { jurisdictions: ['TBD'], audience: 'People choosing facial scan features', requirement: 'required' },
+    id: 'facial-scan-consent', wordingVersionId: 'facial-scan-pack-v1-demo-2026-09-24.1',
+    title: "Before your first scan",
+    body: [
+      "To analyse your skin, Evia uses your camera to capture images of your face and creates facial landmark data from them. This is biometric and health-related data, so we need your permission first.",
+      "What we collect: images of your face captured during the scan, facial landmark data derived from them, and the analysis results.",
+      "What we use it for: analysing your skin, showing you the holographic visualisation, and personalising your routine and product suggestions.",
+      "Who processes it: Evia and our facial analysis provider. Your facial photographs are not sent to our conversational AI providers.",
+      "How long we keep it: your scan images and landmark data are deleted after your analysis and consultation session, and in any event within 24 hours. Your analysis results stay in your account so your skin history works, until you delete them or your account.",
+      "What we never do: we never use your face to identify you, never infer your race, ethnicity, age or gender from it, and never sell or share it with brands or advertisers."
+    ],
+    acceptLabel: 'Agree and continue', declineLabel: 'Not now',
+    applicability: { jurisdictions: ['All'], audience: 'People choosing facial scan features', requirement: 'required' },
   }),
   'health-consent': placeholder({
-    id: 'health-consent', wordingVersionId: 'health-draft-2026-09-23.1', title: 'Health Information Consent',
-    body: ['Draft consent language for health information will appear here.', 'This review screen does not collect health information.'],
-    acceptLabel: 'Accept health consent', declineLabel: 'Decline health consent',
-    applicability: { jurisdictions: ['TBD'], audience: 'People choosing health-related features', requirement: 'required' },
+    id: 'health-consent', wordingVersionId: 'health-consent-pack-v1-demo-2026-09-24.1', title: HEALTH_COPY.title,
+    body: [HEALTH_COPY.body], checkbox: HEALTH_COPY.checkbox,
+    footer: HEALTH_COPY.footer,
+    acceptLabel: 'Agree and continue', declineLabel: 'Not now',
+    applicability: { jurisdictions: ['WA', 'NV', 'CT'], audience: 'Sample-data consent review', requirement: 'required' },
   }),
   'safety-lifestyle-consent': placeholder({
-    id: 'safety-lifestyle-consent', wordingVersionId: 'safety-lifestyle-draft-2026-09-23.1', title: 'Safety and Lifestyle Consent',
-    body: ['Draft optional consent language for safety and lifestyle information will appear here.', 'You may skip this optional decision.'],
-    acceptLabel: 'Accept optional consent', declineLabel: 'Decline optional consent', skipLabel: 'Skip for now',
-    applicability: { jurisdictions: ['TBD'], audience: 'People offered optional personalization', requirement: 'optional' },
+    id: 'safety-lifestyle-consent', wordingVersionId: 'safety-lifestyle-consent-pack-v1-demo-2026-09-24.1', title: SAFETY_COPY.title,
+    body: [SAFETY_COPY.body], checkbox: SAFETY_COPY.checkbox,
+
+    acceptLabel: 'Agree and continue', declineLabel: 'Not now', skipLabel: SAFETY_COPY.skip,
+    applicability: { jurisdictions: ['All'], audience: 'Sample-data consent review', requirement: 'optional' },
   }),
   'progress-photo-consent': placeholder({
-    id: 'progress-photo-consent', wordingVersionId: 'progress-photo-draft-2026-09-23.1', title: 'Progress Photo Consent',
-    body: ['Draft consent language for retaining progress photos will appear here.', 'Choosing not to accept must not be treated as acceptance.'],
-    acceptLabel: 'Accept progress photo consent', declineLabel: 'Decline progress photo consent', skipLabel: 'Skip for now',
-    applicability: { jurisdictions: ['TBD'], audience: 'People choosing progress photos', requirement: 'optional' },
+    id: 'progress-photo-consent', wordingVersionId: 'progress-photo-consent-pack-v1-demo-2026-09-24.1', title: PHOTO_COPY.title,
+    body: [PHOTO_COPY.body], checkbox: PHOTO_COPY.checkbox,
+
+    acceptLabel: 'Agree and continue', declineLabel: 'Not now',
+    applicability: { jurisdictions: ['All'], audience: 'Sample-data consent review', requirement: 'optional' },
   }),
   'subscription-disclosure': placeholder({
     id: 'subscription-disclosure', wordingVersionId: 'subscription-draft-2026-09-23.1', title: 'Subscription Disclosure',
@@ -116,8 +130,27 @@ export interface ConsentWordingVersion {
   text: string;
 }
 
+/** Verbatim Consent Wording Pack §1; demo review does not imply counsel approval. */
+export const FACIAL_SCAN_COPY = {
+  "checkbox": "I have read the Biometric Data Policy and I give Evia my consent to capture and process my facial images and facial landmark data for skin analysis as described.",
+  "guardianCheckbox": "I am the parent or legal guardian of this user and, as their legally authorised representative, I give Evia my consent to capture and process their facial images and facial landmark data for skin analysis as described.",
+  "footer": "You can withdraw this consent at any time in Settings, and we will delete the related data.",
+  "links": [
+    "Biometric Data Policy",
+    "Privacy Policy",
+    "Consumer Health Data Privacy Policy"
+  ]
+} as const;
+
 /** Versions used by the consent event API; draft text cannot authorize a grant. */
 export const CONSENT_WORDING_VERSIONS: readonly ConsentWordingVersion[] = [
+  {
+    id: LEGAL_CONTENT['facial-scan-consent'].wordingVersionId,
+    consentType: CONSENT_KEYS.FACIAL_SCAN,
+    status: LEGAL_CONTENT['facial-scan-consent'].status,
+    effectiveDate: null,
+    text: [LEGAL_CONTENT['facial-scan-consent'].title, ...LEGAL_CONTENT['facial-scan-consent'].body, FACIAL_SCAN_COPY.checkbox, FACIAL_SCAN_COPY.guardianCheckbox, 'Agree and continue', 'Not now', FACIAL_SCAN_COPY.links.join(' | '), FACIAL_SCAN_COPY.footer].join('\n'),
+  },
   {
     id: 'image-storage-v1',
     consentType: CONSENT_KEYS.IMAGE_STORAGE,
@@ -137,7 +170,7 @@ export const CONSENT_WORDING_VERSIONS: readonly ConsentWordingVersion[] = [
     consentType: CONSENT_KEYS.PROGRESS_PHOTOS,
     status: LEGAL_CONTENT['progress-photo-consent'].status,
     effectiveDate: LEGAL_CONTENT['progress-photo-consent'].effectiveDate,
-    text: LEGAL_CONTENT['progress-photo-consent'].body.join('\n'),
+    text: [LEGAL_CONTENT['progress-photo-consent'].title, ...LEGAL_CONTENT['progress-photo-consent'].body, PHOTO_COPY.checkbox].join('\n'),
   },
 ];
 

@@ -9,9 +9,16 @@
   A guest has no account, so both actions are off and the page says why.
   With sample data on, a signed-in account is set aside (BUILD-PLAN 3.1):
   both actions are off too, and the note offers the way back to it.
+
+  From main (Section 5, 7d776c7): the headings are the Consent Wording Pack's
+  section 10 lines (verbatim), the deletion card discloses the retention gap,
+  and export/deletion attempts are logged as review events - a logging failure
+  never blocks either right.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
+  import { ACCOUNT_COPY } from '@shared/legal-screen-copy.ts';
+  import { recordLegalReview } from '@/lib/legal-review.ts';
   import { session } from '@/state/session.svelte.ts';
   import { sample } from '@/sample/mode.svelte.ts';
   import { deleteAccount, downloadDataExport } from '@/state/controller.ts';
@@ -38,6 +45,12 @@
     typed = '';
     secondConfirmation = false;
   });
+
+  async function exportData() {
+    try { await recordLegalReview('account-controls', 'attempted', session.guest ? undefined : session.user?.id, { action: 'export' }); }
+    catch { deletionError = 'The review event could not be recorded. Export is still available.'; }
+    await downloadDataExport();
+  }
 
   /*
    * Each step removes the button that was just pressed, so focus is placed
@@ -66,6 +79,8 @@
     deleting = true;
     deletionError = null;
     try {
+      // Audit availability must not prevent the existing account deletion right.
+      try { await recordLegalReview('account-controls', 'attempted', session.user?.id, { action: 'delete_account' }); } catch { /* Account deletion still proceeds; retention gap is disclosed below. */ }
       await deleteAccount();
     } catch (err) {
       deletionError = err instanceof Error ? err.message : 'Your account could not be deleted.';
@@ -91,7 +106,7 @@
 
   <div class="rights">
     <Card aria-labelledby="export-title">
-      <SectionHeader id="export-title" title="Export my data" icon="arrow-up-right" />
+      <SectionHeader id="export-title" title={ACCOUNT_COPY.download} icon="arrow-up-right" />
       <p class="text">{DATA_EXPORT_NOTICE_PLACEHOLDER.text}</p>
       {#if import.meta.env.DEV && DATA_EXPORT_NOTICE_PLACEHOLDER.placeholder}
         <p class="placeholder">Placeholder legal text · {DATA_EXPORT_NOTICE_PLACEHOLDER.id}</p>
@@ -100,7 +115,7 @@
         <Button
           variant="primary"
           iconStart="arrow-up-right"
-          onclick={downloadDataExport}
+          onclick={exportData}
           disabled={unavailable || session.dataExport.status === 'exporting'}
         >
           {session.dataExport.status === 'exporting' ? 'Preparing export…' : 'Download JSON export'}
@@ -116,8 +131,9 @@
     </Card>
 
     <Card tone="rose" aria-labelledby="delete-title">
-      <SectionHeader id="delete-title" title="Delete my account" icon="x" iconStyle="rose" />
+      <SectionHeader id="delete-title" title={ACCOUNT_COPY.delete} icon="x" iconStyle="rose" />
       <p class="text">{ACCOUNT_DELETION_NOTICE_PLACEHOLDER.text}</p>
+      <p class="text text--gap">Retention gap: the guide requires consent/destruction records for duration of consent +5 years and backup rotation within 35 days. The current demo deletes account-linked consent records; a legal retention exception and provider/backup deletion are not implemented.</p>
       {#if import.meta.env.DEV && ACCOUNT_DELETION_NOTICE_PLACEHOLDER.placeholder}
         <p class="placeholder">Placeholder legal text · {ACCOUNT_DELETION_NOTICE_PLACEHOLDER.id}</p>
       {/if}
@@ -190,6 +206,13 @@
     font-size: var(--fs-body);
     line-height: var(--lh-relaxed);
     color: var(--text);
+  }
+  /* The retention gap is a disclosure of what the demo does not do yet: the
+     same size, in the secondary ink, under the notice it qualifies. */
+  .text--gap {
+    margin-top: 10px;
+    font-size: var(--fs-body-sm);
+    color: var(--text-secondary);
   }
   .placeholder {
     display: inline-block;

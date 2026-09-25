@@ -1,3 +1,4 @@
+import { functionalStorageAllowed } from './cookie-preferences.ts';
 /**
  * The first thirty seconds.
  *
@@ -84,24 +85,40 @@ export const INTRO_BEATS: IntroBeat[] = [
   },
 ];
 
+/*
+ * Seen in this tab. The device only remembers it with functional storage
+ * allowed (main, Section 5: the cookie choice gates this key), but the tab
+ * always does - memory is not storage - so without that permission the intro
+ * still plays once per visit rather than on every sign-in, and her greeting,
+ * which waits for the intro to be seen (controller `openConversation`), is not
+ * held back until its 90-second cap.
+ */
+let seenThisTab = false;
+
 export function introSeen(): boolean {
+  if (seenThisTab) return true;
   try {
-    return localStorage.getItem(STORAGE_KEY) === '1';
+    // Read first: storage that cannot be read at all means "nothing to replay
+    // it from", which has always counted as seen.
+    const stored = localStorage.getItem(STORAGE_KEY) === '1';
+    return stored && functionalStorageAllowed();
   } catch {
     return true;
   }
 }
 
 export function markIntroSeen(): void {
+  seenThisTab = true;
   try {
-    localStorage.setItem(STORAGE_KEY, '1');
+    if (functionalStorageAllowed()) localStorage.setItem(STORAGE_KEY, '1');
   } catch {
-    // Nothing to remember it in; it will play again, which is harmless.
+    // Nothing to remember it in; this tab still knows.
   }
 }
 
 /** For the "Play the introduction again" control on the You page. */
 export function forgetIntro(): void {
+  seenThisTab = false;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {

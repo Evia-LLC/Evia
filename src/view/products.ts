@@ -359,6 +359,11 @@ export interface ProductsRealInput {
   category: CategoryKey;
   query: string;
   savedIds: string[];
+  /**
+   * Whether the Saved list is stored on this device (the Functional cookie
+   * category allowed) or held for this tab only. Absent counts as stored.
+   */
+  savedKept?: boolean;
 }
 
 const VERDICT_LINE: Record<ProductAssessment['verdict'], string> = {
@@ -642,7 +647,10 @@ export function buildProducts(input: ProductsRealInput): ProductsView {
     sections.push({
       id: 'saved',
       title: 'Saved',
-      subtitle: 'Kept on this device, for this account only.',
+      subtitle:
+        input.savedKept === false
+          ? 'Kept for this visit, for this account only. Allow functional storage in Cookie settings to keep them on this device.'
+          : 'Kept on this device, for this account only.',
       products: saved,
       empty:
         saved.length || waiting
@@ -655,7 +663,14 @@ export function buildProducts(input: ProductsRealInput): ProductsView {
                   body: `${capitalise(theCatalogue)} no longer has what you saved here.`,
                   icon: 'heart',
                 }
-              : { title: 'Nothing saved yet', body: 'Tap the heart on a product to keep it here. Saved items stay on this device.', icon: 'heart' },
+              : {
+                  title: 'Nothing saved yet',
+                  body:
+                    input.savedKept === false
+                      ? 'Tap the heart on a product to keep it here for this visit.'
+                      : 'Tap the heart on a product to keep it here. Saved items stay on this device.',
+                  icon: 'heart',
+                },
       loading: waiting && !saved.length,
       viewAll: false,
       more: null,

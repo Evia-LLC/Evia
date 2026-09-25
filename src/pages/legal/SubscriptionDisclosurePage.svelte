@@ -1,15 +1,19 @@
 <script lang="ts">
-  import { LEGAL_CONTENT } from '../../../shared/legal-content.ts';
+  /**
+   * /legal/subscription: main's Section 4 checkout walkthrough (7d776c7) - the
+   * age and guardian flow opened at its adult-checkout step, with the pack's
+   * section 7 disclosure and the disabled payment button - in the legal frame.
+   * No card is collected and no payment is taken.
+   */
   import { link } from '@/router/router.svelte.ts';
   import LegalShell from '@/components/legal/LegalShell.svelte';
-  import LegalDocument from '@/components/legal/LegalDocument.svelte';
-  const content = LEGAL_CONTENT['subscription-disclosure'];
+  import AgeGuardianFlow from '@/components/legal/AgeGuardianFlow.svelte';
 </script>
 
 <LegalShell>
-  <LegalDocument {content} />
+  <AgeGuardianFlow initialStep={2} />
   <nav class="sibling" aria-label="Subscription review navigation">
-    <a href="/legal/cancellation" use:link>Review cancellation placeholder</a>
+    <a href="/legal/cancellation" use:link>Cancellation information preview</a>
   </nav>
 </LegalShell>
 

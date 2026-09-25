@@ -305,6 +305,15 @@ describe('saved, paging and link names (review fixes)', () => {
     expect(gone.sections[0].empty?.title).toMatch(/left the shelf/);
   });
 
+  it('says where Saved is kept: on this device, or for this visit without functional storage', () => {
+    const stored = buildProducts(input({ category: 'saved' }));
+    expect(stored.sections[0].subtitle).toBe('Kept on this device, for this account only.');
+    expect(stored.sections[0].empty?.body).toMatch(/stay on this device/);
+    const tabOnly = buildProducts(input({ category: 'saved', savedKept: false }));
+    expect(tabOnly.sections[0].subtitle).toMatch(/^Kept for this visit/);
+    expect(tabOnly.sections[0].empty?.body).not.toMatch(/on this device/);
+  });
+
   it('shows the Saved chip only for this list, and keeps it while it is open', () => {
     expect(buildProducts(input()).categories.some((c) => c.key === 'saved')).toBe(false);
     expect(buildProducts(input({ savedIds: ['shelf:cat-1'] })).categories.some((c) => c.key === 'saved')).toBe(true);

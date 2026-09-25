@@ -9,7 +9,8 @@
 
   It is a modal dialog: Esc, the close button and the scrim close it, Tab
   stays inside it, and focus goes back to whatever opened it. The AI
-  disclosure (SRS section 6) sits under its title for as long as it is open.
+  disclosure (the Consent Wording Pack's section 8 notice, drawn by
+  ChatPanel) sits under its title for as long as it is open.
   It closes when the address changes - a scan offer taken from inside it
   walks to /scan - and closing it stops the microphone.
 
@@ -28,7 +29,6 @@
   import { session } from '@/state/session.svelte.ts';
   import { setGuestVoice, setVoiceEnabled, toggleListening } from '@/state/controller.ts';
   import { talk, takeTalkRequest } from '@/shell/talk.svelte.ts';
-  import AiDisclosure from '@/shell/AiDisclosure.svelte';
   import { stillness } from '@/lib/motion.ts';
   import Icon from '@/ui/Icon.svelte';
   import IconButton from '@/ui/IconButton.svelte';
@@ -172,10 +172,6 @@
       </div>
     </header>
 
-    <div class="ev-chatdrawer__ai">
-      <AiDisclosure tone="dark" backed={false} />
-    </div>
-
     <ChatPanel bind:composer />
   </div>
 {/if}
@@ -298,11 +294,4 @@
     }
   }
 
-  .ev-chatdrawer__ai {
-    padding: 0 20px 10px;
-    border-bottom: 1px solid var(--glass-dark-rim);
-  }
-  .is-sheet .ev-chatdrawer__ai {
-    padding-left: max(16px, var(--safe-l));
-  }
 </style>

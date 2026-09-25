@@ -484,6 +484,8 @@ export interface ProgressPhoto {
 }
 
 export interface UserSummary {
+  /** Self-declared; never evidence of verified adulthood. */
+  dateOfBirth?: string | null;
   id: string;
   email: string;
   displayName: string;

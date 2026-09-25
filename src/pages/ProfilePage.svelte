@@ -197,6 +197,13 @@
 >
   {#if setAside}<SampleAccountNote action="see and change your profile" />{/if}
 
+  <!-- From main (Section 5): the way to the account controls and to the
+       optional safety and lifestyle consent, as quiet links under the title. -->
+  <nav class="profile__links" aria-label="Consent and account controls">
+    <Button variant="secondary" size="sm" href="/privacy" iconEnd="chevron-right">Account controls and consent</Button>
+    <Button variant="secondary" size="sm" href="/legal/safety-lifestyle-consent" iconEnd="chevron-right">Optional safety and lifestyle consent</Button>
+  </nav>
+
   <div class="profile">
     <div class="profile__col">
       <Card aria-labelledby="pro-skin">
@@ -372,6 +379,12 @@
 </PageFrame>
 
 <style>
+  .profile__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin: 0 0 16px;
+  }
   .profile {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

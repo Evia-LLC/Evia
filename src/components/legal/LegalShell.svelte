@@ -13,6 +13,7 @@
   import { ROUTES, isLegalRoute, link, router } from '@/router/router.svelte.ts';
   import Logo from '@/shell/Logo.svelte';
   import Icon from '@/ui/Icon.svelte';
+  import { openCookieSettings } from '@/lib/cookie-preferences.ts';
 
   interface Props {
     children: Snippet;
@@ -45,6 +46,9 @@
         {#each others as route (route.id)}
           <li><a href={route.path} use:link>{route.label}</a></li>
         {/each}
+        <!-- main's cookie choice (P-12), reopened from here on the legal pages
+             instead of the floating control, which would sit over the text. -->
+        <li><button type="button" class="ev-legal__cookies" onclick={openCookieSettings}>Cookie settings</button></li>
       </ul>
     </nav>
   </main>
@@ -140,6 +144,23 @@
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+  .ev-legal__cookies {
+    min-height: 44px;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--text-link);
+    font-family: var(--font-sans);
+    font-size: var(--fs-body-sm);
+    font-weight: var(--fw-medium);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .ev-legal__cookies:focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .ev-legal__others a {
     display: inline-flex;
