@@ -816,10 +816,12 @@
 }
 .reading__dock {
   position: absolute;
-  left: calc(var(--rail-w) + (100% - var(--rail-w)) / 2);
+  left: calc(var(--rail-w) + var(--gutter));
+  top: max(var(--s-7), var(--safe-t));
   bottom: max(var(--gutter), var(--safe-b));
-  width: min(560px, 46vw);
-  transform: translateX(-50%);
+  width: min(360px, 29vw);
+  transform: none;
+  overflow-y: auto;
   padding: var(--s-5) var(--s-6);
   border-radius: var(--radius);
   border: var(--hair) solid var(--line);

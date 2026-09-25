@@ -395,16 +395,19 @@ export function buildRoutinePlan(
       cautions: [],
       alreadyCovered: false,
       coveredBy: [],
-      priority: 1,
+      // Always worth including, but it must not outrank the concern that this
+      // particular scan actually surfaced.
+      priority: 0.12,
     });
   }
 
-  // Most-severe first, but anything already covered sinks — it is context, not
-  // an action.
+  // The scan decides the order. Previously STEP_ORDER won before severity, so
+  // two very different faces still read as the same cleanse/treat/hydrate list.
+  // Anything already covered still sinks: it is context, not an action.
   suggestions.sort((a, b) => {
     if (a.alreadyCovered !== b.alreadyCovered) return a.alreadyCovered ? 1 : -1;
-    if (a.step !== b.step) return STEP_ORDER.indexOf(a.step) - STEP_ORDER.indexOf(b.step);
-    return b.priority - a.priority;
+    if (a.priority !== b.priority) return b.priority - a.priority;
+    return STEP_ORDER.indexOf(a.step) - STEP_ORDER.indexOf(b.step);
   });
 
   const gaps = STEP_ORDER.filter(
