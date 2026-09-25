@@ -427,8 +427,11 @@
   --text-lift: 0 1px 2px rgba(31, 17, 12, 0.45);
 
   /* Focus: 2px ring, offset 2px. Raspberry on light (5.0:1 on the page),
-     warm white on dark glass and on the navy (set by .on-dark / .on-holo). */
-  --focus-ring: #a63a55;
+     warm white on dark glass and on the navy (set by .on-dark / .on-holo).
+     A light island inside a dark surface (the chat's composer) sets
+     --focus-ring back to --focus-ring-on-light. */
+  --focus-ring-on-light: #a63a55;
+  --focus-ring: var(--focus-ring-on-light);
   --focus-ring-on-dark: #ffe3d6;
   --focus-width: 2px;
   --focus-offset: 2px;

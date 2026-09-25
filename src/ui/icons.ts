@@ -4,8 +4,8 @@
  * Hand-drawn in the lucide idiom the mockups use: a 24-unit grid, a 1.6
  * stroke, round caps and joins, outline by default. Each glyph is the inner
  * markup of an <svg viewBox="0 0 24 24">, drawn by `Icon.svelte`; the handful
- * that the mockups show solid (play, the chat bubbles on the CTA) are marked
- * `solid` and fill with the current colour instead.
+ * that the mockups show solid (play, pause, stop, the chat bubbles on the
+ * CTA) are marked `solid` and fill with the current colour instead.
  *
  * Kept as data rather than one component per glyph so the set can be listed
  * (the preview page does) and so a page never ships an icon the set lacks.
@@ -75,6 +75,17 @@ export const GLYPHS = {
   // Media.
   play: g('<path d="M7 4.6v14.8a1.2 1.2 0 0 0 1.8 1.03l12.2-7.4a1.2 1.2 0 0 0 0-2.06L8.8 3.57A1.2 1.2 0 0 0 7 4.6z"/>', true),
   pause: g('<rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/>', true),
+  /** Stopping her mid-line (solid, like play and pause). */
+  stop: g('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>', true),
+
+  // Voice (the conversation's microphone and her voice switch).
+  mic: g('<rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5v4"/>'),
+  'voice-on': g(
+    '<path d="M4 9.5h3l4.5-4v13L7 14.5H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6"/><path d="M18.4 6.2a8.2 8.2 0 0 1 0 11.6"/>',
+  ),
+  'voice-off': g(
+    '<path d="M4 9.5h3l4.5-4v13L7 14.5H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1z"/><path d="m16 9.5 5 5"/><path d="m21 9.5-5 5"/>',
+  ),
 
   // Time of day and dates.
   sun: g(

@@ -14,9 +14,9 @@
   It closes when the address changes - a scan offer taken from inside it
   walks to /scan - and closing it stops the microphone.
 
-  The close button is the shared IconButton. The voice switch is drawn here to
-  the same 44px plain-disc geometry only because its glyphs (ChatGlyph) are
-  not in the shared icon set yet; once they are, it becomes an IconButton too.
+  Both header tools are the shared IconButton (plain, dark, 44px): the voice
+  switch is a pressed toggle (a disc while her voice is on), and its tooltip
+  says which way it is set; the close button beside it.
 
   The dialog sits under the "Sample data" badge (--z-sheet < --z-badge), so
   the badge stays visible and reachable while it is open.
@@ -33,7 +33,6 @@
   import Icon from '@/ui/Icon.svelte';
   import IconButton from '@/ui/IconButton.svelte';
   import ChatPanel from './ChatPanel.svelte';
-  import ChatGlyph from './ChatGlyph.svelte';
   import { chat, closeChat, markSeen, openChat } from './drawer.svelte.ts';
 
   const compact = new MediaQuery('max-width: 819px', false);
@@ -157,16 +156,14 @@
       <h2 class="ev-chatdrawer__title" id="{id}-title" tabindex="-1" bind:this={heading}>Talk to Evia</h2>
       <div class="ev-chatdrawer__tools">
         {#if session.canSpeak || voiceOn}
-          <button
-            type="button"
-            class="ev-chatdrawer__tool"
-            aria-pressed={voiceOn}
-            aria-label="Evia's voice"
+          <IconButton
+            icon={voiceOn ? 'voice-on' : 'voice-off'}
+            label="Evia's voice"
             title={voiceOn ? 'Voice on: she reads her replies aloud' : 'Voice off'}
+            tone="dark"
+            pressed={voiceOn}
             onclick={toggleVoice}
-          >
-            <ChatGlyph name={voiceOn ? 'voice-on' : 'voice-off'} size={22} />
-          </button>
+          />
         {/if}
         <IconButton icon={compact.current ? 'chevron-down' : 'x'} label="Close the conversation" tone="dark" onclick={close} />
       </div>
@@ -265,33 +262,4 @@
     display: flex;
     gap: 4px;
   }
-  .ev-chatdrawer__tool {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--text-on-dark-strong);
-    cursor: pointer;
-    transition: background-color var(--dur-base) var(--ease-out);
-  }
-  .ev-chatdrawer__tool[aria-pressed='false'] {
-    color: var(--text-on-dark);
-  }
-  .ev-chatdrawer__tool[aria-pressed='true'] {
-    background: var(--tint-press-dark);
-  }
-  .ev-chatdrawer__tool:focus-visible {
-    outline: var(--focus-width) solid var(--focus-ring-on-dark);
-    outline-offset: 1px;
-  }
-  @media (hover: hover) {
-    .ev-chatdrawer__tool:hover {
-      background: var(--tint-hover-dark);
-    }
-  }
-
 </style>

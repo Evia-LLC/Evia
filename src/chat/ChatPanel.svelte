@@ -16,6 +16,11 @@
   - the composer: typing, the microphone (its live transcript shows in the
     box while it listens), send, and stopping her mid-line.
 
+  Every control is a shared one: the starters, the scan offer, the "New from
+  Evia" pill and Stop are Buttons; the microphone (a plain toggle, with a disc
+  while it listens) and send (the CTA gradient) are IconButtons. The composer
+  is a light island in the dark drawer, so it sets the light focus ring back.
+
   With nothing said yet it offers three general questions to start from.
 
   The lines come from `shownMessages()` (drawer.svelte.ts), not straight from
@@ -31,7 +36,7 @@
   import { revealLine, type RevealTicker } from '@/lib/reveal.ts';
   import Button from '@/ui/Button.svelte';
   import Icon from '@/ui/Icon.svelte';
-  import ChatGlyph from './ChatGlyph.svelte';
+  import IconButton from '@/ui/IconButton.svelte';
   import { shownMessages } from './drawer.svelte.ts';
 
   interface Props {
@@ -158,6 +163,9 @@
     const text = draft;
     draft = '';
     queueMicrotask(autosize);
+    // Sending from the button disables it while the draft is empty, which
+    // would drop keyboard focus to the page; keep it in the composer instead.
+    if (composer && document.activeElement !== composer) composer.focus({ preventScroll: true });
     await sendMessage(text);
   }
 
@@ -256,9 +264,14 @@
     <div class="ev-chat__speaking">
       <span class="ev-chat__wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       <span>Evia is speaking</span>
-      <Button variant="secondary" tone="dark" size="sm" class="ev-chat__stop" onclick={() => stopSpeaking()}>
-        <ChatGlyph name="stop" size={16} filled />Stop
-      </Button>
+      <Button
+        variant="secondary"
+        tone="dark"
+        size="sm"
+        iconStart="stop"
+        class="ev-chat__stop"
+        onclick={() => stopSpeaking()}>Stop</Button
+      >
     </div>
   {/if}
 
@@ -277,22 +290,22 @@
     ></textarea>
 
     {#if session.canListen}
-      <button
-        type="button"
-        class="ev-chat__mic"
-        class:is-on={session.listening}
+      <IconButton
+        icon="mic"
+        label={session.listening ? 'Stop listening' : 'Speak to Evia'}
+        pressed={session.listening}
         onclick={() => toggleListening()}
-        aria-label={session.listening ? 'Stop listening' : 'Speak to Evia'}
-        aria-pressed={session.listening}
-        title={session.listening ? 'Stop listening' : 'Speak to Evia'}
-      >
-        <ChatGlyph name="mic" size={22} />
-      </button>
+      />
     {/if}
 
-    <button type="button" class="ev-chat__send" onclick={submit} disabled={!canSend} aria-label="Send message" title="Send">
-      <Icon name="arrow-right" size={22} stroke={2} />
-    </button>
+    <IconButton
+      icon="arrow-right"
+      label="Send message"
+      title="Send"
+      variant="primary"
+      disabled={!canSend}
+      onclick={submit}
+    />
   </div>
 </div>
 
@@ -523,16 +536,12 @@
   }
   .ev-chat__speaking :global(.ev-chat__stop) {
     margin-left: auto;
-    padding-left: 10px;
+    padding-left: 12px;
     padding-right: 14px;
-  }
-  .ev-chat__speaking :global(.ev-chat__stop .ev-btn__label) {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
   }
 
   .ev-chat__composer {
+    --focus-ring: var(--focus-ring-on-light);
     display: flex;
     align-items: flex-end;
     gap: 8px;
@@ -573,57 +582,6 @@
   .ev-chat__composer textarea::placeholder {
     color: var(--text-muted);
     opacity: 1;
-  }
-
-  .ev-chat__mic,
-  .ev-chat__send {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    cursor: pointer;
-    transition:
-      background-color var(--dur-base) var(--ease-out),
-      opacity var(--dur-base) var(--ease-out),
-      transform var(--dur-fast) var(--ease-out);
-  }
-  .ev-chat__mic:focus-visible,
-  .ev-chat__send:focus-visible {
-    outline: var(--focus-width) solid var(--focus-ring);
-    outline-offset: 1px;
-  }
-  .ev-chat__mic {
-    background: transparent;
-    color: var(--text-secondary);
-  }
-  .ev-chat__mic.is-on {
-    background: var(--rose-300);
-    color: var(--chip-selected-icon);
-  }
-  @media (hover: hover) {
-    .ev-chat__mic:hover:not(.is-on) {
-      background: var(--tint-hover);
-      color: var(--text-strong);
-    }
-  }
-  .ev-chat__send {
-    background: linear-gradient(135deg, var(--cta-from), var(--cta-to));
-    box-shadow: inset 0 0 0 1px var(--cta-rim);
-    color: var(--cta-ink);
-  }
-  .ev-chat__send:disabled {
-    background: var(--surface-sunken);
-    box-shadow: none;
-    color: var(--text-muted);
-    cursor: default;
-  }
-  .ev-chat__send:active:not(:disabled),
-  .ev-chat__mic:active {
-    transform: scale(0.95);
   }
 
   @media (prefers-reduced-motion: reduce) {
