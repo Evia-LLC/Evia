@@ -862,7 +862,7 @@ async function runBodyAnalysis(
     const before = storedPrevious ?? previous;
     const top = selectBodyFindings(scan, before)[0];
     const showProfile = top !== undefined && isProfileKey(top.key) && profileImageBase64 !== null;
-    director?.setCapture(showProfile ? profileImageBase64 : imageBase64);
+    await director?.setCapture(showProfile ? profileImageBase64 : imageBase64);
     director?.presentBody(scan, before, bodySentiment(scan, before));
     session.scanActive = false;
     session.bodyScanStep = 'front';
@@ -1003,7 +1003,7 @@ export async function runAnalysis(
      * it simply lives as long as the session does, which is exactly as long as
      * the projection is on screen.
      */
-    director?.setCapture(imageBase64);
+    await director?.setCapture(imageBase64);
     director?.setFaceMesh(session.lastMesh);
 
     /*

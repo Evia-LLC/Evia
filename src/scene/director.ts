@@ -1335,8 +1335,11 @@ export class SessionDirector {
     this.holograms?.setFaceMesh(mesh);
   }
 
-  setCapture(base64: string | null): void {
-    void this.holograms?.setCapture(base64);
+  async setCapture(base64: string | null): Promise<void> {
+    // Keep the capture hand-off ordered with the reveal.  Decoding a still is
+    // asynchronous (createImageBitmap), so firing and forgetting here allowed
+    // presentAnalysis to light the mesh before the captured frame existed.
+    await this.holograms?.setCapture(base64);
   }
 
   /** What the camera can currently see — the layout solver's only input. */
