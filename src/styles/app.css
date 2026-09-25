@@ -167,6 +167,9 @@ select:focus-visible,
     rgba(var(--ground-rgb), 0) 0%,
     rgba(var(--ground-rgb), 0.86) 30%
   );
+  /* Shared Evia clinic chrome: every route keeps the same warm console edge
+     while the WebGL room remains visible beneath it. */
+  border-left: 1px solid rgba(var(--metal-rgb), 0.16);
 }
 
 .chat > * {
