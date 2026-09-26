@@ -16,19 +16,20 @@ beforeEach(() => vi.stubEnv('PERFECTCORP_API_KEY', 'server-test-key'));
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('Perfect Corp server adapter', () => {
-  it('uploads bytes, submits one SD task, polls and maps raw scores without masks or age', async () => {
+  it('uploads bytes, submits one SD task, polls and maps ui scores without masks or age', async () => {
     const fetch = vi.fn().mockResolvedValueOnce(json(file)).mockResolvedValueOnce(new Response(''))
       .mockResolvedValueOnce(json({ status: 200, data: { task_id: 'task-id' } }))
       .mockResolvedValueOnce(json({ status: 200, data: { task_status: 'running' } })).mockResolvedValueOnce(json(fixture));
     const result = await analyseWithPerfectCorp(jpeg, { fetch, pollMs: 0 });
-    expect(result).toEqual({ hydration: 61.5, oiliness: 30, redness: 18, texture: 32, pores: 26, darkSpots: 9, evenness: 65, underEye: 45, acneIndicators: 13 });
-    expect(fetch.mock.calls[0][0]).toMatch(/file\/skin-analysis$/);
+    expect(result).toEqual({ hydration: 78, oiliness: 85, redness: 90, texture: 80, pores: 85, darkSpots: 95, evenness: 78, underEye: 72, acneIndicators: 92 });
+    expect(fetch.mock.calls[0][0]).toMatch(/\/file$/);
     expect(fetch.mock.calls[1][1].headers).not.toHaveProperty('Authorization');
     expect(fetch.mock.calls[1][1].body).toEqual(jpeg);
     const task = JSON.parse(fetch.mock.calls[2][1].body);
     expect(task.src_file_id).toBe('file-id'); expect(task.format).toBe('json');
     expect(task.dst_actions).toHaveLength(9); expect(task.dst_actions).not.toContain('skin_age');
     expect(fetch.mock.calls[4][0]).toMatch(/task\/skin-analysis\/task-id$/);
+    expect(fetch.mock.calls[5][0]).toMatch(/task\/delete$/);
   });
   it('defaults to Perfect Corp and supports local selection without requiring a key', async () => {
     vi.stubEnv('ANALYSIS_PROVIDER', ''); expect(analysisProvider()).toBe('perfectcorp');
@@ -56,14 +57,14 @@ describe('Perfect Corp server adapter', () => {
     const fetch = vi.fn().mockResolvedValueOnce(json(file)).mockResolvedValueOnce(new Response(''))
       .mockResolvedValueOnce(json({ data: { task_id: 'task' } })).mockImplementation(async () => json({ data: { task_status: 'running' } }));
     await expect(analyseWithPerfectCorp(jpeg, { fetch, pollMs: 0 })).rejects.toThrow('timeout');
-    expect(fetch).toHaveBeenCalledTimes(8);
+    expect(fetch).toHaveBeenCalledTimes(21);
     fetch.mockReset().mockResolvedValueOnce(json(file)).mockResolvedValueOnce(new Response(''))
       .mockResolvedValueOnce(json({ data: { task_id: 'task' } })).mockResolvedValue(json({ data: { task_status: 'error' } }));
     await expect(analyseWithPerfectCorp(jpeg, { fetch, pollMs: 0 })).rejects.toThrow('analysis_failed');
   });
   it('rejects missing, duplicate and out-of-range scores rather than fabricating metrics', () => {
     expect(() => mapPerfectCorpOutput([])).toThrow();
-    const output = structuredClone(fixture.data.results.output); output[0].raw_score = 101;
+    const output = structuredClone(fixture.data.results.output); output[0].ui_score = 101;
     expect(() => mapPerfectCorpOutput(output)).toThrow();
     expect(() => mapPerfectCorpOutput([...fixture.data.results.output, fixture.data.results.output[0]])).toThrow();
   });

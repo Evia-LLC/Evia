@@ -38,6 +38,7 @@ import { METRIC_REGIONS } from '@/skin-analysis/metrics.ts';
 import {
   FACE_REGIONS,
   METRIC_HIGHER_IS_BETTER,
+  METRIC_LABELS,
   type FaceRegionKey,
   type SkinAnalysis,
   type SkinMetricKey,
@@ -423,6 +424,32 @@ export class HoloPortrait {
       ctx.beginPath();
       ctx.ellipse(cx, cy, radius, radius * 0.82, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+    // Keep the nine metric readouts on the captured face itself.  These are
+    // deliberately anchored to the same ROI rectangles used by the local
+    // measurement, rather than to a generic head or a fixed side panel.
+    ctx.font = '600 13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [metric, regions] of Object.entries(METRIC_REGIONS) as [SkinMetricKey, FaceRegionKey[]][]) {
+      const region = regions[0];
+      const rect = rects[region];
+      if (!rect) continue;
+      const value = analysis.metrics[metric];
+      const x = Math.max(34, Math.min(SIZE - 34, rect.x + rect.width / 2));
+      const y = Math.max(18, rect.y + rect.height / 2);
+      ctx.strokeStyle = 'rgba(93, 232, 255, .9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 17, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(8, 15, 35, .78)';
+      ctx.fill();
+      ctx.fillStyle = '#f4fbff';
+      ctx.fillText(String(Math.round(value / 10) / 1), x, y);
+      ctx.font = '600 9px Inter, sans-serif';
+      ctx.fillText(METRIC_LABELS[metric], x, Math.min(SIZE - 8, y + 27));
+      ctx.font = '600 13px Inter, sans-serif';
     }
     ctx.restore();
   }
