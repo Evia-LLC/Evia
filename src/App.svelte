@@ -20,6 +20,7 @@
   import ProfilePage from '@/pages/ProfilePage.svelte';
   import PrivacyPage from '@/pages/PrivacyPage.svelte';
   import DataRightsPage from '@/pages/DataRightsPage.svelte';
+  import AvatarLabPage from '@/pages/AvatarLabPage.svelte';
   import TermsPage from '@/pages/legal/TermsPage.svelte';
   import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage.svelte';
   import FacialScanConsentPage from '@/pages/legal/FacialScanConsentPage.svelte';
@@ -204,6 +205,8 @@
         <PrivacyPage />
       {:else if router.is('data')}
         <DataRightsPage />
+      {:else if router.is('avatar-lab')}
+        <AvatarLabPage />
       {/if}
     {/key}
 
