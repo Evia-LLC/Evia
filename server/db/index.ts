@@ -66,6 +66,198 @@ export function connectionString(): string {
   return process.env.NETLIFY_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 }
 
+/** Default pool size: a function instance handles a request or two at a time. */
+export const DB_POOL_DEFAULT = 3;
+/** At least one connection, or the pool is useless. */
+export const DB_POOL_MIN = 1;
+/**
+ * Hard ceiling per process. Even a persistent server needs far fewer than
+ * this against hosted Postgres; anything larger is a misconfiguration that
+ * would exhaust the provider's connection limit instead.
+ */
+export const DB_POOL_MAX = 50;
+
+/**
+ * Validates the pool size.
+ *
+ * A bare `Number(...)` accepts empty strings as 0, trailing junk as NaN and
+ * any magnitude, and the old code passed whatever came out straight to `pg`.
+ * Only plain integers inside the bound are accepted. The error names the
+ * variable, never its value, so a pasted secret can never leak through it.
+ */
+export function parsePoolMax(raw: string | undefined): number {
+  if (raw === undefined) return DB_POOL_DEFAULT;
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) {
+    throw new Error(
+      `ELOHIM_DB_POOL must be an integer between ${DB_POOL_MIN} and ${DB_POOL_MAX}.`,
+    );
+  }
+  const size = Number(text);
+  if (!Number.isSafeInteger(size) || size < DB_POOL_MIN || size > DB_POOL_MAX) {
+    throw new Error(
+      `ELOHIM_DB_POOL must be an integer between ${DB_POOL_MIN} and ${DB_POOL_MAX}.`,
+    );
+  }
+  return size;
+}
+
+/** Pool size from the environment, validated. */
+export function resolvePoolMax(): number {
+  return parsePoolMax(process.env.ELOHIM_DB_POOL);
+}
+
+/**
+ * True for hostnames that are unambiguously this machine.
+ *
+ * The old check was a regex over the raw connection string, so it missed
+ * `postgresql://`, IPv6 forms it did not spell out, and the rest of 127/8.
+ * Parsing the URL first means the hostname is compared, not guessed at.
+ */
+export function isLoopbackHostname(hostname: string): boolean {
+  let host = hostname.trim().toLowerCase();
+  // URL.hostname already strips the brackets from IPv6 literals; tolerate
+  // them anyway so direct callers cannot slip past with `[::1]`.
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  if (host === 'localhost') return true;
+  // IPv6 loopback, compressed or fully expanded.
+  if (host === '::1' || host === '0:0:0:0:0:0:0:1') return true;
+  // 127/8 is loopback (RFC 1122) — all of it, not just 127.0.0.1.
+  if (/^127(\.\d{1,3}){3}$/.test(host)) {
+    return host
+      .split('.')
+      .every((octet) => octet.length <= 3 && Number(octet) <= 255);
+  }
+  // IPv4-mapped IPv6 loopback, e.g. ::ffff:127.0.0.1.
+  if (host.startsWith('::ffff:'))
+    return isLoopbackHostname(host.slice('::ffff:'.length));
+  return false;
+}
+
+/** `sslmode` values that encrypt at best and verify never. */
+const SSL_MODE_UNVERIFIED = new Set(['disable', 'allow', 'prefer']);
+/** Falsy spellings for boolean URL options. */
+const FALSE_VALUES = new Set([
+  '0',
+  'false',
+  'f',
+  'off',
+  'no',
+  'n',
+  'disable',
+  'disabled',
+]);
+
+/**
+ * Parses the connection string as a URL, accepting both `postgres://` and
+ * `postgresql://` schemes, IPv6 literals and explicit ports.
+ */
+function parsedConnectionUrl(url: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Database connection string is not a valid URL.');
+  }
+  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+    throw new Error(
+      `Database connection string must use the postgres:// scheme (got '${parsed.protocol}').`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Rejects URL query options that would disable certificate verification.
+ *
+ * `pg` honours some of these itself, so leaving them in place would let the
+ * string silently downgrade the verification the pool is built with — or
+ * mislead an operator into thinking `sslmode` in the URL is the policy.
+ * Anything that weakens verification throws here, before the driver ever
+ * sees the string. Benign values (`sslmode=require`, `verify-ca`,
+ * `verify-full`) pass through untouched. Errors never repeat the URL, which
+ * carries credentials.
+ */
+function rejectInsecureUrlOptions(parsed: URL): void {
+  const entries: Array<[string, string]> = [];
+  parsed.searchParams.forEach((value, key) => {
+    entries.push([key.toLowerCase(), value.toLowerCase().trim()]);
+  });
+  for (const [key, value] of entries) {
+    if (key === 'sslmode' && SSL_MODE_UNVERIFIED.has(value)) {
+      throw new Error(
+        'Database connection string sets sslmode to a value that disables certificate ' +
+          'verification; remove it — remote connections always verify.',
+      );
+    }
+    if (key === 'ssl' && FALSE_VALUES.has(value)) {
+      throw new Error(
+        'Database connection string disables SSL via the URL; remove it — ' +
+          'remote connections always verify.',
+      );
+    }
+    if (
+      (key === 'rejectunauthorized' || key === 'reject_unauthorized') &&
+      FALSE_VALUES.has(value)
+    ) {
+      throw new Error(
+        'Database connection string disables certificate verification via the URL; ' +
+          'remove it — remote connections always verify.',
+      );
+    }
+  }
+}
+
+/**
+ * Explicit CA for Postgres TLS.
+ *
+ * `ELOHIM_DB_CA` is either a file path (read once, at pool creation) or
+ * inline PEM contents. Operator dashboards often collapse newlines into
+ * literal `\n` sequences when a certificate is pasted, so those are expanded.
+ * Unset means the system roots, which already verify the public providers.
+ * Errors name the variable, never its contents.
+ */
+export function resolveCaCert(): string | undefined {
+  const raw = process.env.ELOHIM_DB_CA;
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const text = raw.trim();
+  let candidate: string | null = null;
+  try {
+    if (fs.existsSync(text) && fs.statSync(text).isFile()) {
+      candidate = fs.readFileSync(text, 'utf8');
+    }
+  } catch {
+    throw new Error(
+      'ELOHIM_DB_CA points at a certificate file that cannot be read.',
+    );
+  }
+  const pem = (candidate ?? text).replace(/\\n/g, '\n').trim();
+  if (!pem.includes('-----BEGIN CERTIFICATE-----')) {
+    throw new Error(
+      'ELOHIM_DB_CA is set but is neither a readable certificate file nor PEM contents.',
+    );
+  }
+  return pem;
+}
+
+/**
+ * TLS policy for one connection string.
+ *
+ * Plain text to loopback development databases only — the PGlite listeners
+ * in `scripts/dev-db.mjs` and `scripts/test-local.mjs` do not speak SSL —
+ * and verified TLS to everything else. Exported so the policy is testable
+ * without opening a connection.
+ */
+export function resolveSslConfig(url: string): pg.PoolConfig['ssl'] {
+  const parsed = parsedConnectionUrl(url);
+  rejectInsecureUrlOptions(parsed);
+  if (isLoopbackHostname(parsed.hostname)) return undefined;
+  const ca = resolveCaCert();
+  return ca === undefined
+    ? { rejectUnauthorized: true }
+    : { rejectUnauthorized: true, ca };
+}
+
 function getPool(): pg.Pool {
   if (pool) return pool;
   const url = connectionString();
@@ -79,14 +271,26 @@ function getPool(): pg.Pool {
     connectionString: url,
     // A function instance handles a request or two and is then discarded, so a
     // large pool is just idle connections the database has to hold open.
-    max: Number(process.env.ELOHIM_DB_POOL ?? 3),
+    max: resolvePoolMax(),
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
-    // Plain text to anything on this machine — the dev listener in
-    // `scripts/dev-db.mjs` does not speak SSL — and TLS to everything else.
-    ssl: /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url) ? undefined : { rejectUnauthorized: false },
+    // Verified TLS to anything that is not this machine; plaintext only for
+    // loopback development databases. URL options that disable verification
+    // throw inside resolveSslConfig instead of silently downgrading.
+    ssl: resolveSslConfig(url),
   });
   return pool;
+}
+
+/**
+ * Closes the shared pool and forgets it, so the next query builds a fresh
+ * one from the current environment. Used by graceful shutdown and by tests
+ * that need a clean pool after changing connection settings.
+ */
+export async function closePool(): Promise<void> {
+  const closing = pool;
+  pool = null;
+  if (closing) await closing.end();
 }
 
 /**

@@ -760,6 +760,20 @@ new vendor features, masks and geometry persistence are outside this plan.
 - **Done when:** no required check is skipped, unresolved risks have an owner/decision,
   and release/rollback commands refer to exact compatible versions.
 
+### P6-T01a — Toolchain and dependency modernization track (scheduled)
+
+- **Depends on:** P6-T01 (runs on a green, defect-closed tree; never interleaved with Phase 1 fixes).
+- **Files:** `CONTRIBUTING.md`, `netlify.toml`, `.github/workflows/ci.yml`, `package.json`, lockfile; per-upgrade evidence notes.
+- **Change:** evaluate moving the canonical toolchain forward (Node LTS newer than 24),
+  upgrading major dependencies (Express, PGlite, Svelte/Vite kits) and refreshing
+  pinned CI actions. Each upgrade is its own child item with before/after gate
+  evidence (`typecheck`, `check`, `test:local`, `test:pg`, `build`, audit delta).
+  No blanket `npm install latest` or `audit fix --force`; PGlite cold-boot cost
+  and provider-driver TLS behavior are re-measured per upgrade.
+- **Done when:** every adopted upgrade has passing gates on the new toolchain and
+  the canonical versions are re-pinned in all three places (CONTRIBUTING, CI, host).
+  Deferred upgrades stay listed with a reason, not silently dropped.
+
 ### P6-T02 — Decide whether application Postgres should be consolidated
 
 - **Depends on:** P6-T01.
@@ -809,15 +823,17 @@ and migration ledgers need their own bounded retention/cleanup rules.
 All task statuses start **TODO**. Append one row per item as it starts; keep the body
 above as the contract and record scoped deviations here before implementation.
 
-| Item    | Status | Commit / artifact                                                                     | Commands and results                                                                                                                                 | Residual / next action                                                                   |
-| ------- | ------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Plan    | READY  | `docs/REMEDIATION_PLAN.md`                                                            | Reference format and repository paths inspected                                                                                                      | Begin P0-T01                                                                             |
-| P0-T01  | DONE   | `docs/REMEDIATION_BASELINE.md`                                                        | Gates: install 0, typecheck 0, check 0, test:local 1 (3 PGlite 30s timeouts), build 0, audit 1 (2 moderate qs); Node 26 vs canonical 24              | Child tasks P0-T01a/b/c own blockers; P0-T02/P0-T03 may proceed except green-suite deps  |
-| P0-T01a | DONE   | `test/consent-migration.test.ts`, `test/facial-geometry-privacy.test.ts`              | Shared 1 PGlite/file + close; full `test:local` 37/37 files 328/328 pass 144.79s Node 26; typecheck 0                                                | Closed; cold-boot cost documented, no timeout bump                                       |
-| P0-T01b | DONE   | `test/body-store.test.ts` (comment + module warn)                                     | 3 skipIf suites = 8 tests; 10-vs-0 was file-failure cascade, not skipIf; full run 0 skipped                                                          | Closed; deterministic: 0 skipped under test:local, 8 bare                                |
-| P0-T01c | TODO   | —                                                                                     | Node 24 unavailable locally (only v26.10.0, no nvm/docker); CI pins Node 24                                                                          | SCHEDULED: re-run test:local on Node 24 / CI before Phase 1 gate                         |
-| P0-T02  | DONE   | `test/helpers/two-accounts.ts`, `test/ownership-boundaries.test.ts`                   | Full `test:local` 38/38 files 334/334 pass 150.26s Node 26; typecheck 0; A/B isolation + anon 401 + consent 403→0 calls / grant→1 call               | Closed; photo consent seeded via real FK decision; blob bytes stubbed with counter       |
-| P0-T03  | DONE   | `scripts/test-postgres.mjs`, `test:pg`, `test/integration/`, CI service, CONTRIBUTING | `test:local` 38 passed +2 skipped / 334+6, exit 0; guards fail fast (no target, remote host, non-test name); PGlite version string proven rejectable | Closed; real-PG execution in CI (no local server); integration skips loudly outside lane |
+| Item    | Status | Commit / artifact                                                                         | Commands and results                                                                                                                                 | Residual / next action                                                                   |
+| ------- | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Plan    | READY  | `docs/REMEDIATION_PLAN.md`                                                                | Reference format and repository paths inspected                                                                                                      | Begin P0-T01                                                                             |
+| P0-T01  | DONE   | `docs/REMEDIATION_BASELINE.md`                                                            | Gates: install 0, typecheck 0, check 0, test:local 1 (3 PGlite 30s timeouts), build 0, audit 1 (2 moderate qs); Node 26 vs canonical 24              | Child tasks P0-T01a/b/c own blockers; P0-T02/P0-T03 may proceed except green-suite deps  |
+| P0-T01a | DONE   | `test/consent-migration.test.ts`, `test/facial-geometry-privacy.test.ts`                  | Shared 1 PGlite/file + close; full `test:local` 37/37 files 328/328 pass 144.79s Node 26; typecheck 0                                                | Closed; cold-boot cost documented, no timeout bump                                       |
+| P0-T01b | DONE   | `test/body-store.test.ts` (comment + module warn)                                         | 3 skipIf suites = 8 tests; 10-vs-0 was file-failure cascade, not skipIf; full run 0 skipped                                                          | Closed; deterministic: 0 skipped under test:local, 8 bare                                |
+| P0-T01c | TODO   | —                                                                                         | Node 24 unavailable locally (only v26.10.0, no nvm/docker); CI pins Node 24                                                                          | SCHEDULED: re-run test:local on Node 24 / CI before Phase 1 gate                         |
+| P0-T02  | DONE   | `test/helpers/two-accounts.ts`, `test/ownership-boundaries.test.ts`                       | Full `test:local` 38/38 files 334/334 pass 150.26s Node 26; typecheck 0; A/B isolation + anon 401 + consent 403→0 calls / grant→1 call               | Closed; photo consent seeded via real FK decision; blob bytes stubbed with counter       |
+| P0-T03  | DONE   | `scripts/test-postgres.mjs`, `test:pg`, `test/integration/`, CI service, CONTRIBUTING     | `test:local` 38 passed +2 skipped / 334+6, exit 0; guards fail fast (no target, remote host, non-test name); PGlite version string proven rejectable | Closed; real-PG execution in CI (no local server); integration skips loudly outside lane |
+| P1-T01  | DONE   | `server/db/index.ts`, `.env.example`, `RUNBOOK.md`, `test/db-connection-security.test.ts` | typecheck 0; new file 59/59; full `test:local` 39 files 393 tests exit 0                                                                             | Closed; CA rotation needs restart; pool ceiling 50 is judgment call                      |
+| P6-T01a | TODO   | —                                                                                         | Modernization track: Node LTS, majors, CI actions; per-upgrade gate evidence                                                                         | SCHEDULED: separate track after P6-T01, never interleaved with Phase 1                   |
 
 Allowed statuses: TODO, IN PROGRESS, BLOCKED (named prerequisite), DONE, or DEFERRED
 (explicit reason and owner). Do not mark a operational cutover DONE from mocked tests.

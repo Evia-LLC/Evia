@@ -188,6 +188,28 @@ same way without a login: `NETLIFY_AUTH_TOKEN=<token> npx netlify-cli deploy --p
 a00b1489-137e-404c-809c-08babb811fc4` (used 2026-09-07 from `.secrets/netlify.token`; the user revokes
 tokens after use, so expect to ask for a fresh one).
 
+## Database connections: verified TLS and bounded pool
+
+Remote Postgres connections verify certificates (`rejectUnauthorized: true`)
+against the system roots, or against `ELOHIM_DB_CA` when the provider uses a
+private CA (a file path, or inline PEM contents where literal `\n` becomes a
+newline — see `.env.example`). Plaintext is only ever used for loopback
+development databases (`localhost`, `127.x`, `::1`) such as the PGlite
+listeners; anything else gets TLS whether its URL mentions SSL or not.
+
+URL query options that disable verification (`sslmode=disable|allow|prefer`,
+`ssl=false`, `rejectUnauthorized=false`) throw at pool creation instead of
+silently downgrading — remove them if a stored string carries one.
+`sslmode=require` and `sslmode=verify-full` are allowed and still get full
+verification. The deployed string uses the **direct** host with
+`sslmode=require` (never the `-pooler` host — the migration advisory lock is
+session-level), and no production connection string ever lives in a local
+`.env`.
+
+`ELOHIM_DB_POOL` is an integer from 1 to 50 per process (default 3); anything
+else fails at startup naming the variable, never its value. The disposable
+lanes use `1` (`test:local`, dev PGlite) and `4` (`test:pg`).
+
 ## The shelf
 
 She recommends an ingredient first, then a product that carries it. Products
