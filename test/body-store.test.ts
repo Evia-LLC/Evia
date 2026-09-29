@@ -15,15 +15,24 @@
  * only thing standing between a schema change and a silently broken account,
  * so it has to be obvious when it checked nothing.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { BodyAnalysisRecord } from '../shared/types.ts';
+import type { BodyAnalysisRecord } from "../shared/types.ts";
 
-type Repo = typeof import('../server/db/body-scans.ts');
-type Users = typeof import('../server/db/users.ts');
+type Repo = typeof import("../server/db/body-scans.ts");
+type Users = typeof import("../server/db/users.ts");
 
-const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? '';
+const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? "";
+// Under `npm run test:local` this is always true (the runner injects a disposable PGlite URL), so 0 skipped is the deterministic expectation; bare `vitest run` with no env skips the 8 tests below with a warn.
 const configured = BASE_URL.length > 0;
+
+// Module level (not in beforeAll): when every suite below skips, vitest never
+// runs file-level hooks, so a warn inside beforeAll would stay silent.
+if (!configured) {
+  console.warn(
+    "[body-store] NETLIFY_DATABASE_URL is not set — database tests did not run.",
+  );
+}
 
 /** Its own schema, named for this run. */
 const SCHEMA = `elohim_test_${process.pid}_${Date.now()}`;
@@ -47,7 +56,7 @@ function reading(over: Partial<BodyAnalysisRecord> = {}): BodyAnalysisRecord {
   return {
     capturedAt: new Date().toISOString(),
     metrics: { ...METRICS },
-    waistSource: 'silhouette',
+    waistSource: "silhouette",
     profile: { abdominalProfile: 42 },
     profileDetail: { depthRatio: 1.05, chestDepth: 0.22, bellyDepth: 0.231 },
     landmarks: Array.from({ length: 33 }, (_, i) => ({
@@ -57,15 +66,15 @@ function reading(over: Partial<BodyAnalysisRecord> = {}): BodyAnalysisRecord {
       visibility: 0.9,
     })),
     confidence: 0.97,
-    modelVersion: 'elohim-body-2.0.0',
-    profileModelVersion: 'elohim-profile-1.0.0',
+    modelVersion: "elohim-body-2.0.0",
+    profileModelVersion: "elohim-profile-1.0.0",
     ...over,
   };
 }
 
 /** A short-lived connection for the schema itself, outside the app's pool. */
 async function admin(sql: string) {
-  const { default: pg } = await import('pg');
+  const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: BASE_URL });
   await client.connect();
   try {
@@ -77,7 +86,9 @@ async function admin(sql: string) {
 
 beforeAll(async () => {
   if (!configured) {
-    console.warn('[body-store] NETLIFY_DATABASE_URL is not set — database tests did not run.');
+    console.warn(
+      "[body-store] NETLIFY_DATABASE_URL is not set — database tests did not run.",
+    );
     return;
   }
 
@@ -91,13 +102,17 @@ beforeAll(async () => {
    * only applies to the one it was sent on — the second connection would find
    * itself back in `public`, creating half the tables in the wrong place.
    */
-  process.env.NETLIFY_DATABASE_URL = `${BASE_URL}${BASE_URL.includes('?') ? '&' : '?'}options=-csearch_path%3D${SCHEMA}`;
+  process.env.NETLIFY_DATABASE_URL = `${BASE_URL}${BASE_URL.includes("?") ? "&" : "?"}options=-csearch_path%3D${SCHEMA}`;
 
-  const { migrate } = await import('../server/db/index.ts');
+  const { migrate } = await import("../server/db/index.ts");
   await migrate();
-  repo = await import('../server/db/body-scans.ts');
-  const users: Users = await import('../server/db/users.ts');
-  userId = await users.createUser(`body-store-${stamp()}@test.local`, 'pw-not-used', 'Tester');
+  repo = await import("../server/db/body-scans.ts");
+  const users: Users = await import("../server/db/users.ts");
+  userId = await users.createUser(
+    `body-store-${stamp()}@test.local`,
+    "pw-not-used",
+    "Tester",
+  );
 });
 
 afterAll(async () => {
@@ -106,8 +121,8 @@ afterAll(async () => {
   await admin(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
 });
 
-describe.skipIf(!configured)('a body reading survives the round trip', () => {
-  it('comes back exactly as it went in', async () => {
+describe.skipIf(!configured)("a body reading survives the round trip", () => {
+  it("comes back exactly as it went in", async () => {
     const stored = await repo.insertBodyScan(userId, reading());
     expect(stored.id).toBeTruthy();
 
@@ -116,89 +131,109 @@ describe.skipIf(!configured)('a body reading survives the round trip', () => {
     expect(back?.metrics).toEqual(METRICS);
     expect(back?.profile).toEqual({ abdominalProfile: 42 });
     expect(back?.profileDetail?.depthRatio).toBeCloseTo(1.05, 5);
-    expect(back?.waistSource).toBe('silhouette');
+    expect(back?.waistSource).toBe("silhouette");
     // Five decimal places is why the column is DOUBLE PRECISION: Postgres REAL
     // is float4 and stores 0.97 as 0.9700000286, which fails right here.
     expect(back?.confidence).toBeCloseTo(0.97, 5);
-    expect(back?.modelVersion).toBe('elohim-body-2.0.0');
-    expect(back?.profileModelVersion).toBe('elohim-profile-1.0.0');
+    expect(back?.modelVersion).toBe("elohim-body-2.0.0");
+    expect(back?.profileModelVersion).toBe("elohim-profile-1.0.0");
     expect(back?.landmarks).toHaveLength(33);
   });
 
-  it('keeps an absent abdominal reading absent', async () => {
+  it("keeps an absent abdominal reading absent", async () => {
     /*
      * The one that matters most. A front-only scan measured no abdomen, and a
      * null is the only honest record of that — stored as 0 it would come back
      * looking like the deepest possible reading, and next month's scan would be
      * compared against it as though it were a measurement.
      */
-    await repo.insertBodyScan(userId, reading({ profile: null, profileDetail: null }));
+    await repo.insertBodyScan(
+      userId,
+      reading({ profile: null, profileDetail: null }),
+    );
     const back = await repo.latestBodyScan(userId);
     expect(back?.profile).toBeNull();
     expect(back?.profileDetail).toBeNull();
-    expect(back?.profileModelVersion).toBe('elohim-profile-1.0.0');
+    expect(back?.profileModelVersion).toBe("elohim-profile-1.0.0");
   });
 
-  it('records which method the waist came from', async () => {
+  it("records which method the waist came from", async () => {
     // Traced and estimated waists are different measurements. If the source did
     // not survive storage, a trend could silently compare one with the other.
-    await repo.insertBodyScan(userId, reading({ waistSource: 'joints' }));
-    expect((await repo.latestBodyScan(userId))?.waistSource).toBe('joints');
+    await repo.insertBodyScan(userId, reading({ waistSource: "joints" }));
+    expect((await repo.latestBodyScan(userId))?.waistSource).toBe("joints");
   });
 });
 
-describe.skipIf(!configured)('finding the scan to compare against', () => {
+describe.skipIf(!configured)("finding the scan to compare against", () => {
   // Its own account, because ordering is the thing under test and the readings
   // stored above carry today's date — which sorts after any fixture date.
   let trendUser: string;
   beforeAll(async () => {
-    const users: Users = await import('../server/db/users.ts');
-    trendUser = await users.createUser(`body-trend-${stamp()}@test.local`, 'pw-not-used', 'Trend');
+    const users: Users = await import("../server/db/users.ts");
+    trendUser = await users.createUser(
+      `body-trend-${stamp()}@test.local`,
+      "pw-not-used",
+      "Trend",
+    );
   });
 
-  it('returns the one before the newest, not the newest', async () => {
+  it("returns the one before the newest, not the newest", async () => {
     const older = await repo.insertBodyScan(
       trendUser,
-      reading({ capturedAt: '2026-01-01T00:00:00.000Z', profile: { abdominalProfile: 20 } }),
+      reading({
+        capturedAt: "2026-01-01T00:00:00.000Z",
+        profile: { abdominalProfile: 20 },
+      }),
     );
     const newer = await repo.insertBodyScan(
       trendUser,
-      reading({ capturedAt: '2026-02-01T00:00:00.000Z', profile: { abdominalProfile: 55 } }),
+      reading({
+        capturedAt: "2026-02-01T00:00:00.000Z",
+        profile: { abdominalProfile: 55 },
+      }),
     );
     expect((await repo.latestBodyScan(trendUser))?.id).toBe(newer.id);
     expect((await repo.previousBodyScan(trendUser))?.id).toBe(older.id);
     // And the comparison a trend actually makes: 20 -> 55 is a real move.
     const latest = await repo.latestBodyScan(trendUser);
     const previous = await repo.previousBodyScan(trendUser);
-    expect(latest!.profile!.abdominalProfile - previous!.profile!.abdominalProfile).toBe(35);
+    expect(
+      latest!.profile!.abdominalProfile - previous!.profile!.abdominalProfile,
+    ).toBe(35);
   });
 
-  it('has no previous scan on a first reading', async () => {
-    expect(await repo.previousBodyScan('nobody-with-this-id')).toBeNull();
-    expect(await repo.latestBodyScan('nobody-with-this-id')).toBeNull();
+  it("has no previous scan on a first reading", async () => {
+    expect(await repo.previousBodyScan("nobody-with-this-id")).toBeNull();
+    expect(await repo.latestBodyScan("nobody-with-this-id")).toBeNull();
   });
 
-  it('never returns readings belonging to another account', async () => {
-    expect((await repo.listBodyScans('someone-else')).length).toBe(0);
+  it("never returns readings belonging to another account", async () => {
+    expect((await repo.listBodyScans("someone-else")).length).toBe(0);
   });
 });
 
-describe.skipIf(!configured)('deleting an account takes the pictures with it', () => {
-  it('lists every blob this user owns here', async () => {
-    const before = (await repo.allBodyBlobRefs(userId)).length;
-    await repo.insertBodyScan(userId, reading(), {
-      imageRef: 'front-blob-ref',
-      profileImageRef: 'side-blob-ref',
+describe.skipIf(!configured)(
+  "deleting an account takes the pictures with it",
+  () => {
+    it("lists every blob this user owns here", async () => {
+      const before = (await repo.allBodyBlobRefs(userId)).length;
+      await repo.insertBodyScan(userId, reading(), {
+        imageRef: "front-blob-ref",
+        profileImageRef: "side-blob-ref",
+      });
+      const refs = await repo.allBodyBlobRefs(userId);
+      expect(refs.length).toBe(before + 2);
+      expect(refs).toContain("front-blob-ref");
+      expect(refs).toContain("side-blob-ref");
     });
-    const refs = await repo.allBodyBlobRefs(userId);
-    expect(refs.length).toBe(before + 2);
-    expect(refs).toContain('front-blob-ref');
-    expect(refs).toContain('side-blob-ref');
-  });
 
-  it('reports which frames were actually kept', async () => {
-    const stored = await repo.insertBodyScan(userId, reading(), { imageRef: 'only-the-front' });
-    expect(stored.hasImage).toBe(true);
-    expect(stored.hasProfileImage).toBe(false);
-  });
-});
+    it("reports which frames were actually kept", async () => {
+      const stored = await repo.insertBodyScan(userId, reading(), {
+        imageRef: "only-the-front",
+      });
+      expect(stored.hasImage).toBe(true);
+      expect(stored.hasProfileImage).toBe(false);
+    });
+  },
+);
