@@ -15,6 +15,7 @@
     "seed": "node scripts/seed.ts",
     "test": "vitest run",
     "test:local": "node scripts/test-local.mjs",
+    "test:pg": "node scripts/test-postgres.mjs",
     "test:watch": "vitest",
     "sync:mediapipe": "node scripts/sync-mediapipe.mjs",
     "prebuild": "node scripts/check-legal-content.ts && node scripts/sync-mediapipe.mjs && node scripts/fetch-static.mjs && node scripts/build-api.mjs",

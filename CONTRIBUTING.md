@@ -45,6 +45,17 @@ and discards the database when finished. Its default loopback port is 5434;
 set `ELOHIM_TEST_DB_PORT` to a free port if needed. A busy port fails before tests
 start. Prefer this command over bare `npm test` for routine verification.
 
+`test:pg` runs `test/integration` against a disposable **real** Postgres, which
+is the only lane that proves multi-connection behavior (transactions, advisory
+locks, row contention). It takes its target solely from `ELOHIM_TEST_PG_URL`
+and never falls back to application database URLs: the host must be loopback,
+the database name must contain "test", and a PGlite engine is rejected. The
+integration files skip loudly outside this lane, so `test:local` stays green
+without a Postgres server. CI provides a `postgres:17` service as
+`evia_pgtest`; locally, point the variable at a throwaway database (for
+example a `docker run postgres:17` instance) — never at development or
+production data.
+
 The build copies MediaPipe files from installed dependencies and may download
 public model assets. These checks need no deployment or paid-provider secrets.
 Run them in a shell without provider credentials. CI has read-only repository
