@@ -18,6 +18,7 @@ import { modelAvailable } from '../../server/ai/claude.ts';
 import { blobStorageAvailable } from '../../server/lib/crypto.ts';
 import { bridge, type LambdaHandler } from '../../server/lib/web-lambda.ts';
 import { clonedVoiceAvailable, guestVoiceAllowed } from '../../server/voice/tts.ts';
+import { extractNetlifyClientIp } from '../../server/lib/rate-limit.ts';
 
 /*
  * The runtime speaks web `Request`/`Response`; `serverless-http` speaks API
@@ -25,6 +26,16 @@ import { clonedVoiceAvailable, guestVoiceAllowed } from '../../server/voice/tts.
  * travel as base64 in both directions so nothing is re-encoded on the way.
  */
 const handler = bridge(serverless(app, { binary: true }) as unknown as LambdaHandler);
+
+function sanitizeForwardingHeaders(request: Request): Request {
+  // On the real CDN the header below is always present and authoritative.
+  if (extractNetlifyClientIp(request.headers) !== null) return request;
+  const headers = new Headers(request.headers);
+  // No CDN header to prefer, so a forwarding header here is caller-supplied.
+  if (!headers.has('x-forwarded-for')) return request;
+  headers.delete('x-forwarded-for');
+  return new Request(request, { headers });
+}
 
 export default async (request: Request, context: unknown) => {
   try {
@@ -73,7 +84,20 @@ export default async (request: Request, context: unknown) => {
       { status: 503 },
     );
   }
-  return handler(request, context) as Promise<Response>;
+  /*
+   * Trusted client address for the abuse limiter.
+   *
+   * Netlify's CDN sets `x-nf-client-connection-ip` to the client address,
+   * overwriting anything the caller sent under that name, and the bridge in
+   * server/lib/web-lambda.ts carries it into the Express request as `req.ip`
+   * — so trusting that header means trusting Netlify, not the caller.
+   * `X-Forwarded-For` is never a trusted source. When the CDN header is
+   * absent (local `netlify dev`, direct invoke) any caller-supplied
+   * `X-Forwarded-For` is stripped here, before the bridge, so a forged value
+   * can never select a limiter bucket downstream; those requests fall back
+   * to the direct peer.
+   */
+  return handler(sanitizeForwardingHeaders(request), context) as Promise<Response>;
 };
 
 export const config = {
