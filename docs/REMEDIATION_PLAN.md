@@ -816,6 +816,7 @@ above as the contract and record scoped deviations here before implementation.
 | P0-T01a | DONE   | `test/consent-migration.test.ts`, `test/facial-geometry-privacy.test.ts` | Shared 1 PGlite/file + close; full `test:local` 37/37 files 328/328 pass 144.79s Node 26; typecheck 0                                   | Closed; cold-boot cost documented, no timeout bump                                      |
 | P0-T01b | DONE   | `test/body-store.test.ts` (comment + module warn)                        | 3 skipIf suites = 8 tests; 10-vs-0 was file-failure cascade, not skipIf; full run 0 skipped                                             | Closed; deterministic: 0 skipped under test:local, 8 bare                               |
 | P0-T01c | TODO   | —                                                                        | Node 24 unavailable locally (only v26.10.0, no nvm/docker); CI pins Node 24                                                             | SCHEDULED: re-run test:local on Node 24 / CI before Phase 1 gate                        |
+| P0-T02  | DONE   | `test/helpers/two-accounts.ts`, `test/ownership-boundaries.test.ts`      | Full `test:local` 38/38 files 334/334 pass 150.26s Node 26; typecheck 0; A/B isolation + anon 401 + consent 403→0 calls / grant→1 call  | Closed; photo consent seeded via real FK decision; blob bytes stubbed with counter      |
 
 Allowed statuses: TODO, IN PROGRESS, BLOCKED (named prerequisite), DONE, or DEFERRED
 (explicit reason and owner). Do not mark a operational cutover DONE from mocked tests.
