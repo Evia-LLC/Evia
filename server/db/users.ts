@@ -34,7 +34,7 @@ export async function createUser(
   const existing = await row('SELECT id FROM users WHERE email = ?', normalised);
   if (existing) throw new Error('An account with that email already exists.');
 
-  const { hash, salt } = hashPassword(password);
+  const { hash, salt } = await hashPassword(password);
   const id = newId();
   const now = nowIso();
 
@@ -88,13 +88,20 @@ export async function createUser(
   return id;
 }
 
+// Unknown accounts perform the same KDF work without authenticating a dummy identity.
+const DUMMY_SALT = '0'.repeat(32);
+const DUMMY_HASH = '0'.repeat(128);
+
 export async function authenticate(email: string, password: string): Promise<string | null> {
   const found = await row<UserRow>(
     'SELECT * FROM users WHERE email = ?',
     email.trim().toLowerCase(),
   );
-  if (!found) return null;
-  if (!verifyPassword(password, found.password_hash, found.password_salt)) return null;
+  if (!found) {
+    await verifyPassword(password, DUMMY_HASH, DUMMY_SALT);
+    return null;
+  }
+  if (!(await verifyPassword(password, found.password_hash, found.password_salt))) return null;
   return found.id;
 }
 

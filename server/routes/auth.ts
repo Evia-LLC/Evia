@@ -5,6 +5,7 @@ import { asyncRouter } from '../lib/async-router.ts';
 import * as users from '../db/users.ts';
 import { loginLimiter, registerLimiter } from '../lib/rate-limit.ts';
 import { log } from '../lib/log.ts';
+import { MAX_PASSWORD_BYTES } from '../lib/crypto.ts';
 
 export const authRouter = asyncRouter();
 
@@ -88,6 +89,10 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     res.status(400).json({ error: 'Password must be at least 8 characters.' });
     return;
   }
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) {
+    res.status(400).json({ error: `Password must be at most ${MAX_PASSWORD_BYTES} UTF-8 bytes.` });
+    return;
+  }
   try {
     const userId = await users.createUser(email, password, String(displayName ?? '').trim(), { dateOfBirth, ip: req.ip });
     const token = await users.createSession(userId);
@@ -101,8 +106,15 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
 
 authRouter.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body ?? {};
-  if (typeof email !== 'string' || typeof password !== 'string') {
+  if (
+    typeof email !== 'string' ||
+    typeof password !== 'string'
+  ) {
     res.status(400).json({ error: 'Email and password are required.' });
+    return;
+  }
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) {
+    res.status(400).json({ error: 'Invalid credentials.' });
     return;
   }
   const userId = await users.authenticate(email, password);

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vite
 import express from 'express';
 import { createServer, type Server } from 'node:http';
 import { AGE_FLOW_COPY, REGISTRATION_TERMS_VERSION } from '../shared/age-flow.ts';
-const mocks = vi.hoisted(() => ({ createUser: vi.fn(), createSession: vi.fn(), getUserSummary: vi.fn(), log: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), createUser: vi.fn(), createSession: vi.fn(), getUserSummary: vi.fn(), log: vi.fn() }));
 vi.mock('../server/db/users.ts', () => mocks);
 vi.mock('../server/lib/log.ts', () => ({ log: { info: mocks.log } }));
 vi.mock('../server/lib/rate-limit.ts', () => ({ loginLimiter: (_req: unknown, _res: unknown, next: () => void) => next(), registerLimiter: (_req: unknown, _res: unknown, next: () => void) => next() }));
@@ -43,4 +43,22 @@ it('passes self-declared DOB into atomic sample registration after a separate Te
   expect(response.headers.get('set-cookie')).toContain('HttpOnly; SameSite=Strict');
   expect(response.headers.get('set-cookie')).not.toMatch(/max-age|expires/i);
   expect(mocks.createUser).toHaveBeenCalledWith(request.email, request.password, request.displayName, expect.objectContaining({ dateOfBirth: request.dateOfBirth }));
+});
+
+it.each(['x'.repeat(129), 'é'.repeat(65)])('rejects oversized registration passwords before account creation', async password => {
+  const response = await post({ ...adult(), password });
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toContain('128 UTF-8 bytes');
+  expect(mocks.createUser).not.toHaveBeenCalled();
+  expect(mocks.createSession).not.toHaveBeenCalled();
+});
+it.each(['x'.repeat(129), 'é'.repeat(65)])('rejects oversized login passwords before authentication', async password => {
+  const response = await fetch(base + '/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'adult@example.test', password }),
+  });
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toBe('Invalid credentials.');
+  expect(mocks.authenticate).not.toHaveBeenCalled();
+  expect(mocks.createSession).not.toHaveBeenCalled();
 });

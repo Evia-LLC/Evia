@@ -12,27 +12,77 @@
  * the database never holds a face in the clear either.
  */
 import {
-  scryptSync,
+  scrypt,
   randomBytes,
   timingSafeEqual,
   createCipheriv,
   createDecipheriv,
 } from 'node:crypto';
+import { promisify } from 'node:util';
 import { row, run } from '../db/index.ts';
 import { log } from './log.ts';
 
 // --- passwords --------------------------------------------------------------
 
+// P1-T03: async scrypt bridge. Same parameters as the legacy sync derivation so
+// every stored hash keeps verifying unchanged; P3-T08 removes this bridge after
+// the managed-Auth cutover. Blob AES paths stay sync by design (in-memory
+// cipher ops, no KDF cost) and are out of scope.
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1, keylen: 64 } as const;
 
-export function hashPassword(password: string): { hash: string; salt: string } {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, SCRYPT_PARAMS.keylen, SCRYPT_PARAMS).toString('hex');
-  return { hash, salt };
+const scryptAsync = promisify(scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options: { N: number; r: number; p: number },
+) => Promise<Buffer>;
+
+/**
+ * Maximum accepted password size in UTF-8 bytes (P1-T03 input cap).
+ *
+ * 128 bytes sits well above any memorable password while bounding the KDF
+ * input an unauthenticated caller can force us to chew on. Enforced by byte
+ * length (not char count) BEFORE any derivation in both the hash and verify
+ * paths, with an identical generic error so the rejection reveals nothing
+ * about the account or the secret itself.
+ */
+export const MAX_PASSWORD_BYTES = 128;
+
+function assertPasswordSize(password: string): void {
+  if (
+    typeof password !== 'string' ||
+    Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES
+  ) {
+    throw new Error('Invalid credentials.');
+  }
 }
 
-export function verifyPassword(password: string, hash: string, salt: string): boolean {
-  const candidate = scryptSync(password, salt, SCRYPT_PARAMS.keylen, SCRYPT_PARAMS);
+export async function hashPassword(
+  password: string,
+): Promise<{ hash: string; salt: string }> {
+  assertPasswordSize(password);
+  const salt = randomBytes(16).toString('hex');
+  const derived = await scryptAsync(
+    password,
+    salt,
+    SCRYPT_PARAMS.keylen,
+    SCRYPT_PARAMS,
+  );
+  return { hash: derived.toString('hex'), salt };
+}
+
+export async function verifyPassword(
+  password: string,
+  hash: string,
+  salt: string,
+): Promise<boolean> {
+  assertPasswordSize(password);
+  const candidate = await scryptAsync(
+    password,
+    salt,
+    SCRYPT_PARAMS.keylen,
+    SCRYPT_PARAMS,
+  );
   const expected = Buffer.from(hash, 'hex');
   if (candidate.length !== expected.length) return false;
   return timingSafeEqual(candidate, expected);
