@@ -837,6 +837,7 @@ above as the contract and record scoped deviations here before implementation.
 | P1-T03  | DONE   | `server/lib/crypto.ts`, `server/db/users.ts`, `server/routes/auth.ts`, `test/passwords.test.ts`, `test/registration-route.test.ts` | typecheck 0; passwords 7/7 + registration caps; full `test:local` 41 files 409 tests exit 0; async scrypt same params; 128-byte cap at route (400) + KDF; dummy derivation; independent audit in `docs/REMEDIATION_STATUS.md` | Closed; bridge retired by P3-T08; Node 24 remains P0-T01c                                |
 
 | P1-T04 | DONE | PR #18: products ownership (`013_product_ownership.sql`, owner_id NULL=shared), assess/attach 404-as-miss, export/delete scoped | CI `checks` pass (Node 24) incl. test:local + test:pg; 7 new tests; branch p1-t04 squash-merged after green CI | Closed; rebrand PR #15 still deliberately deferred to post-Phase-1 |
+| P1-T05 | IN PROGRESS | `server/lib/image-input.ts` (new), app/api/analysis/web-lambda wiring, 2 new test files (44 tests) | typecheck 0, check 0; new 44/44 scoped; full lane pending (3 pre-existing PGlite-boot flakes under local load) | Branch p1-t05; face/label/progress share validated bytes; /api/scans off 12mb |
 | P6-T01a | TODO | — | Modernization track: Node LTS, majors, CI actions; per-upgrade gate evidence | SCHEDULED: separate track after P6-T01, never interleaved with Phase 1 |
 
 Allowed statuses: TODO, IN PROGRESS, BLOCKED (named prerequisite), DONE, or DEFERRED

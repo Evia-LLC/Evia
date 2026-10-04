@@ -3,6 +3,7 @@ import { REVIEW_VERSIONS, REVIEW_CHOICES, REVIEW_ACTIONS, HEALTH_REGIONS, type R
 import { asyncRouter } from '../lib/async-router.ts';
 import { requireAuth } from './auth.ts';
 import { scanLimiter } from '../lib/rate-limit.ts';
+import { ImageInputError, validateImageInput } from '../lib/image-input.ts';
 import { currentConsent, recordConsentDecision } from '../db/consents.ts';
 import { CONSENT_KEYS } from '../../shared/consent-keys.ts';
 import { LEGAL_CONTENT, approvedConsent } from '../../shared/legal-content.ts';
@@ -66,16 +67,18 @@ analysisRouter.post('/face', scanLimiter, async (req, res) => {
     res.json({ provider: 'local', reason: analysisProvider() === 'local' ? 'selected' : 'not_configured' }); return;
   }
   // Transient request memory only: no blob, file, URL, landmarks or vendor response is persisted.
-  let encoded = req.body?.imageBase64;
+  // Consent stays first: a denial above returns before the payload is even decoded.
+  let validated: { bytes: Buffer };
+  try {
+    validated = validateImageInput(req.body?.imageBase64, 'face');
+  } catch (err) {
+    delete req.body?.imageBase64;
+    const status = err instanceof ImageInputError ? err.status : 400;
+    res.status(status).json({ error: 'A JPEG capture is required.' });
+    return;
+  }
   delete req.body?.imageBase64;
-  if (typeof encoded !== 'string' || encoded.length > 8_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
-    res.status(400).json({ error: 'A JPEG capture is required.' }); return;
-  }
-  const image = Buffer.from(encoded, 'base64');
-  encoded = undefined;
-  if (image.length < 4 || image[0] !== 0xff || image[1] !== 0xd8 || image[2] !== 0xff) {
-    image.fill(0); res.status(400).json({ error: 'A JPEG capture is required.' }); return;
-  }
+  const image = validated.bytes;
   const controller = new AbortController();
   const abort = () => controller.abort();
   res.once('close', abort);
