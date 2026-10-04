@@ -577,7 +577,7 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
 // --- products ---------------------------------------------------------------
 
 apiRouter.get('/products/search', async (req, res) => {
-  res.json({ products: await productsRepo.searchProducts(String(req.query.q ?? ''), 20) });
+  res.json({ products: await productsRepo.searchProducts(String(req.query.q ?? ''), req.userId!, 20) });
 });
 
 apiRouter.post('/products', async (req, res) => {
@@ -586,18 +586,26 @@ apiRouter.post('/products', async (req, res) => {
     res.status(400).json({ error: 'A product name is required.' });
     return;
   }
+  // Owner-scoped: may create or update ONLY the caller's own row. A shared row
+  // or another user's row with the same name/brand is never touched — the
+  // caller gets a separate row instead (see products.upsertProduct).
   res.json({
-    product: await productsRepo.upsertProduct({
-      name,
-      brand,
-      category,
-      ingredients: Array.isArray(ingredients) ? ingredients : [],
-    }),
+    product: await productsRepo.upsertProduct(
+      {
+        name,
+        brand,
+        category,
+        ingredients: Array.isArray(ingredients) ? ingredients : [],
+      },
+      req.userId!,
+    ),
   });
 });
 
 apiRouter.post('/products/:id/assess', async (req, res) => {
-  const product = await productsRepo.getProduct(req.params.id);
+  // Owner-aware: shared rows are assessable by all, private rows only by
+  // their owner. Anything else reads as a miss, never a forbidden confirmation.
+  const product = await productsRepo.getVisibleProduct(req.params.id, req.userId!);
   if (!product) {
     res.status(404).json({ error: 'No such product.' });
     return;
@@ -647,6 +655,12 @@ apiRouter.post('/routine', async (req, res) => {
   const { productId, frequency, startedAt, notes } = req.body ?? {};
   if (typeof productId !== 'string' || !await productsRepo.getProduct(productId)) {
     res.status(400).json({ error: 'A known productId is required.' });
+    return;
+  }
+  // Owner-aware gate: attaching a product the caller may not see (another
+  // user's private row) is a 404 and writes no usage row.
+  if (!await productsRepo.getVisibleProduct(productId, req.userId!)) {
+    res.status(404).json({ error: 'No such product.' });
     return;
   }
   const id = await productsRepo.startUsage(req.userId!, productId, { frequency, startedAt, notes });
