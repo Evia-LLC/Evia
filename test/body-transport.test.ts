@@ -2,7 +2,7 @@
  * The one payload the browser builds that ends up inside a model prompt.
  *
  * Body readings have no server table — they travel with the chat event and are
- * discarded — so unlike every other number Elohim sees, these arrive as JSON
+ * discarded — so unlike every other number Evia sees, these arrive as JSON
  * from the client. That makes this the app's only prompt-injection surface, and
  * the rule is that nothing free-form crosses: findings are sent as metric keys,
  * the server looks the wording up in its own table, and anything it does not

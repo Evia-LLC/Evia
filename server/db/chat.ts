@@ -54,7 +54,7 @@ interface MessageRow {
 function hydrateMessage(row: MessageRow): ChatMessage {
   return {
     id: row.id,
-    role: row.role as 'user' | 'elohim',
+    role: row.role as 'user' | 'evia',
     content: row.content,
     createdAt: row.created_at,
     emotion: (row.emotion as Emotion) ?? undefined,
@@ -67,7 +67,7 @@ function hydrateMessage(row: MessageRow): ChatMessage {
 export async function appendMessage(
   conversationId: string,
   message: {
-    role: 'user' | 'elohim';
+    role: 'user' | 'evia';
     content: string;
     emotion?: Emotion;
     intent?: Intent;

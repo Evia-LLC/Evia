@@ -23,7 +23,7 @@ export interface AvatarContext {
   reducedMotion: boolean;
 }
 
-export interface ElohimAvatar {
+export interface EviaAvatar {
   readonly root: THREE.Object3D;
   mount(parent: THREE.Object3D): void;
   update(dt: number, ctx: AvatarContext): void;

@@ -41,10 +41,10 @@ export function verifyPassword(password: string, hash: string, salt: string): bo
 // --- encrypted blob store ---------------------------------------------------
 
 function blobKey(): Buffer | null {
-  const hex = process.env.ELOHIM_BLOB_KEY;
+  const hex = process.env.EVIA_BLOB_KEY;
   if (!hex) return null;
   if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
-    log.error('crypto', 'ELOHIM_BLOB_KEY must be 64 hex characters (32 bytes); ignoring it');
+    log.error('crypto', 'EVIA_BLOB_KEY must be 64 hex characters (32 bytes); ignoring it');
     return null;
   }
   return Buffer.from(hex, 'hex');
@@ -63,7 +63,7 @@ export function blobStorageAvailable(): boolean {
 
 export class BlobStorageUnavailable extends Error {
   constructor() {
-    super('Image storage is not configured (ELOHIM_BLOB_KEY unset), so nothing was written.');
+    super('Image storage is not configured (EVIA_BLOB_KEY unset), so nothing was written.');
     this.name = 'BlobStorageUnavailable';
   }
 }

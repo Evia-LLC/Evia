@@ -28,12 +28,12 @@ app.get('/api/nothing', (_req, res) => {
 
 const handler = bridge(serverless(app, { binary: true }) as unknown as Parameters<typeof bridge>[0]);
 const call = (path: string, init?: RequestInit) =>
-  handler(new Request(`https://elohim.test${path}`, init), {});
+  handler(new Request(`https://evia.test${path}`, init), {});
 
 describe('web request to lambda event', () => {
   it('carries method, path, repeated query values and headers', async () => {
     const event = await toEvent(
-      new Request('https://elohim.test/api/echo?a=1&a=2&b=x', { headers: { 'X-Test': 'yes' } }),
+      new Request('https://evia.test/api/echo?a=1&a=2&b=x', { headers: { 'X-Test': 'yes' } }),
     );
     expect(event.httpMethod).toBe('GET');
     expect(event.path).toBe('/api/echo');
@@ -46,7 +46,7 @@ describe('web request to lambda event', () => {
 
   it('reads the caller address from the platform header', async () => {
     const event = await toEvent(
-      new Request('https://elohim.test/api/echo', {
+      new Request('https://evia.test/api/echo', {
         headers: { 'x-nf-client-connection-ip': '203.0.113.9', 'x-forwarded-for': '10.0.0.1, 203.0.113.9' },
       }),
     );

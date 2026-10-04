@@ -1,8 +1,8 @@
-# Elohim
+# Evia
 
 An AI beauty and skincare consultant who happens to have a physical digital presence.
 
-Elohim is conversation-first. You talk to her; she asks about your skin, and when it would
+Evia is conversation-first. You talk to her; she asks about your skin, and when it would
 actually help, the room changes and she takes a proper look. She is not a selfie scanner
 with a chat box attached.
 
@@ -42,7 +42,7 @@ calls `node.exe scripts/dev.mjs` directly, which is also what `npm run dev` does
 Demo mode is on by default outside production, so an account already exists:
 
 ```
-demo@elohim.local / demo1234
+demo@evia.local / demo1234
 ```
 
 It comes with six scans across ten weeks and two tracked products, so trends, the noise
@@ -56,10 +56,10 @@ in a stated way rather than silently.
 
 | Variable | Effect when unset |
 |---|---|
-| `ANTHROPIC_API_KEY` | Conversation runs the local **Demo Elohim** engine, badged as such in the UI. Scans, storage and trends are unaffected and fully real. |
-| `ELOHIM_BLOB_KEY` | Face images are **not stored at all**, rather than stored unencrypted. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
+| `ANTHROPIC_API_KEY` | Conversation runs the local **Demo Evia** engine, badged as such in the UI. Scans, storage and trends are unaffected and fully real. |
+| `EVIA_BLOB_KEY` | Face images are **not stored at all**, rather than stored unencrypted. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
 | `DEMO_MODE` | Defaults to `1` outside production. |
-| `ELOHIM_MODEL` | Defaults to `claude-opus-5`. |
+| `EVIA_MODEL` | Defaults to `claude-opus-5`. |
 
 ---
 
@@ -72,7 +72,7 @@ Per §33 of the brief, nothing fakes. Specifically:
   pixels in CIELAB, and the pipeline is deterministic — the same image always produces the
   same numbers. Formulas and their calibration are in `src/skin-analysis/metrics.ts`.
 - **The progress bar tracks the actual pipeline**, not a timer.
-- **Every number Elohim says comes out of SQLite.** If she says your hydration improved, it
+- **Every number Evia says comes out of SQLite.** If she says your hydration improved, it
   improved.
 - **A change smaller than the metric's noise floor is reported as "holding steady"**, not
   as progress.
@@ -84,13 +84,13 @@ Per §33 of the brief, nothing fakes. Specifically:
   output — and the mouth is driven by the engine's actual word-boundary events, not a
   guess laid alongside the audio.
 
-The one labelled exception is Demo Elohim, above. It is a rule-based engine, marked in the UI
+The one labelled exception is Demo Evia, above. It is a rule-based engine, marked in the UI
 on every message, and it reads the same real data the model would.
 
 ### Talking to her
 
 Tap the microphone and speak; the composer fills in live with what she is hearing. Turn on
-*Let Elohim speak* in Profile and she reads her replies aloud, with her mouth locked to the
+*Let Evia speak* in Profile and she reads her replies aloud, with her mouth locked to the
 audio. You can pick her voice there too — the default is the best feminine voice your
 system has installed.
 
@@ -140,11 +140,11 @@ npm run typecheck    # tsc --noEmit
 npm run check        # svelte-check
 ```
 
-In a dev build the scene director is on `window.__elohim`:
+In a dev build the scene director is on `window.__evia`:
 
 ```js
-__elohim.inspect()        // draw calls, triangles, tier, scene mode
-__elohim.stepHeadless(60) // advance 60 frames without requestAnimationFrame
+__evia.inspect()        // draw calls, triangles, tier, scene mode
+__evia.stepHeadless(60) // advance 60 frames without requestAnimationFrame
 ```
 
 `stepHeadless` exists because rAF does not fire in a tab that is not compositing, which
@@ -164,7 +164,7 @@ Then from the page console:
 ```js
 fetch('http://127.0.0.1:5199/my-shot', {
   method: 'POST',
-  body: __elohim.captureFrame(1100, 780, 150),   // width, height, frames to settle
+  body: __evia.captureFrame(1100, 780, 150),   // width, height, frames to settle
 })
 ```
 
@@ -174,7 +174,7 @@ the read has to happen before the compositor can discard it.
 
 Server logs cover AI requests and responses, classification, scan results and timings,
 context retrieval and database work. Sensitive fields — message bodies, image refs, tokens,
-emails — are redacted unless `ELOHIM_LOG_LEVEL=debug`.
+emails — are redacted unless `EVIA_LOG_LEVEL=debug`.
 
 ---
 
@@ -191,7 +191,7 @@ the real thing.
 
 ## Positioning
 
-Elohim is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
+Evia is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
 device. Observational phrasing is required and diagnostic phrasing is forbidden at the
 prompt level; a deterministic escalation check — which does not depend on the model being
 reachable — routes anything that sounds medical to a dermatologist instead of to a score.

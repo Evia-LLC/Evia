@@ -1,17 +1,17 @@
 /**
- * Elohim, built from primitives (ARCHITECTURE §5).
+ * Evia, built from primitives (ARCHITECTURE §5).
  *
  * MVP art direction: intentionally faceted low-poly, no textures, no imported
  * assets. The rig is hierarchical Object3D parts rather than a skinned mesh —
  * for this stylisation it looks the same, costs a fraction as much on an
  * integrated GPU, and needs no asset pipeline at all.
  *
- * The seam that matters is `ElohimAvatar`: a `SpriteAvatar` implementing the same
+ * The seam that matters is `EviaAvatar`: a `SpriteAvatar` implementing the same
  * interface can replace this file wholesale without anything else changing.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { AvatarContext, ElohimAvatar, Outfit } from './types.ts';
+import type { AvatarContext, EviaAvatar, Outfit } from './types.ts';
 import { PALETTE } from './palette.ts';
 import {
   EXPRESSION_POSES,
@@ -77,7 +77,7 @@ function lathe(points: Array<[number, number]>, segments = 10): THREE.BufferGeom
   );
 }
 
-export class ProceduralAvatar implements ElohimAvatar {
+export class ProceduralAvatar implements EviaAvatar {
   readonly root = new THREE.Group();
 
   private readonly fsm = new CharacterStateMachine();
@@ -724,7 +724,7 @@ export class ProceduralAvatar implements ElohimAvatar {
   }
 
   // -------------------------------------------------------------------------
-  // ElohimAvatar
+  // EviaAvatar
   // -------------------------------------------------------------------------
 
   mount(parent: THREE.Object3D): void {

@@ -110,7 +110,7 @@ export function onRect(rect: WorldRect, u: number, v: number, out = new THREE.Ve
 /**
  * Where a screen point lands on a chosen world Z plane.
  *
- * Used to put Elohim on her mark. A camera-relative plane would move her
+ * Used to put Evia on her mark. A camera-relative plane would move her
  * forwards and backwards every time the shot changed; the floor of the room
  * does not move, so neither should she.
  */

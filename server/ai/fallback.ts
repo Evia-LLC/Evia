@@ -1,5 +1,5 @@
 /**
- * Demo Elohim — the local conversation engine used when no ANTHROPIC_API_KEY is set.
+ * Demo Evia — the local conversation engine used when no ANTHROPIC_API_KEY is set.
  *
  * This exists so the experience loop is testable without credentials. It is not
  * pretending to be the model: the API marks every turn `demo: true` and the UI
@@ -16,14 +16,14 @@ import {
   PREGNANCY_RESTRICTED,
   type CharacterDirective,
   type ChatMessage,
-  type ElohimAction,
-  type ElohimTurn,
+  type EviaAction,
+  type EviaTurn,
   type Emotion,
   type MemoryWrite,
   type SkinMetricKey,
   type TurnClassification,
 } from '../../shared/types.ts';
-import type { ElohimContext } from './context.ts';
+import type { EviaContext } from './context.ts';
 import { BODY_READING_LABELS } from '../../shared/types.ts';
 import { LEGAL_DISCLAIMER, URGENT_DISCLAIMER } from './persona.ts';
 
@@ -170,13 +170,13 @@ const RETINOID = /\b(retinol|retinoids?|retinal(?:dehyde)?|tretinoin|adapalene|t
 export function respond(
   message: string,
   classification: TurnClassification,
-  ctx: ElohimContext,
+  ctx: EviaContext,
   history: TranscriptTurn[] = [],
-): ElohimTurn {
+): EviaTurn {
   const name = knownName(ctx.user.displayName);
   const family = familyOf(classification.emotion);
   const seed = `${message.toLowerCase().trim()}|${dayStamp()}`;
-  const actions: ElohimAction[] = [];
+  const actions: EviaAction[] = [];
   const concern = recalledConcern(history.slice(-8), message);
 
   // Safety first — this path must behave identically to the real engine.
@@ -549,7 +549,7 @@ export function respond(
  * better question" is not an answer. This answers what it can — the stances
  * she holds and the numbers it has — and is honest about the boundary.
  */
-function answerQuestion(message: string, ctx: ElohimContext, hasScans: boolean): string {
+function answerQuestion(message: string, ctx: EviaContext, hasScans: boolean): string {
   if (/\bhow often\b[^.?!]{0,40}\b(scan|check|measure)|\b(scan|check)\b[^.?!]{0,20}\bhow often\b/i.test(message)) {
     return `Once a week is plenty. Skin moves in weeks, not days — scan more often than that and you're mostly measuring the lighting.`;
   }
@@ -569,8 +569,8 @@ function turn(
   text: string,
   d: CharacterDirective,
   classification: TurnClassification,
-  actions: ElohimAction[],
-): ElohimTurn {
+  actions: EviaAction[],
+): EviaTurn {
   return { text, directive: d, classification, memoryWrites: [], actions, demo: true };
 }
 
@@ -582,9 +582,9 @@ function turn(
 export function respondToEvent(
   event: 'opened' | 'scan_complete' | 'body_scan_complete',
   classification: TurnClassification,
-  ctx: ElohimContext,
+  ctx: EviaContext,
   opts: { introSkipped?: boolean } = {},
-): ElohimTurn {
+): EviaTurn {
   if (event === 'body_scan_complete') return respondToBodyScan(classification, ctx);
 
   if (event === 'opened') return respondToOpen(classification, ctx, opts);
@@ -678,7 +678,7 @@ export function respondToEvent(
    * preference is applied, and the reply closes with an offer to go deeper
    * instead of a question they have already answered.
    */
-  const eventActions: ElohimAction[] = [];
+  const eventActions: EviaAction[] = [];
   if (style === 'adaptive') {
     parts.push(`Do you want the short version, or the full read?`);
     eventActions.push({ type: 'ask_explanation_style' });
@@ -721,9 +721,9 @@ export function respondToEvent(
  */
 function respondToOpen(
   classification: TurnClassification,
-  ctx: ElohimContext,
+  ctx: EviaContext,
   opts: { introSkipped?: boolean },
-): ElohimTurn {
+): EviaTurn {
   const name = knownName(ctx.user.displayName);
   const hasScans = ctx.summary.scanCount > 0;
   const seed = `opened|${dayStamp()}|${ctx.summary.scanCount}`;
@@ -731,12 +731,12 @@ function respondToOpen(
   if (!hasScans) {
     /*
      * By the time the room opens, the intro sequence has already introduced
-     * her — a second "I'm Elohim" reads as a loop. The one self-introducing
+     * her — a second "I'm Evia" reads as a loop. The one self-introducing
      * variant is reserved for a caller that knows the intro was skipped.
      */
     const lines = opts.introSkipped
       ? [
-          `${greet(name)} I'm Elohim — I look at skin for a living, so to speak. Tell me what's been going on, or I can just take a look.`,
+          `${greet(name)} I'm Evia — I look at skin for a living, so to speak. Tell me what's been going on, or I can just take a look.`,
         ]
       : [
           `So — you found me. Tell me what's been going on, or I can just take a look.`,
@@ -792,7 +792,7 @@ function namedMetric(message: string): SkinMetricKey | null {
 }
 
 /** Explains one metric from the stored numbers, honouring the noise floor. */
-function explainMetric(key: SkinMetricKey, ctx: ElohimContext): string {
+function explainMetric(key: SkinMetricKey, ctx: EviaContext): string {
   const trend = ctx.summary.trends.find((t) => t.key === key);
   if (!trend) return `I don't have a reading for that yet.`;
 
@@ -832,7 +832,7 @@ function explainMetric(key: SkinMetricKey, ctx: ElohimContext): string {
 }
 
 /** One clause describing where their skin currently sits, from real numbers. */
-function shortState(ctx: ElohimContext): string {
+function shortState(ctx: EviaContext): string {
   if (!ctx.latest) return 'we have no scans yet';
   const entries = Object.entries(ctx.latest.metrics) as Array<[SkinMetricKey, number]>;
   const hydration = ctx.latest.metrics.hydration;
@@ -843,7 +843,7 @@ function shortState(ctx: ElohimContext): string {
 }
 
 /** Reads the real trend summary out loud, honouring the noise floor. */
-function explainTrends(ctx: ElohimContext): string {
+function explainTrends(ctx: EviaContext): string {
   const moved = ctx.summary.trends
     .filter((t) => t.significant && t.deltaFromPrevious !== null)
     .sort((a, b) => Math.abs(b.deltaFromPrevious!) - Math.abs(a.deltaFromPrevious!));
@@ -900,7 +900,7 @@ export function isSignificant(key: SkinMetricKey, delta: number): boolean {
  * on build — and when there was no side view it says plainly that there is no
  * abdominal reading rather than reaching for the front frame to guess one.
  */
-function respondToBodyScan(classification: TurnClassification, ctx: ElohimContext): ElohimTurn {
+function respondToBodyScan(classification: TurnClassification, ctx: EviaContext): EviaTurn {
   const body = ctx.body;
   if (!body) {
     return turn(

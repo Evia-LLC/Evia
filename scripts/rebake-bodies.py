@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "public" / "character" / "elohim"
+OUT = ROOT / "public" / "character" / "evia"
 LANDMARKS = ROOT / ".sc" / "landmarks-bodies.json"
 # Neck skin under the head layer, where a cut between two bodies is judged.
 NECK = (900, 640, 1080, 720)

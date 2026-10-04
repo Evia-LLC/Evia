@@ -1,5 +1,5 @@
 /**
- * The Anthropic client. The only file in Elohim that talks to the model.
+ * The Anthropic client. The only file in Evia that talks to the model.
  *
  * The browser never sees a key — every model call originates here, server-side.
  */
@@ -11,16 +11,16 @@ import { log } from '../lib/log.ts';
  * thousand cached tokens and the reply is a paragraph; Sonnet 5 writes that
  * paragraph in her voice, follows the schema, and reads a face image when
  * asked, at a fraction of Opus's price and latency. Opus is one env var away
- * for anyone who wants it (ELOHIM_MODEL=claude-opus-5).
+ * for anyone who wants it (EVIA_MODEL=claude-opus-5).
  */
-const MODEL = process.env.ELOHIM_MODEL ?? 'claude-sonnet-5';
-const CLASSIFIER_MODEL = process.env.ELOHIM_CLASSIFIER_MODEL ?? 'claude-haiku-4-5';
+const MODEL = process.env.EVIA_MODEL ?? 'claude-sonnet-5';
+const CLASSIFIER_MODEL = process.env.EVIA_CLASSIFIER_MODEL ?? 'claude-haiku-4-5';
 
 let client: Anthropic | null = null;
 
 /**
  * False when no credentials are configured. The orchestrator falls back to the
- * clearly-labelled local Elohim rather than pretending — ARCHITECTURE §12.
+ * clearly-labelled local Evia rather than pretending — ARCHITECTURE §12.
  */
 export function modelAvailable(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);

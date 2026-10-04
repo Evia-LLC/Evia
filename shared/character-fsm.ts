@@ -124,7 +124,7 @@ export function sanitiseDirective(input: unknown): SanitiseResult {
 
 /**
  * Resolves a target directive against the current state. An illegal edge keeps
- * the current state but still adopts the expression and gesture, so Elohim reacts
+ * the current state but still adopts the expression and gesture, so Evia reacts
  * even when the requested pose was not reachable.
  */
 export function resolveDirective(

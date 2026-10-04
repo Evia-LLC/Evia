@@ -2,7 +2,7 @@
 
 > Goal: sign §15 launch. Every P0 row in `docs/SRS_V2_COMPLIANCE_AUDIT.md:71-97` has a passing production-like artifact (code + migration + test + screenshot/HAR/audit log). No reliance on typed checks or visual prototype alone. Checklist below maps to that audit, plus `COMPLIANCE_AUDIT.md:9` CK-01 and `ARCHITECTURE.md`/`RUNBOOK.md` operational realities.
 
-**Current prod foothold:** Netlify `a00b1489-137e-404c-809c-08babb811fc4` (Vercel parallel `vercel.json`), Neon `aws-us-east-2` direct host `elohim_owner`, Node 24, 13 migrations, `DEMO_MODE=0` required. `RUNBOOK.md:29-106` is accurate as of 2026-09-06.
+**Current prod foothold:** Netlify `a00b1489-137e-404c-809c-08babb811fc4` (Vercel parallel `vercel.json`), Neon `aws-us-east-2` direct host `evia_owner`, Node 24, 13 migrations, `DEMO_MODE=0` required. `RUNBOOK.md:29-106` is accurate as of 2026-09-06.
 
 ---
 
@@ -26,7 +26,7 @@ This is the largest gap. Existing `users` has no DOB, no `age_status`; `consents
 - `users` add `dob DATE`, `age_status ENUM('under16','age16_17','adult','unknown')`, `jurisdiction TEXT` (derived, not freeform), `funding_type ENUM('credit','debit_prepaid','unknown')` for PAY, `created_at`, `rejected_at`.
 - `guardians (id, minor_user_id FK, relationship TEXT, email, status ENUM('invited','verified','consented','expired','revoked'), illinois_verified BOOL, verified_at, expires_at)` + jobs: `72h invite expiry`, `14d deletion` for under-16, `turned-18` transition.
 - `consent_events (id, user_id, consent_type TEXT, wording_version_id TEXT, state ENUM('granted','withdrawn'), recorded_at TIMESTAMPTZ, metadata_json, event_sequence BIGSERIAL, idempotency_key UNIQUE)` — immutable, append-only. See `server/db/migrations/011_versioned_consents.sql` pattern but broaden from 2 kinds to full set. Adds missing `CNS-01` (facial scan, separate unticked), `CNS-02` (WA/NV/CT health, jurisdictional), `CNS-03` (optional safety/lifestyle), `CNS-04` (progress photo session vs keep).
-- `subscriptions/payments` (Stripe `customerId`, `status`, `priceId`, `fundingType`, `checkoutSession`, `webhookEventLog` idempotent) for `PAY-01/02` $20.99/$40 disclosure + `ELOHIM_STORE` not enough.
+- `subscriptions/payments` (Stripe `customerId`, `status`, `priceId`, `fundingType`, `checkoutSession`, `webhookEventLog` idempotent) for `PAY-01/02` $20.99/$40 disclosure + `EVIA_STORE` not enough.
 - `policy_versions (wording_version_id PK, consent_type, text, locale, effective_from)` — required because `docs/SRS:110` consent wording pack not supplied; store exact counsel text here.
 
 **Policy & routes (`server/lib/policy.ts`, `server/db/consents.ts`):**
@@ -62,7 +62,7 @@ Enforce on every scan/image/voice-context route. Add `CNS-01` screen (separate u
 
 - Raw capture (session): never persisted beyond analysis, or if must buffer server-side for Perfect Corp, store in `blobs` with `ttl = now+24h` and sweep `every 10m`. Abandoned session -> delete + audit.
 - `landmarks_json`: delete synchronously when `analysis` completes (`RET-02`), never store with `skin_scans` history. Audit deletion.
-- `skin_scans` metrics/regions: persist (product DB), but `image_ref` only if `CNS-04` granted and `ELOHIM_BLOB_KEY` valid; `thumb_ref` optional; `observations` derived.
+- `skin_scans` metrics/regions: persist (product DB), but `image_ref` only if `CNS-04` granted and `EVIA_BLOB_KEY` valid; `thumb_ref` optional; `observations` derived.
 - Never-persisted hologram: keep `ARCHITECTURE.md:287` but instrument `src/holograms/*` disposal on session end and assert no blob/field via test.
 - Add `deletion_audit (id, user_id, target_type, target_id, reason, performed_at, processor, retry_count)` — non-biometric, not deleted with user; retain `consent_events` per consent duration +5y (not cascade-deleted with user).
 
@@ -100,7 +100,7 @@ Enforce on every scan/image/voice-context route. Add `CNS-01` screen (separate u
 
 **Security:**
 
-- Threat model, least-privilege, admin MFA/audit, `ELOHIM_BLOB_KEY` rotation (dual-key decrypt), `ELOHIM_ADMIN_TOKEN` scoped, `.env` not in repo `docs/CONTRIBUTING.md:62`, demo archive sanitized history.
+- Threat model, least-privilege, admin MFA/audit, `EVIA_BLOB_KEY` rotation (dual-key decrypt), `EVIA_ADMIN_TOKEN` scoped, `.env` not in repo `docs/CONTRIBUTING.md:62`, demo archive sanitized history.
 - At-rest DB attestation (Neon encryption), production TLS test, CSP report `-Report-Only` then enforce (`vercel.json:26`, `netlify.toml:46` `wasm-unsafe-eval` + `fonts.googleapis.com` already, add `connect-src` for Anthropic/Perfect Corp/ElevenLabs/Stripe only), `X-Content-Type-Options` etc already `vercel.json:19`.
 - Shared rate limit: replace `server/lib/rate-limit.ts:26` `Map` with Postgres table `_rate_limits(key, count, reset_at)` + `trust proxy` `X-Forwarded-For` first IP; same interface. Keep per-IP/per-email `loginLimiter:10/15m` `server/lib/rate-limit.ts:85`.
 - Dependency review `npm audit`, Svelte/Vite pinned, SBOM, pen test, signed launch checklist `docs/SRS:225`.
@@ -111,13 +111,13 @@ Enforce on every scan/image/voice-context route. Add `CNS-01` screen (separate u
 
 **Full gated journey on named browsers:** Desktop (Chrome/Edge/Safari/Firefox latest + n-1) + Mobile (iOS Safari, Android Chrome) with real `getUserMedia` allow/deny/revoke, slow/offline, a11y, responsive, payment sandbox, provider failure, cleanup clocks. Capture screenshots, HARs, server audit `consent_events` + `deletion_audit`.
 
-**Domain:** confirm `meetevia.com` publish consistently, scan repo/built asset/runtime for `evia.com` leak (`docs/SRS:109`).
+**Domain:** confirm `helloevia.com` publish consistently, scan repo/built asset/runtime for `evia.com` leak (`docs/SRS:109`).
 
 **Infrastructure:**
 
 - Neon: keep `DATABASE_URL` direct (not `-pooler`) `RUNBOOK.md:50` because `migrate()` `pg_advisory_lock` session. Document; never put prod URL in local `.env` `RUNBOOK.md:55`.
 - Functions: keep `server/db/index.ts:42` `migrationsDir` fallback + `included_files` `netlify.toml:23` / `includeFiles` `vercel.json:8`, bundle via `scripts/build-api.mjs` for Vercel (`api/index.js`).
-- Env: `DEMO_MODE=0` explicitly on prod, `ANTHROPIC_API_KEY`, `ELOHIM_BLOB_KEY`, `ELOHIM_VOICE_*`, `ELOHIM_ADMIN_TOKEN`, `STRIPE_*`, `PERFECTCORP_*` (if B), `ELOHIM_STORE_URL` as plain (Free plan secret write silently dropped `RUNBOOK.md:32`).
+- Env: `DEMO_MODE=0` explicitly on prod, `ANTHROPIC_API_KEY`, `EVIA_BLOB_KEY`, `EVIA_VOICE_*`, `EVIA_ADMIN_TOKEN`, `STRIPE_*`, `PERFECTCORP_*` (if B), `EVIA_STORE_URL` as plain (Free plan secret write silently dropped `RUNBOOK.md:32`).
 - Backups: Neon PITR + daily `pg_dump` to isolated bucket, tested restore drill.
 
 **Launch decision:** only when every P0 row has end-to-end production-like passing artifact `docs/SRS:231`.
@@ -129,7 +129,7 @@ Enforce on every scan/image/voice-context route. Add `CNS-01` screen (separate u
 - `GET /api/health` shows `ok:true`, `demoMode:false`, `imageStorage:true`, `clonedVoice:true`, `budget` spend vs caps `server/app.ts:41`.
 - `GET /api/public/catalogue/status` serves seeded or synced real products.
 - On-call runbook `RUNBOOK.md:270` + incident response exercise.
-- Log redaction `server/lib/log.ts` never `ELOHIM_LOG_LEVEL=debug` in prod.
+- Log redaction `server/lib/log.ts` never `EVIA_LOG_LEVEL=debug` in prod.
 - Deploy via Netlify MCP proxy source-only zip <3MB `RUNBOOK.md:167` or CLI `NETLIFY_AUTH_TOKEN` `RUNBOOK.md:188`.
 
 ---

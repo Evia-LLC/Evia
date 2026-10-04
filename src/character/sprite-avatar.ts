@@ -1,7 +1,7 @@
 /**
- * Elohim as painted 2D art, in the same 3D scene (ARCHITECTURE §12).
+ * Evia as painted 2D art, in the same 3D scene (ARCHITECTURE §12).
  *
- * The third implementation of `ElohimAvatar`, and the one that matches what the
+ * The third implementation of `EviaAvatar`, and the one that matches what the
  * app is actually trying to be. The rooms have been photographic plates since
  * the backdrop rewrite; she was the last real-time-rendered thing left in a
  * frame that is otherwise painted, and every compositing problem — matching key
@@ -30,7 +30,7 @@ import * as THREE from 'three';
 
 import { CharacterStateMachine } from './state-machine.ts';
 import { Spring, damp } from '@/lib/math.ts';
-import type { AvatarContext, ElohimAvatar, Outfit } from './types.ts';
+import type { AvatarContext, EviaAvatar, Outfit } from './types.ts';
 import type { CharacterDirective, CharacterState, Expression, Gesture, Viseme } from '@shared/types.ts';
 
 interface Placed {
@@ -246,7 +246,7 @@ function quad(width: number, height: number, texture: THREE.Texture | null, orde
   return mesh;
 }
 
-export class SpriteAvatar implements ElohimAvatar {
+export class SpriteAvatar implements EviaAvatar {
   readonly root = new THREE.Group();
 
   private readonly fsm = new CharacterStateMachine();

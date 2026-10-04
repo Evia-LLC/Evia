@@ -94,7 +94,7 @@ try {
   await call('initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: { name: 'elohim-bridge', version: '1.0' },
+    clientInfo: { name: 'evia-bridge', version: '1.0' },
   });
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
 

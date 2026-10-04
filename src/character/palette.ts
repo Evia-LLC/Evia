@@ -1,5 +1,5 @@
 /**
- * Elohim's look, in one place.
+ * Evia's look, in one place.
  *
  * Kept separate from the rig so the palette can be retuned — or driven by a
  * future customisation screen — without touching a line of geometry.

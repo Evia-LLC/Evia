@@ -30,7 +30,7 @@ export function readCookies(): CookieRecord | null {
     const record = parseCookieRecord(localStorage.getItem(COOKIE_STORAGE_KEY));
     if (!record) localStorage.removeItem(COOKIE_STORAGE_KEY);
     if (!record?.preferences.functional) {
-      localStorage.removeItem('elohim.intro.seen'); localStorage.removeItem('elohim.sound');
+      localStorage.removeItem('evia.intro.seen'); localStorage.removeItem('evia.sound');
     }
     return record;
   }
@@ -49,7 +49,7 @@ export function saveCookies(input: Partial<CookiePreferences>): { record: Cookie
     persisted = true;
     memoryOnly = false;
     if (!record.preferences.functional) {
-      localStorage.removeItem('elohim.intro.seen'); localStorage.removeItem('elohim.sound');
+      localStorage.removeItem('evia.intro.seen'); localStorage.removeItem('evia.sound');
     }
   } catch { /* The choice remains available in memory if browser storage is blocked. */ }
   return { record, persisted };

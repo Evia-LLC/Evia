@@ -29,7 +29,7 @@ import { prepareDirectory } from './lib/prepare-directory.mjs';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dataDirectory = path.join(root, 'data');
 
-export const DEV_DB_PORT = Number(process.env.ELOHIM_DEV_DB_PORT ?? 5433);
+export const DEV_DB_PORT = Number(process.env.EVIA_DEV_DB_PORT ?? 5433);
 export const DEV_DB_URL = `postgres://postgres:postgres@localhost:${DEV_DB_PORT}/postgres`;
 
 await prepareDirectory(dataDirectory);

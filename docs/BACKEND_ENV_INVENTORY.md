@@ -10,32 +10,32 @@ Use Project Settings → Environment Variables → **Production** for the curren
 | --- | --- |
 | `DATABASE_URL` | **Required for hosted backend functionality.** Dedicated sample-only Postgres connection string. Use Neon's direct/unpooled endpoint with SSL; startup migrations use session-level advisory locks. Tables are created automatically. Without a reachable DB, the Vercel API returns 503 except `/api/health`, which reports `ok:false`. |
 | `NETLIFY_DATABASE_URL` | Alternate connection string, taking precedence over `DATABASE_URL` even if empty. Leave absent on Vercel unless deliberately used. |
-| `ELOHIM_DB_POOL` | Optional; default `3` connections per function instance. Positive integer. Local disposable DB uses `1`. |
+| `EVIA_DB_POOL` | Optional; default `3` connections per function instance. Positive integer. Local disposable DB uses `1`. |
 | `PERFECTCORP_API_KEY` | Required only for live Perfect Corp analysis; server-only trial/commercial key. Missing/failed provider falls back visibly to local analysis. Guest scans remain local. |
 | `ANALYSIS_PROVIDER` | `perfectcorp` (default) or `local`. Use `local` to avoid trial calls during UI walkthroughs. |
-| `ANTHROPIC_API_KEY` | Required only for live Claude conversation and cloud AI features. Missing key uses labelled Demo Elohim. Key presence is not proof of model access; consent and budget gates still apply. |
-| `ELOHIM_MODEL` | Optional conversation model override. Current code default: `claude-sonnet-5`. This audit has not verified that model's availability to your Anthropic account or exercised a live request. |
-| `ELOHIM_MODEL_CLASSIFIER` | Default off; only `1` enables optional model-based intent classification. Leave `0` for initial demo. |
-| `ELOHIM_CLASSIFIER_MODEL` | Default `claude-haiku-4-5`; used when model classification is enabled. |
-| `ELOHIM_USER_DAILY_TURNS` | Default `80` cloud turns per user/day. |
-| `ELOHIM_DAILY_TURNS` | Default `2000` cloud turns across users/day. |
-| `ELOHIM_DAILY_TOKENS` | Default `4000000` tokens/day. These are application usage gates, not a provider-enforced dollar ceiling and not Perfect Corp/voice budgets. |
-| `ELOHIM_VOICE_API_KEY` | ElevenLabs key; requires `ELOHIM_VOICE_ID` as well. Without both, on-demand provider voice is unavailable; browser voice fallback remains. |
-| `ELOHIM_VOICE_ID` | ID of a voice accessible to your ElevenLabs account. |
-| `ELOHIM_VOICE_MODEL` | Optional. Runtime default `eleven_turbo_v2_5`; offline voice generation script defaults to `eleven_multilingual_v2`. |
-| `ELOHIM_VOICE_ENDPOINT` | Optional; default `https://api.elevenlabs.io/v1/text-to-speech`. Leave unset for ElevenLabs. |
-| `ELOHIM_GUEST_VOICE` | Set `0` to disable paid guest voice. Otherwise allowed when both voice credentials exist. |
-| `ELOHIM_BLOB_KEY` | Optional 64-character hexadecimal encryption key (32 random bytes) for stored image blobs. Not needed for auth, text chat, scan metrics/history, or transient Perfect Corp uploads. A key alone does not bypass the current progress-photo consent gate. Keep stable for existing encrypted images. |
-| `ELOHIM_ADMIN_TOKEN` | Optional secret protecting catalogue import/sync. Required if preparing a product shelf through admin endpoints. |
-| `ELOHIM_STORE_URL` | Optional Shopify/WooCommerce storefront URL for catalogue sync. Not required for manual JSON catalogue import. Setting it does not itself populate the shelf. |
-| `ELOHIM_STORE_NAME` | Display name; default `Ese`. Set your demo shop name if needed. |
-| `ELOHIM_STORE_KIND` | Optional `shopify` or `woocommerce`; otherwise autodetected during sync. |
-| `ELOHIM_STORE_CURRENCY` | Default `USD` when an imported product has no explicit currency. |
+| `ANTHROPIC_API_KEY` | Required only for live Claude conversation and cloud AI features. Missing key uses labelled Demo Evia. Key presence is not proof of model access; consent and budget gates still apply. |
+| `EVIA_MODEL` | Optional conversation model override. Current code default: `claude-sonnet-5`. This audit has not verified that model's availability to your Anthropic account or exercised a live request. |
+| `EVIA_MODEL_CLASSIFIER` | Default off; only `1` enables optional model-based intent classification. Leave `0` for initial demo. |
+| `EVIA_CLASSIFIER_MODEL` | Default `claude-haiku-4-5`; used when model classification is enabled. |
+| `EVIA_USER_DAILY_TURNS` | Default `80` cloud turns per user/day. |
+| `EVIA_DAILY_TURNS` | Default `2000` cloud turns across users/day. |
+| `EVIA_DAILY_TOKENS` | Default `4000000` tokens/day. These are application usage gates, not a provider-enforced dollar ceiling and not Perfect Corp/voice budgets. |
+| `EVIA_VOICE_API_KEY` | ElevenLabs key; requires `EVIA_VOICE_ID` as well. Without both, on-demand provider voice is unavailable; browser voice fallback remains. |
+| `EVIA_VOICE_ID` | ID of a voice accessible to your ElevenLabs account. |
+| `EVIA_VOICE_MODEL` | Optional. Runtime default `eleven_turbo_v2_5`; offline voice generation script defaults to `eleven_multilingual_v2`. |
+| `EVIA_VOICE_ENDPOINT` | Optional; default `https://api.elevenlabs.io/v1/text-to-speech`. Leave unset for ElevenLabs. |
+| `EVIA_GUEST_VOICE` | Set `0` to disable paid guest voice. Otherwise allowed when both voice credentials exist. |
+| `EVIA_BLOB_KEY` | Optional 64-character hexadecimal encryption key (32 random bytes) for stored image blobs. Not needed for auth, text chat, scan metrics/history, or transient Perfect Corp uploads. A key alone does not bypass the current progress-photo consent gate. Keep stable for existing encrypted images. |
+| `EVIA_ADMIN_TOKEN` | Optional secret protecting catalogue import/sync. Required if preparing a product shelf through admin endpoints. |
+| `EVIA_STORE_URL` | Optional Shopify/WooCommerce storefront URL for catalogue sync. Not required for manual JSON catalogue import. Setting it does not itself populate the shelf. |
+| `EVIA_STORE_NAME` | Display name; default `Ese`. Set your demo shop name if needed. |
+| `EVIA_STORE_KIND` | Optional `shopify` or `woocommerce`; otherwise autodetected during sync. |
+| `EVIA_STORE_CURRENCY` | Default `USD` when an imported product has no explicit currency. |
 | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | Optional pair for live eBay price comparison. Not required for the demo. |
 | `EBAY_MARKETPLACE` | Default `EBAY_US`. |
-| `ELOHIM_AMAZON_DOMAIN` | Default `www.amazon.com`; used for search links. |
-| `ELOHIM_AMAZON_TAG` | Optional affiliate tag for those links, not an Amazon price API key. |
-| `ELOHIM_LOG_LEVEL` | Default `info`; accepted `error`, `warn`, `info`, `debug`. Use `info` for hosted demo. |
+| `EVIA_AMAZON_DOMAIN` | Default `www.amazon.com`; used for search links. |
+| `EVIA_AMAZON_TAG` | Optional affiliate tag for those links, not an Amazon price API key. |
+| `EVIA_LOG_LEVEL` | Default `info`; accepted `error`, `warn`, `info`, `debug`. Use `info` for hosted demo. |
 
 ## Already supplied by the tracked Vercel sample profile
 
@@ -54,10 +54,10 @@ No Stripe key, certified-age-provider key, Supabase key, JWT secret or separate 
 
 These are not credentials to collect for the hosted backend:
 
-- `ELOHIM_PORT=5196`, `ELOHIM_WEB_PORT=5195`: local API/Vite ports.
-- `ELOHIM_DEV_DB_PORT=5433`, `ELOHIM_TEST_DB_PORT=5434`: local/disposable database ports.
-- `ELOHIM_SHOT_PORT=5199`: screenshot script port.
-- `ELOHIM_ASSET_ORIGIN`: optional static-asset download origin, default `https://elohim-consultant.netlify.app`; used during prebuild for missing manifest assets.
+- `EVIA_PORT=5196`, `EVIA_WEB_PORT=5195`: local API/Vite ports.
+- `EVIA_DEV_DB_PORT=5433`, `EVIA_TEST_DB_PORT=5434`: local/disposable database ports.
+- `EVIA_SHOT_PORT=5199`: screenshot script port.
+- `EVIA_ASSET_ORIGIN`: optional static-asset download origin, default `https://evia-consultant.netlify.app`; used during prebuild for missing manifest assets.
 - `VITE_DEPLOY_ENV=review`: optional legal placeholder presentation setting. Not needed by the current hosted sample profile.
 - `LEGAL_PRODUCTION=true`: additional strict-production detection for ordinary legal releases; not needed for this demo.
 - `VERCEL`, `VERCEL_ENV`, `NETLIFY`, `CONTEXT`, `LAMBDA_TASK_ROOT`, `AWS_LAMBDA_FUNCTION_NAME`, `NODE_ENV`: host/runtime-provided signals. Do not spoof them to change the deployment type. `NODE_ENV=production` also enables secure auth cookies.

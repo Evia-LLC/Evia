@@ -111,7 +111,7 @@ function startApi(url) {
     // PGlite is a single-connection database. A pool of three against it
     // means the second and third connections are reset mid-query; with one,
     // `pg` queues the work instead and every query lands.
-    env.ELOHIM_DB_POOL ??= '1';
+    env.EVIA_DB_POOL ??= '1';
   }
   api = run('api', [path.join(root, 'server', 'index.ts')], '36', { env });
 }

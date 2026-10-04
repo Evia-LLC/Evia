@@ -50,7 +50,7 @@ export async function assembleDataExport(userId: string, repos: DataExportReposi
 
   return {
     metadata: {
-      format: 'elohim-user-data',
+      format: 'evia-user-data',
       version: DATA_EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
       photoBinariesIncluded: false,

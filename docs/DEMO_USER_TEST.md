@@ -29,7 +29,7 @@ Netlify must already be linked to `Evia-LLC/Evia`. A branch push alone does not 
 | `ANALYSIS_PROVIDER` | `local` for initial testing without Perfect Corp credit usage |
 | `DATABASE_URL` / `NETLIFY_DATABASE_URL` | A dedicated sample-only Postgres database, not production; the latter takes precedence |
 | `PERFECTCORP_API_KEY` | Leave absent for initial UI testing |
-| `ELOHIM_GUEST_VOICE` | `0` for initial testing without paid guest voice |
+| `EVIA_GUEST_VOICE` | `0` for initial testing without paid guest voice |
 
 Do not inherit production provider keys or the production database into the preview. Provider keys are not needed for these UI tests. Without a preview database, guest walkthroughs work, but signup, account history and durable review events are unavailable. Keep the production legal guard enabled: deploy as `deploy-preview` or `branch-deploy`, not production. Runtime variables in `netlify.toml` are not available to Functions; use the UI/API.
 

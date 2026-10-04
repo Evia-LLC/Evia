@@ -27,7 +27,7 @@ import { scale } from './metrics.ts';
 import { bandWidths, torsoFrame, typical, widest, type Mask } from './silhouette.ts';
 
 /** Bumped whenever a formula here changes. Trends never cross versions. */
-export const PROFILE_MODEL_VERSION = 'elohim-profile-1.0.0';
+export const PROFILE_MODEL_VERSION = 'evia-profile-1.0.0';
 
 /*
  * Defined in shared/, re-exported here — same reason as the body metric keys:

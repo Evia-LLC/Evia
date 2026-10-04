@@ -1,5 +1,5 @@
 /**
- * Elohim's voice (brief §21).
+ * Evia's voice (brief §21).
  *
  * She has always spoken through the browser's own speech synthesis: free,
  * offline, no key — and unmistakably a robot reading a script. A licensed human
@@ -43,19 +43,19 @@ export interface VoiceConfig {
 }
 
 export function voiceConfig(): VoiceConfig | null {
-  const apiKey = process.env.ELOHIM_VOICE_API_KEY;
-  const voiceId = process.env.ELOHIM_VOICE_ID;
+  const apiKey = process.env.EVIA_VOICE_API_KEY;
+  const voiceId = process.env.EVIA_VOICE_ID;
   if (!apiKey || !voiceId) return null;
   return {
     apiKey,
     voiceId,
-    endpoint: process.env.ELOHIM_VOICE_ENDPOINT ?? DEFAULT_ENDPOINT,
+    endpoint: process.env.EVIA_VOICE_ENDPOINT ?? DEFAULT_ENDPOINT,
     // Turbo for the live path: she answers in conversation, and the seconds
     // a richer model spends on a nicer render are seconds she stands silent.
     // The offline batch (scripts/voice-lines-synth.mjs) keeps multilingual/v3
     // for the shipped lines, where render quality wins and latency is free.
     // The env override still decides, when set.
-    modelId: process.env.ELOHIM_VOICE_MODEL ?? 'eleven_turbo_v2_5',
+    modelId: process.env.EVIA_VOICE_MODEL ?? 'eleven_turbo_v2_5',
   };
 }
 
@@ -65,12 +65,12 @@ export function clonedVoiceAvailable(): boolean {
 
 /** Whether someone without an account may hear the cloned voice. */
 export function guestVoiceAllowed(): boolean {
-  return clonedVoiceAvailable() && process.env.ELOHIM_GUEST_VOICE !== '0';
+  return clonedVoiceAvailable() && process.env.EVIA_GUEST_VOICE !== '0';
 }
 
 export class VoiceUnavailable extends Error {
   constructor() {
-    super('No cloned voice is configured (ELOHIM_VOICE_API_KEY / ELOHIM_VOICE_ID unset).');
+    super('No cloned voice is configured (EVIA_VOICE_API_KEY / EVIA_VOICE_ID unset).');
     this.name = 'VoiceUnavailable';
   }
 }

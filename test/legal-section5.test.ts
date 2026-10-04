@@ -41,11 +41,11 @@ it('removes functional storage on rejection and gates persistence before consent
   expect(functionalStorageAllowed()).toBe(false);
   saveCookies({ functional: true });
   expect(functionalStorageAllowed()).toBe(true);
-  values.set('elohim.sound', '1'); values.set('elohim.intro.seen', '1');
+  values.set('evia.sound', '1'); values.set('evia.intro.seen', '1');
   saveCookies(DEFAULT_COOKIES);
   expect(functionalStorageAllowed()).toBe(false);
-  expect(values.has('elohim.sound')).toBe(false);
-  expect(values.has('elohim.intro.seen')).toBe(false);
+  expect(values.has('evia.sound')).toBe(false);
+  expect(values.has('evia.intro.seen')).toBe(false);
 });
 it('keeps guest refusals and skips as temporary evidence without account or provider calls', async () => {
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);

@@ -917,7 +917,7 @@ export class HologramRig {
      *
      * Computed here rather than in the card so the same description is
      * available to anything else that has to speak about this scan — the
-     * readout and Elohim must never disagree about what was found.
+     * readout and Evia must never disagree about what was found.
      */
     const observations = observationsFor(analysis.metrics, analysis.regions ?? {});
     const concerns = hasIssues(findings);

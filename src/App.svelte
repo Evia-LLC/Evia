@@ -4,7 +4,7 @@
   import { session } from '@/state/session.svelte.ts';
   import { bootstrap, discardPendingCapture, enterScanPage, initVoice, leaveScanPage, refreshVoice } from '@/state/controller.ts';
   import { isLegalRoute, router } from '@/router/router.svelte.ts';
-  import ElohimStage from '@/components/ElohimStage.svelte';
+  import EviaStage from '@/components/EviaStage.svelte';
   import AgeAssurancePage from '@/pages/legal/AgeAssurancePage.svelte';
   import AuthGate from '@/components/AuthGate.svelte';
   import HoloPanel from '@/components/HoloPanel.svelte';
@@ -163,10 +163,10 @@
        network round trip resolves: she is the product, and on a cold server
        the old gate held a blank screen for as long as the function took to
        wake. The room needs nothing from the network to exist. -->
-  <ElohimStage />
+  <EviaStage />
 
   {#if booting}
-    <div class="auth"><div class="auth__mark">Elohim</div></div>
+    <div class="auth"><div class="auth__mark">Evia</div></div>
   {:else if isLegalRoute(router.id)}
     {#key router.id}
       {#if router.is('legal-age-assurance')}<AgeAssurancePage />

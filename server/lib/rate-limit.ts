@@ -11,7 +11,7 @@
  *
  * A fixed-window counter in memory, deliberately: this is a single-process
  * server with a local SQLite file, so a Redis-backed limiter would be
- * infrastructure the product does not otherwise have. If Elohim ever runs more
+ * infrastructure the product does not otherwise have. If Evia ever runs more
  * than one process this needs to move to a shared store, and the interface here
  * is narrow enough that it can.
  */

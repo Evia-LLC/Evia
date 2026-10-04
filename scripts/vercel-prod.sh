@@ -18,8 +18,8 @@ add() { # name value
   if have "$1"; then echo "env $1: present"; else printf '%s' "$2" | npx --yes vercel env add "$1" production && echo "env $1: added"; fi
 }
 add DATABASE_URL "$(tr -d '\r\n' < "$SEC/database.url")"
-add ELOHIM_VOICE_ID "0UFPkz6r4cUaHBRHtegr"
-add ELOHIM_VOICE_API_KEY "$(tr -d '\r\n' < "$SEC/elevenlabs.key")"
-add ELOHIM_BLOB_KEY "$(grep -o '[0-9a-f]\{64\}' .secrets/production-blob-key.txt | head -1)"
+add EVIA_VOICE_ID "0UFPkz6r4cUaHBRHtegr"
+add EVIA_VOICE_API_KEY "$(tr -d '\r\n' < "$SEC/elevenlabs.key")"
+add EVIA_BLOB_KEY "$(grep -o '[0-9a-f]\{64\}' .secrets/production-blob-key.txt | head -1)"
 
 exec npx --yes vercel deploy --prod --yes

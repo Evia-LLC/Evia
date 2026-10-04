@@ -5,7 +5,7 @@
 
 **Authority rule (SRS v2.0):** Where SRS, repo docs, or product preferences conflict with the final legal pack (consent, age, retention, privacy, subscription, data use), **the legal pack controls** until counsel issues a revision.
 
-**Domain note (Legal Advisory Memo §1):** All final docs use `www.helloevia.com` / `meetevia.com` and `@meetevia.com` / `@helloevia.com`. Founder has notified counsel of name change. **Use final counsel-confirmed domain/email verbatim in UI** — do not silently edit `www.meetevia.com` → `www.helloevia.com`.
+**Domain note (Legal Advisory Memo §1):** All final docs use `www.helloevia.com` / `helloevia.com` and `@helloevia.com` / `@helloevia.com`. Founder has notified counsel of name change. **Use final counsel-confirmed domain/email verbatim in UI** — do not silently edit `www.helloevia.com` → `www.helloevia.com`.
 
 ---
 
@@ -80,7 +80,7 @@ No sharing with advertising platforms, data brokers, insurers, employers, brands
 
 - **Eligibility:** 16+ only, under-16 blocked, do not store blocked attempt data.
 - **18+:** DOB collected; **no camera until Steps complete.** Credit card → camera may unlock after scan consent. Debit/prepaid → non-biometric age check via certified email-based provider before scan (uses email, not face). On failure → route to 16/17 flow.
-- **16/17 locked account:** Holds only email + DOB. Email Guardian → approve within **14 days** or account + data deleted. Guardian must: (a) credit-card payment in own name (subscription as payor or nominal refunded charge), name matches, not already linked to user; (b) confirm parent/guardian relationship (unticked checkbox); (c) accept Terms for self+minor; (d) give biometric/health consents as legally authorised representative; (e) Illinois → ID document check via certified provider. Guardian is account holder for payment, gets login to view/download/withdraw/delete/manage subscription. Minor told `They can see your stored data and can delete your account at any time. privacy@meetevia.com`.
+- **16/17 locked account:** Holds only email + DOB. Email Guardian → approve within **14 days** or account + data deleted. Guardian must: (a) credit-card payment in own name (subscription as payor or nominal refunded charge), name matches, not already linked to user; (b) confirm parent/guardian relationship (unticked checkbox); (c) accept Terms for self+minor; (d) give biometric/health consents as legally authorised representative; (e) Illinois → ID document check via certified provider. Guardian is account holder for payment, gets login to view/download/withdraw/delete/manage subscription. Minor told `They can see your stored data and can delete your account at any time. privacy@helloevia.com`.
 - **Turning 18:** Guardian access ends, notify Guardian, show user `You are now 18. To keep using Evia... accept Terms and give scan consent in own name. Camera stays locked until done.`
 - **Under-18 protections:** No behavioural advertising, no marketing audience, no marketing comms, no profiling beyond service, high privacy defaults, no dark patterns to weaken privacy (UK Age Appropriate Design Code).
 
@@ -143,7 +143,7 @@ No sharing with advertising platforms, data brokers, insurers, employers, brands
 - Step 5 Guardian verification: Fields `Guardian full name` + declaration (unticked) `I confirm I am the parent or legal guardian of this user.` Then payment: Guardian subscribes as payor on credit card in own name (preferred) or nominal refunded verification charge. Rules credit-only, name matches, reject card fingerprint already linked to user. Illinois → add ID document check via certified provider.
 - Step 6 Guardian consent: Show **Terms §6** + **Scan consent §1 Guardian version**, plus unticked `I accept the Terms of Service on my own behalf and on behalf of this user.` Statement `Accounts of users under 18 are never used for advertising, never included in marketing audiences and never sent marketing messages.` Button `Approve.`
 - Step 7 approval record (log): `user account ID, Guardian name+email, relationship declaration, verification method+result, card type, last4, fingerprint token, Illinois ID result where applicable, wording version of every doc shown, date, time, IP address.`
-- Step 8 unlock notice: `Your parent or guardian has approved your account. You can now scan. They can see the data stored in your account and can delete your account at any time. You can also contact privacy@meetevia.com about your data.` (also show `@helloevia.com` per current pack — use final domain after counsel confirm).
+- Step 8 unlock notice: `Your parent or guardian has approved your account. You can now scan. They can see the data stored in your account and can delete your account at any time. You can also contact privacy@helloevia.com about your data.` (also show `@helloevia.com` per current pack — use final domain after counsel confirm).
 - Step 9 Guardian login controls: `view stored data, download it, withdraw consent, delete account, manage subscription.` Withdrawal locks account and triggers deletion.
 - Step 10 turning 18: End Guardian access, notify Guardian, show user `You are now 18. To keep using Evia, please accept the Terms and give your scan consent in your own name. The camera stays locked until they do.`
 

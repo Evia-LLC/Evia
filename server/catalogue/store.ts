@@ -1,7 +1,7 @@
 /**
  * The shelf: the operator's own catalogue, and how it gets here.
  *
- * Two ways in. A storefront URL (`ELOHIM_STORE_URL`) is read directly — a
+ * Two ways in. A storefront URL (`EVIA_STORE_URL`) is read directly — a
  * Shopify shop publishes its products at `/products.json` and a WooCommerce
  * shop at `/wp-json/wc/store/v1/products`, both public, both paginated, both
  * with prices, links and pictures. Anything else is imported as JSON through
@@ -60,11 +60,11 @@ function hydrate(r: CatalogueRow): CatalogueProduct {
 }
 
 export function storeName(): string {
-  return process.env.ELOHIM_STORE_NAME?.trim() || 'Ese';
+  return process.env.EVIA_STORE_NAME?.trim() || 'Ese';
 }
 
 export function storeUrl(): string | null {
-  const url = process.env.ELOHIM_STORE_URL?.trim();
+  const url = process.env.EVIA_STORE_URL?.trim();
   return url ? url.replace(/\/+$/, '') : null;
 }
 
@@ -108,7 +108,7 @@ export async function upsertCatalogueProduct(input: CatalogueInput): Promise<str
     JSON.stringify((input.ingredients ?? []).slice(0, 120)),
     JSON.stringify((input.tags ?? []).slice(0, 40)),
     input.priceCents ?? null,
-    (input.currency ?? process.env.ELOHIM_STORE_CURRENCY ?? 'USD').toUpperCase().slice(0, 3),
+    (input.currency ?? process.env.EVIA_STORE_CURRENCY ?? 'USD').toUpperCase().slice(0, 3),
     input.url,
     input.imageUrl ?? null,
     input.inStock === false ? 0 : 1,
@@ -256,7 +256,7 @@ interface WooProduct {
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   const response = await fetch(url, {
-    headers: { Accept: 'application/json', 'User-Agent': 'Elohim/1.0 (+catalogue sync)' },
+    headers: { Accept: 'application/json', 'User-Agent': 'Evia/1.0 (+catalogue sync)' },
   });
   if (!response.ok) return null;
   const type = response.headers.get('content-type') ?? '';
@@ -338,7 +338,7 @@ async function readWooCommerce(base: string): Promise<CatalogueInput[]> {
 
 /** Which platform a storefront is, by asking each in turn. */
 export async function detectStore(base: string): Promise<CatalogueSource | null> {
-  const kind = process.env.ELOHIM_STORE_KIND?.toLowerCase();
+  const kind = process.env.EVIA_STORE_KIND?.toLowerCase();
   if (kind === 'shopify' || kind === 'woocommerce') return kind;
   const shopify = await fetchJson<{ products?: unknown[] }>(`${base}/products.json?limit=1`).catch(
     () => null,
@@ -360,7 +360,7 @@ export async function detectStore(base: string): Promise<CatalogueSource | null>
  */
 export async function syncStore(): Promise<{ imported: number; removed: number; source: CatalogueSource }> {
   const base = storeUrl();
-  if (!base) throw new Error('ELOHIM_STORE_URL is not set.');
+  if (!base) throw new Error('EVIA_STORE_URL is not set.');
   const syncId = newId();
   await run(
     'INSERT INTO catalogue_syncs (id, source, store_url, started_at) VALUES (?, ?, ?, ?)',

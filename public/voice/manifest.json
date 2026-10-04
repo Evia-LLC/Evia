@@ -1,7 +1,7 @@
 {
  "2d425f0c565f1699": {
   "file": "2d425f0c565f1699.mp3",
-  "text": "Hi — I'm Elohim.",
+  "text": "Hi — I'm Evia.",
   "words": [
    {
     "word": "Hi",
@@ -25,7 +25,7 @@
     "end": 0.604
    },
    {
-    "word": "Elohim.",
+    "word": "Evia.",
     "charIndex": 9,
     "charLength": 7,
     "start": 0.662,
@@ -1191,7 +1191,7 @@
  },
  "1f766d21d7aef5cc": {
   "file": "1f766d21d7aef5cc.mp3",
-  "text": "Hey, it's Elohim. This is what I sound like.",
+  "text": "Hey, it's Evia. This is what I sound like.",
   "words": [
    {
     "word": "Hey,",
@@ -1208,7 +1208,7 @@
     "end": 0.499
    },
    {
-    "word": "Elohim.",
+    "word": "Evia.",
     "charIndex": 10,
     "charLength": 7,
     "start": 0.546,

@@ -1,5 +1,5 @@
 /**
- * Elohim in a real voice.
+ * Evia in a real voice.
  *
  * Same shape as `Speaker` in synthesis.ts, so the character engine cannot tell
  * which one is talking — it asks for `speak(text, handlers)` and gets word

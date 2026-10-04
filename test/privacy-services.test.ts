@@ -45,7 +45,7 @@ describe('structured data export', () => {
     const result = await assembleDataExport('owner', repos);
     for (const reader of Object.values(repos)) expect(reader).toHaveBeenCalledWith('owner');
     expect(result).toMatchObject({
-      metadata: { format: 'elohim-user-data', version: DATA_EXPORT_VERSION, photoBinariesIncluded: false },
+      metadata: { format: 'evia-user-data', version: DATA_EXPORT_VERSION, photoBinariesIncluded: false },
       account: { id: 'owner' }, preferences: {}, consentHistory: [{ granted: true }, { granted: false }],
       scans: { skin: [], body: [], progressPhotos: [{ id: 'photo-1', consentEventId: 'consent-1' }] },
       routine: { products: [] }, memories: [], transcripts: [{}],

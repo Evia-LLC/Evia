@@ -39,7 +39,7 @@ export interface VoiceProfile {
 }
 
 /**
- * Elohim's default voice settings — a touch under normal pace, natural pitch.
+ * Evia's default voice settings — a touch under normal pace, natural pitch.
  *
  * The browser voice is her stand-in, and a stand-in should at least keep her
  * pace: the cloned voice is unhurried, so a bright, quick fallback made the
@@ -127,7 +127,7 @@ export function listVoices(timeoutMs = 1200): Promise<SpeechSynthesisVoice[]> {
 const QUALITY = /natural|neural|premium|enhanced|online|google|siri/i;
 
 /**
- * Voices that read as feminine. Elohim is consistently "she" throughout the
+ * Voices that read as feminine. Evia is consistently "she" throughout the
  * product, so defaulting to a masculine voice is a character bug, not a
  * cosmetic one.
  *

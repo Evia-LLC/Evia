@@ -8,7 +8,7 @@ import { summarise } from '../server/skin/longitudinal.ts';
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 const file = { status: 200, data: { files: [{ file_id: 'file-id', requests: [{ method: 'PUT', url: 'https://yce-us.s3-accelerate.amazonaws.com/demo/upload?signature=test' }] }] } };
 const jpeg = new Uint8Array([255, 216, 255, 217]);
-const local: SkinAnalysis = { capturedAt: '2026-09-24T10:00:00Z', modelVersion: 'elohim-skin-1.0.0', confidence: .8,
+const local: SkinAnalysis = { capturedAt: '2026-09-24T10:00:00Z', modelVersion: 'evia-skin-1.0.0', confidence: .8,
   quality: { verdict: 'pass', score: .9, brightness: .5, sharpness: .8, centeringError: 0, faceHeightFraction: .6, issues: [] },
   regions: {}, metrics: Object.fromEntries(SKIN_METRIC_KEYS.map(k => [k, 50])) as SkinAnalysis['metrics'] };
 

@@ -25,7 +25,7 @@ import { bandWidths, narrowest, torsoFrame, type Mask } from './silhouette.ts';
 import { clamp } from '@/lib/math.ts';
 
 /** Bumped whenever a formula below changes. Trends never cross versions. */
-export const BODY_MODEL_VERSION = 'elohim-body-2.0.0';
+export const BODY_MODEL_VERSION = 'evia-body-2.0.0';
 
 /*
  * Defined in shared/, re-exported here.

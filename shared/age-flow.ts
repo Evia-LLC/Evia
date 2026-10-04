@@ -19,7 +19,7 @@ export const AGE_FLOW_COPY = {
   "minorProtection": "Accounts of users under 18 are never used for advertising, never included in marketing audiences and never sent marketing messages.",
   "approve": "Approve.",
   "recordFields": "user account ID, Guardian name+email, relationship declaration, verification method+result, card type, last4, fingerprint token, Illinois ID result where applicable, wording version of every doc shown, date, time, IP address.",
-  "unlock": "Your parent or guardian has approved your account. You can now scan. They can see the data stored in your account and can delete your account at any time. You can also contact privacy@meetevia.com about your data.",
+  "unlock": "Your parent or guardian has approved your account. You can now scan. They can see the data stored in your account and can delete your account at any time. You can also contact privacy@helloevia.com about your data.",
   "domainNote": "@helloevia.com",
   "controls": "view stored data, download it, withdraw consent, delete account, manage subscription.",
   "turning18": "You are now 18. To keep using Evia, please accept the Terms and give your scan consent in your own name. The camera stays locked until they do.",

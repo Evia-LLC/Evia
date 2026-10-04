@@ -7,7 +7,7 @@
  * it, and `demoFor` is the only way to get one — there is no path that shows a
  * figure doing an exercise nobody was told they needed.
  *
- * `because` is written to be spoken. Elohim reads it aloud while the figure
+ * `because` is written to be spoken. Evia reads it aloud while the figure
  * moves, so it is one sentence, in her voice, and it says why the movement
  * addresses the thing that was measured — not what the movement is called.
  *

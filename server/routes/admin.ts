@@ -2,7 +2,7 @@
  * The operator's routes.
  *
  * Not a user, not a guest: whoever runs the shop. Guarded by a shared secret
- * (`ELOHIM_ADMIN_TOKEN`) in a header, because there is exactly one operator
+ * (`EVIA_ADMIN_TOKEN`) in a header, because there is exactly one operator
  * and an admin account system would be a login page for one person. With no
  * token configured the routes do not exist, so a deployment cannot be
  * administered by accident.
@@ -16,7 +16,7 @@ import { log } from '../lib/log.ts';
 export const adminRouter = asyncRouter();
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const expected = process.env.ELOHIM_ADMIN_TOKEN;
+  const expected = process.env.EVIA_ADMIN_TOKEN;
   if (!expected) {
     res.status(404).json({ error: 'Not found.' });
     return;

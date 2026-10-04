@@ -18,7 +18,7 @@ import {
 } from '@shared/types.ts';
 
 /**
- * At most six. Elohim is the interpreter; the holograms are her whiteboard, and a
+ * At most six. Evia is the interpreter; the holograms are her whiteboard, and a
  * whiteboard with every number on it communicates nothing.
  *
  * At *most* — not exactly. A whiteboard that always has six things on it is

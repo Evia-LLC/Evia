@@ -5,7 +5,7 @@
 -- every cold start: a stored scan photo survived exactly until the next deploy
 -- and then quietly 404ed, which made "keep it for comparisons" a promise the
 -- app could not keep. Rows survive. The bytes are still AES-256-GCM under
--- ELOHIM_BLOB_KEY before they get here, so the database never holds a face in
+-- EVIA_BLOB_KEY before they get here, so the database never holds a face in
 -- the clear.
 CREATE TABLE blobs (
   ref        TEXT PRIMARY KEY,

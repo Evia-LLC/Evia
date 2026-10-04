@@ -126,7 +126,7 @@ apiRouter.post('/me/consents/:type/decisions', async (req, res) => {
 apiRouter.get('/me/data-export', async (req, res) => {
   const document = await assembleDataExport(req.userId!);
   const date = new Date().toISOString().slice(0, 10);
-  res.setHeader('Content-Disposition', `attachment; filename="elohim-data-${date}.json"`);
+  res.setHeader('Content-Disposition', `attachment; filename="evia-data-${date}.json"`);
   res.setHeader('Cache-Control', 'private, no-store');
   res.type('application/json').send(JSON.stringify(document, null, 2));
 });
@@ -164,7 +164,7 @@ apiRouter.post('/chat', chatLimiter, async (req, res) => {
 
 /**
  * Turns produced by app events rather than by a typed message — opening the app,
- * a scan finishing. Only Elohim's side is written to the transcript.
+ * a scan finishing. Only Evia's side is written to the transcript.
  */
 apiRouter.post('/chat/event', chatLimiter, async (req, res) => {
   const event = req.body?.event;
@@ -415,7 +415,7 @@ apiRouter.get('/routine/picks', async (req, res) => {
  * ever reporting its own successes.
  */
 /**
- * Elohim's voice, synthesised.
+ * Evia's voice, synthesised.
  *
  * The key lives here and never reaches the browser. A 503 means no cloned voice
  * is configured, and the client falls back to the browser's own synthesis and
@@ -431,7 +431,7 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
   }
 
   /*
-   * The cloned voice is a third party, and what gets sent to it is Elohim's
+   * The cloned voice is a third party, and what gets sent to it is Evia's
    * reply — which routinely quotes the user's readings and concerns back to
    * them. That is the user's data leaving this server, so it sits behind the
    * same consent as the model.

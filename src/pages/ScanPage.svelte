@@ -76,7 +76,7 @@
   /** Her most recent line, which after a scan is the reading. */
   const lastWord = $derived.by(() => {
     const last = session.messages[session.messages.length - 1];
-    return last?.role === 'elohim' ? last : null;
+    return last?.role === 'evia' ? last : null;
   });
 
   /**
@@ -199,7 +199,7 @@
       {/if}
       <div class="reading__words" aria-live="polite">
         {#if session.thinking}
-          <span class="thinking" aria-label="Elohim is thinking">Thinking</span>
+          <span class="thinking" aria-label="Evia is thinking">Thinking</span>
         {:else if lastWord}
           {shownWords}{#if stillTyping}<span class="caret" aria-hidden="true"></span>{/if}
         {:else}

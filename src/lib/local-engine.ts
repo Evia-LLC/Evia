@@ -1,5 +1,5 @@
 /**
- * Elohim, without a server.
+ * Evia, without a server.
  *
  * A guest has no account and, on a deployment with nothing attached, no
  * server that can answer at all. She used to fall silent - the one thing this
@@ -10,18 +10,18 @@
  * and the trend summary and writes a turn. Nothing in it needs a process. So
  * it runs here, in the browser, over the same in-memory scans a guest already
  * has, and every number it says is one the device just measured. It is the
- * same engine and it is labelled the same way: Demo Elohim, local engine.
+ * same engine and it is labelled the same way: Demo Evia, local engine.
  */
 import { classifyLocally } from '../../shared/classify-local.ts';
 import { respond, respondToEvent } from '../../server/ai/fallback.ts';
-import type { ElohimContext } from '../../server/ai/context.ts';
+import type { EviaContext } from '../../server/ai/context.ts';
 import { session } from '@/state/session.svelte.ts';
 import {
   METRIC_HIGHER_IS_BETTER,
   METRIC_NOISE_FLOOR,
   SKIN_METRIC_KEYS,
   type BodySnapshot,
-  type ElohimTurn,
+  type EviaTurn,
   type LongitudinalSummary,
   type MetricTrend,
   type ProductPick,
@@ -81,7 +81,7 @@ function guestSummary(scans: SkinAnalysis[]): LongitudinalSummary {
   };
 }
 
-function guestContext(body?: BodySnapshot, picks: ProductPick[] = []): ElohimContext {
+function guestContext(body?: BodySnapshot, picks: ProductPick[] = []): EviaContext {
   const user = session.user;
   if (!user) throw new Error('No guest to speak to.');
   return {
@@ -95,7 +95,7 @@ function guestContext(body?: BodySnapshot, picks: ProductPick[] = []): ElohimCon
 }
 
 /** A reply to something the guest typed. */
-export function guestTurn(message: string): ElohimTurn {
+export function guestTurn(message: string): EviaTurn {
   /*
    * The recent transcript rides along so she can refer back to what a guest
    * already told her — "the chin breakouts", not "that". The controller pushes
@@ -122,6 +122,6 @@ export function guestEvent(
   body?: BodySnapshot,
   picks: ProductPick[] = [],
   opts: { introSkipped?: boolean } = {},
-): ElohimTurn {
+): EviaTurn {
   return respondToEvent(event, classifyLocally(''), guestContext(body, picks), opts);
 }

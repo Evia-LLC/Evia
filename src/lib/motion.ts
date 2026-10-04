@@ -4,7 +4,7 @@
  * Two rules, both enforced here so no page has to remember them:
  *
  *  1. Reduced motion is honoured at the moment an animation starts, from both
- *     the system setting and Elohim's own preference, and it means *no*
+ *     the system setting and Evia's own preference, and it means *no*
  *     motion rather than slower motion. A number that is going to be 71
  *     should just say 71.
  *  2. Nothing here is a spring. The pages use one expo-out curve, the same

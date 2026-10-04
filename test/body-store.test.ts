@@ -26,7 +26,7 @@ const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? '';
 const configured = BASE_URL.length > 0;
 
 /** Its own schema, named for this run. */
-const SCHEMA = `elohim_test_${process.pid}_${Date.now()}`;
+const SCHEMA = `evia_test_${process.pid}_${Date.now()}`;
 
 let repo: Repo;
 let userId: string;
@@ -57,8 +57,8 @@ function reading(over: Partial<BodyAnalysisRecord> = {}): BodyAnalysisRecord {
       visibility: 0.9,
     })),
     confidence: 0.97,
-    modelVersion: 'elohim-body-2.0.0',
-    profileModelVersion: 'elohim-profile-1.0.0',
+    modelVersion: 'evia-body-2.0.0',
+    profileModelVersion: 'evia-profile-1.0.0',
     ...over,
   };
 }
@@ -120,8 +120,8 @@ describe.skipIf(!configured)('a body reading survives the round trip', () => {
     // Five decimal places is why the column is DOUBLE PRECISION: Postgres REAL
     // is float4 and stores 0.97 as 0.9700000286, which fails right here.
     expect(back?.confidence).toBeCloseTo(0.97, 5);
-    expect(back?.modelVersion).toBe('elohim-body-2.0.0');
-    expect(back?.profileModelVersion).toBe('elohim-profile-1.0.0');
+    expect(back?.modelVersion).toBe('evia-body-2.0.0');
+    expect(back?.profileModelVersion).toBe('evia-profile-1.0.0');
     expect(back?.landmarks).toHaveLength(33);
   });
 
@@ -136,7 +136,7 @@ describe.skipIf(!configured)('a body reading survives the round trip', () => {
     const back = await repo.latestBodyScan(userId);
     expect(back?.profile).toBeNull();
     expect(back?.profileDetail).toBeNull();
-    expect(back?.profileModelVersion).toBe('elohim-profile-1.0.0');
+    expect(back?.profileModelVersion).toBe('evia-profile-1.0.0');
   });
 
   it('records which method the waist came from', async () => {

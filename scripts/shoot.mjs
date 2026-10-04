@@ -10,7 +10,7 @@
  * The workaround, and the only way to actually *see* the scene here:
  *
  *   1. run this:            node scripts/shoot.mjs [outDir]
- *   2. in the page console: __elohim.captureFrame(w, h, settleFrames)
+ *   2. in the page console: __evia.captureFrame(w, h, settleFrames)
  *      → steps the scene without rAF, renders at an explicit size,
  *        and returns a PNG data URL
  *   3. POST that data URL:  fetch('http://127.0.0.1:5199/name', {method:'POST', body:url})
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.resolve(process.argv[2] ?? path.join(root, 'shots'));
-const PORT = Number(process.env.ELOHIM_SHOT_PORT ?? 5199);
+const PORT = Number(process.env.EVIA_SHOT_PORT ?? 5199);
 
 fs.mkdirSync(outDir, { recursive: true });
 
