@@ -10,7 +10,7 @@
  * is a longitudinal engine that will one day chart a shoulder ratio against a
  * hydration score and present the result as progress.
  */
-import { row, rows, run, transaction } from './index.ts';
+import { rows, transaction } from './index.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { BodyAnalysisRecord } from '../../shared/types.ts';
 
