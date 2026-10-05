@@ -42,3 +42,6 @@ Manager/
 # replaced the rigged model, nothing imports these, and GitHub is not the
 # archive for them. They stay on this machine.
 art/
+
+# Python bytecode from the Blender scripts
+__pycache__/
