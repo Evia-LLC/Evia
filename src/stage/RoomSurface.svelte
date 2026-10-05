@@ -8,6 +8,10 @@
   surface's depth-of-field blur so it sits in the same focus as the room.
   If the room has no such surface, `fallback` (a quad in the same normalised
   frame) is used; failing that nothing is drawn.
+
+  When the room is alive (Room's living plate) and moves with the pointer,
+  the text moves with its wall: the shift for the surface's depth, read from
+  the room (`parallaxAt`), times the overlay's --living-dx / --living-dy.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -40,7 +44,10 @@
     // scaling, because the filter is applied before the transform.
     const screenBlur = ((surface.blurPx ?? 0) * room.fit.w) / room.anchors.frame.w;
     const blur = across > 0 ? (screenBlur * width) / across : 0;
-    return { transform: quadMatrix(width, height, dst), blur };
+    const c = surface.quad.reduce<Point>((acc, p) => [acc[0] + p[0] / 4, acc[1] + p[1] / 4], [0, 0]);
+    const k = room.parallaxAt?.(c) ?? 0;
+    const shift = Math.abs(k) > 0.01 ? `calc(var(--living-dx, 0px) * ${k.toFixed(3)}) calc(var(--living-dy, 0px) * ${k.toFixed(3)})` : null;
+    return { transform: quadMatrix(width, height, dst), blur, shift };
   });
 </script>
 
@@ -50,6 +57,7 @@
     style:width="{width}px"
     style:height="{height}px"
     style:transform={geometry.transform}
+    style:translate={geometry.shift}
     style:filter={geometry.blur > 0.05 ? `blur(${geometry.blur.toFixed(2)}px)` : null}
     aria-hidden={decorative ? 'true' : undefined}
     data-surface={name}

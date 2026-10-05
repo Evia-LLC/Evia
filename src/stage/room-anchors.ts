@@ -107,6 +107,69 @@ export interface RoomAnchors {
   ref?: RoomRect | null;
   /** Polylines along curved surfaces (the pedestal's band), for an SVG textPath. */
   curves?: Record<string, Point[]>;
+  /** The living-room data maps and helper layers (src/stage/living), when the render publishes them. */
+  living?: RoomLiving;
+}
+
+/* ---- the living room: masks, lights, strips, plants (see the room READMEs) ---- */
+
+/** Data maps (never shown) and helper pictures published beside a plate on the same pixel grid. */
+export type LivingMaskName = 'plants' | 'sky' | 'glass' | 'windows' | 'lamps' | 'coves' | 'emitter' | 'depth' | 'glow' | 'dim';
+/** The consult room's additive boost pictures (Blender `files.glow_*`). */
+export type LivingBoostName = 'neon' | 'under' | 'emitter';
+
+export interface LivingLayer {
+  /** File name (relative to the room folder, or absolute under /env/) at the largest width. */
+  src: string;
+  /** Every width it is published at (as `-<width>.webp` siblings), ascending. */
+  widths: number[];
+  /** Plants: how far outside a silhouette the sway weight is feathered to 0, per published width. */
+  featherPxAt?: Record<number, number>;
+  /** Coves: how far from a strip its id and distance are carried, per published width. */
+  zonePxAt?: Record<number, number>;
+}
+
+export interface LivingLight {
+  id: number;
+  name: string;
+  kind: string;
+  /** flicker (candle), breathe (globes), steady (downlights), blink (beacons). */
+  motion: string;
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  tempK?: number;
+  /** Share of the fixture the camera sees (0 = hidden). */
+  visible?: number;
+}
+
+export interface LivingStrip {
+  id: number;
+  name: string;
+  kind: string;
+  /** ring: closed loop (a whole number of waves per loop); path/line/arc: open. */
+  shape: string;
+  lengthM: number;
+}
+
+export interface LivingPlant {
+  id: number;
+  name: string;
+  kind: string;
+  base: Point;
+  tip: Point;
+  tipWeight?: number;
+}
+
+export interface RoomLiving {
+  masks: Partial<Record<LivingMaskName, LivingLayer>>;
+  boosts: Partial<Record<LivingBoostName, LivingLayer>>;
+  lights: LivingLight[];
+  strips: LivingStrip[];
+  plants: LivingPlant[];
+  /** The depth map's range in metres (value 0 .. value 1), from `masks.depth.note`. */
+  depthRange: [number, number] | null;
 }
 
 /** Where a frame of `frameW` x `frameH` lands inside a box under object-fit: cover. */
@@ -325,6 +388,93 @@ function filesPlate(value: unknown, plate: Omit<RoomPlate, 'src' | 'widths'>): R
   return { src: sized[0].f, widths: sized.map((s) => s.w), ...plate };
 }
 
+const LIVING_MASKS: readonly LivingMaskName[] = ['plants', 'sky', 'glass', 'windows', 'lamps', 'coves', 'emitter', 'depth', 'glow', 'dim'];
+
+function readPxAt(raw: unknown): Record<number, number> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: Record<number, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const w = Number(k);
+    if (Number.isInteger(w) && w > 0 && isNum(v) && v >= 0) out[w] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** A `masks.<name>` entry: a -<width>.webp file and the widths it is published at. */
+function readLayer(raw: unknown): LivingLayer | null {
+  const m = raw as { src?: unknown; widths?: unknown; featherPxAt?: unknown; zonePxAt?: unknown } | null;
+  if (!m || !safeSrc(m.src) || !/-\d+\.webp$/.test(m.src)) return null;
+  const own = Number(/-(\d+)\.webp$/.exec(m.src)![1]);
+  const listed = Array.isArray(m.widths) ? m.widths.filter((w): w is number => Number.isInteger(w) && w > 0) : [];
+  const widths = [...new Set(listed.length ? listed : [own])].sort((a, b) => a - b);
+  const out: LivingLayer = { src: m.src, widths };
+  const feather = readPxAt(m.featherPxAt);
+  if (feather) out.featherPxAt = feather;
+  const zone = readPxAt(m.zonePxAt);
+  if (zone) out.zonePxAt = zone;
+  return out;
+}
+
+const isId = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 255;
+const str = (s: unknown, fallback = ''): string => (typeof s === 'string' ? s : fallback);
+
+/**
+ * The living-room section of an anchors file (`masks`, `lights`, `strips`,
+ * `plants`, and for the consult room's Blender format the `files.glow_*`
+ * boosts), read defensively. Null when the render publishes none of it.
+ */
+export function parseLiving(raw: Record<string, unknown>): RoomLiving | null {
+  const masksRaw = (raw.masks ?? {}) as Record<string, unknown>;
+  const masks: RoomLiving['masks'] = {};
+  for (const name of LIVING_MASKS) {
+    const layer = readLayer(masksRaw[name]);
+    if (layer) masks[name] = layer;
+  }
+  const boosts: RoomLiving['boosts'] = {};
+  const files = (raw.files ?? {}) as Record<string, unknown>;
+  for (const [name, key] of [['neon', 'glow_neon'], ['under', 'glow_under'], ['emitter', 'glow_emitter']] as const) {
+    const plate = filesPlate(files[key], {});
+    if (plate) boosts[name] = { src: plate.src, widths: [...(plate.widths ?? [])].sort((a, b) => a - b) };
+  }
+
+  const lights: LivingLight[] = [];
+  for (const l of Array.isArray(raw.lights) ? (raw.lights as Record<string, unknown>[]) : []) {
+    if (!l || !isId(l.id) || !isNum(l.cx) || !isNum(l.cy)) continue;
+    const light: LivingLight = {
+      id: l.id,
+      name: str(l.name),
+      kind: str(l.kind, 'lamp'),
+      motion: str(l.motion, 'steady'),
+      cx: l.cx,
+      cy: l.cy,
+      rx: isNum(l.rx) ? l.rx : 0,
+      ry: isNum(l.ry) ? l.ry : 0,
+    };
+    if (isNum(l.tempK)) light.tempK = l.tempK;
+    if (isNum(l.visible)) light.visible = l.visible;
+    lights.push(light);
+  }
+  const strips: LivingStrip[] = [];
+  for (const s of Array.isArray(raw.strips) ? (raw.strips as Record<string, unknown>[]) : []) {
+    if (!s || !isId(s.id) || !isNum(s.lengthM) || !(s.lengthM > 0)) continue;
+    strips.push({ id: s.id, name: str(s.name), kind: str(s.kind), shape: str(s.shape, 'path'), lengthM: s.lengthM });
+  }
+  const plants: LivingPlant[] = [];
+  for (const p of Array.isArray(raw.plants) ? (raw.plants as Record<string, unknown>[]) : []) {
+    if (!p || !isId(p.id) || !isPoint(p.base) || !isPoint(p.tip)) continue;
+    const plant: LivingPlant = { id: p.id, name: str(p.name), kind: str(p.kind, 'plant'), base: p.base, tip: p.tip };
+    if (isNum(p.tipWeight)) plant.tipWeight = p.tipWeight;
+    plants.push(plant);
+  }
+
+  const note = str((masksRaw.depth as { note?: unknown } | undefined)?.note);
+  const range = /0\s*=\s*([\d.]+)\s*m\s*\.\.\s*1\s*=\s*([\d.]+)\s*m/.exec(note);
+  const depthRange: [number, number] | null = range && Number(range[2]) > Number(range[1]) ? [Number(range[1]), Number(range[2])] : null;
+
+  if (!Object.keys(masks).length && !Object.keys(boosts).length) return null;
+  return { masks, boosts, lights, strips, plants, depthRange };
+}
+
 /**
  * Reads a fetched anchors file defensively, in either format (see the top of
  * this file): anything malformed is dropped, and a file without a usable frame
@@ -334,12 +484,14 @@ export function parseAnchors(value: unknown): RoomAnchors | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const points = readPoints(raw.points);
+  const living = parseLiving(raw);
   const base = {
     surfaces: readSurfaces(raw.surfaces),
     points,
     ellipses: readEllipses(raw.ellipses),
     ref: readRef(raw, points),
     curves: readCurves(raw.curves),
+    ...(living ? { living } : {}),
   };
 
   const frame = raw.frame as { w?: unknown; h?: unknown; focus?: unknown } | undefined;
@@ -414,6 +566,12 @@ export interface RoomContext {
   readonly fallback: boolean;
   readonly status: RoomStatus;
   toPx(point: Point): Point;
+  /**
+   * How far HTML pinned at this point moves with the living room's parallax,
+   * as a multiple of the overlay's --living-dx/--living-dy (0 while the room
+   * is still, or where the parallax does not reach).
+   */
+  parallaxAt?(point: Point): number;
 }
 
 const KEY = Symbol('evia.room');

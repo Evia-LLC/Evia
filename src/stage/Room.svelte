@@ -37,10 +37,19 @@
   focus    which part of the picture to keep when cropping, as fractions
            (0.5, 0.5 is the centre). Defaults to the render's own focus.
   blurred  use the pre-blurred plate (or blur the base) for glass backdrops.
+  living   bring the plate to life (default on): once the plate is on screen,
+           the living renderer (./living, loaded lazily) lays a WebGL2 canvas
+           over it that redraws it with its small motions - lamps flickering,
+           LEDs breathing, plants swaying, city windows switching, a slow sky,
+           a touch of parallax - from the masks the render publishes
+           (anchors `masks`). Still under reduced motion (the system's or the
+           app's), paused while hidden or off screen. Without WebGL2 the CSS
+           fallback breathes the glow layer and pulses the lamps instead.
+           A blurred room without a pre-blurred plate (Routine) stays still.
   onstatus told 'loading' | 'plate' | 'stand-in' as that changes.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import {
     FALLBACK_ANCHORS,
     coverFit,
@@ -59,6 +68,7 @@
     type RoomStatus,
     type RoomVariant,
   } from './room-anchors.ts';
+  import type { LivingHandle, LivingState } from './living/controller.ts';
 
   interface Props {
     room: RoomId;
@@ -68,6 +78,8 @@
     rect?: { x: number; y: number; w: number; h: number } | null;
     focus?: Point;
     blurred?: boolean;
+    /** Animate the plate from its masks (lamps, LEDs, plants, city, sky, parallax). */
+    living?: boolean;
     /** Show the fallback room even when a render exists (for review). */
     forceFallback?: boolean;
     onstatus?: (status: RoomStatus) => void;
@@ -83,6 +95,7 @@
     rect = null,
     focus,
     blurred = false,
+    living: livingProp = true,
     forceFallback = false,
     onstatus,
     class: className = '',
@@ -98,8 +111,11 @@
   /* The stand-in has been faded over and can go. */
   let covered = $state(false);
   let broken = $state(false);
-  let width = $state(0);
-  let height = $state(0);
+  /* The box's size in fractional px (the <img> is drawn at that size; whole-px clientWidth would put
+     a large plate's anchors, and the living canvas, up to a pixel off the picture). */
+  let box = $state.raw<DOMRectReadOnly | null>(null);
+  const width = $derived(box?.width ?? 0);
+  const height = $derived(box?.height ?? 0);
 
   $effect(() => {
     const id = room;
@@ -157,19 +173,113 @@
     if (!live || !loaded) return [];
     const list = loaded.plates?.length ? loaded.plates : [{ src: 'room.webp', kind: 'base' as const }];
     if (blurred && list.some((p) => p.kind === 'blur')) return list.filter((p) => p.kind === 'blur');
-    return list.filter((p) => p.kind !== 'blur');
+    const shown = list.filter((p) => p.kind !== 'blur');
+    // The CSS fallback's breathing: the LEDs' own light (the glow layer) swelling a little over the plate.
+    const glow = cssLiving && !blurred ? loaded.living?.masks.glow : undefined;
+    if (glow && !shown.some((p) => p.kind === 'glow')) {
+      shown.push({ src: glow.src, kind: 'glow', blend: 'plus-lighter', animate: 'boost', widths: glow.widths });
+    }
+    return shown;
   });
 
   const resolve = (src: string) => (/^(https?:)?\//.test(src) ? src : `/env/${room}/${src}`);
   /* The width the plates are drawn at, for srcset (unknown until measured). */
   const sizes = $derived(plateFit && plateFit.w > 0 ? `${Math.ceil(plateFit.w)}px` : '100vw');
 
+  /* The plate <img> on screen (the living canvas draws from the same file). */
+  let plateImg = $state.raw<HTMLImageElement | null>(null);
+
   function markReady(img: HTMLImageElement) {
     const done = () => {
-      if (img.isConnected) ready = true;
+      if (!img.isConnected) return;
+      plateImg = img;
+      ready = true;
     };
     void img.decode().then(done, done);
   }
+
+  /* ---- the living plate ---------------------------------------------------- */
+
+  let canvasEl = $state<HTMLCanvasElement | null>(null);
+  let overlayEl = $state<HTMLDivElement | null>(null);
+  let livingHandle = $state.raw<LivingHandle | null>(null);
+  let livingState = $state<LivingState | 'off'>('off');
+  /* How far a point of the plate moves with the parallax (for HTML pinned to it). */
+  let parallaxAt = $state.raw<((point: Point) => number) | null>(null);
+
+  /** A blurred room animates only from a pre-blurred plate (the sidebar strip); Routine's CSS blur stays still. */
+  const livingWanted = $derived(
+    livingProp &&
+      live &&
+      !!loaded?.living &&
+      (!blurred || !!loaded.plates?.some((p) => p.kind === 'blur')),
+  );
+
+  $effect(() => {
+    const canvas = canvasEl;
+    const img = plateImg;
+    const anchors = loaded;
+    if (!livingWanted || !ready || !canvas || !img || !anchors) return;
+    let handle: LivingHandle | null = null;
+    let gone = false;
+    // The geometry follows through setGeometry below; a resize must not remount the renderer.
+    const geometry = untrack(() => (plateFit ? { fit: plateFit, boxW: width, boxH: height } : null));
+    if (!geometry) return;
+    // After the page has painted: the room is already on screen as a picture.
+    const w = window as Window & { requestIdleCallback?: Window['requestIdleCallback'] };
+    const idle = (cb: () => void): (() => void) => {
+      if (w.requestIdleCallback) {
+        const id = w.requestIdleCallback(cb, { timeout: 1200 });
+        return () => w.cancelIdleCallback(id);
+      }
+      const id = setTimeout(cb, 300);
+      return () => clearTimeout(id);
+    };
+    const cancelIdle = idle(() => {
+      void import('./living/controller.ts').then(({ mountLiving }) => {
+        if (gone) return;
+        handle = mountLiving({
+          host: canvas.parentElement as HTMLElement,
+          canvas,
+          overlay: overlayEl,
+          room: untrack(() => room),
+          anchors,
+          plateUrl: img.currentSrc || img.src,
+          resolve,
+          blurred: untrack(() => blurred),
+          geometry,
+          onstate: (next) => (livingState = next),
+          onparallax: (fn) => (parallaxAt = fn),
+        });
+        livingHandle = handle;
+      });
+    });
+    return () => {
+      gone = true;
+      cancelIdle();
+      handle?.destroy();
+      livingHandle = null;
+      livingState = 'off';
+      parallaxAt = null;
+    };
+  });
+
+  $effect(() => {
+    if (livingHandle && plateFit) livingHandle.setGeometry({ fit: plateFit, boxW: width, boxH: height });
+  });
+
+  /* Without WebGL2 (or after a lost context): the CSS fallback's breathing glow and lamp halos. */
+  const cssLiving = $derived(livingState === 'unsupported' && !!loaded?.living);
+  const halos = $derived.by(() => {
+    if (!cssLiving || !loaded?.living || !plateFit) return [];
+    return loaded.living.lights
+      .filter((l) => (l.motion === 'flicker' || l.motion === 'breathe') && (l.visible ?? 1) > 0.05)
+      .map((l) => {
+        const [x, y] = toPx(plateFit, [l.cx, l.cy]);
+        const r = Math.max(6, Math.max(l.rx, 0.004) * plateFit.w * 7);
+        return { id: l.id, motion: l.motion, x, y, r };
+      });
+  });
 
   setRoomContext({
     get room() {
@@ -188,6 +298,7 @@
       return status;
     },
     toPx: (point: Point) => toPx(fit, point),
+    parallaxAt: (point: Point) => (parallaxAt && !fallback ? parallaxAt(point) : 0),
   });
 
   /* The fallback's wall panels sit on the same quads as the text, so a page's
@@ -218,9 +329,10 @@
   data-variant={variant}
   data-status={status}
   data-fallback={fallback ? 'true' : null}
+  data-living={livingWanted ? livingState : null}
   class:is-blurred={blurred}
-  bind:clientWidth={width}
-  bind:clientHeight={height}
+  class:is-living={livingState === 'live'}
+  bind:contentRect={box}
 >
   {#if !covered}
     <div class="ev-room__fallback" aria-hidden="true">
@@ -275,8 +387,26 @@
     </div>
   {/if}
 
+  {#if livingWanted && plates.length && plateFit}
+    <canvas class="ev-room__living" class:is-live={livingState === 'live'} bind:this={canvasEl} aria-hidden="true"></canvas>
+  {/if}
+  {#if halos.length}
+    <div class="ev-room__halos" aria-hidden="true">
+      {#each halos as h (h.id)}
+        <span
+          class="ev-room__halo ev-room__halo--{h.motion}"
+          style:left="{h.x - h.r}px"
+          style:top="{h.y - h.r}px"
+          style:width="{h.r * 2}px"
+          style:height="{h.r * 2}px"
+          style:animation-delay="{-h.id * 1.7}s"
+        ></span>
+      {/each}
+    </div>
+  {/if}
+
   {#if children}
-    <div class="ev-room__overlay">{@render children()}</div>
+    <div class="ev-room__overlay" bind:this={overlayEl}>{@render children()}</div>
   {/if}
 </div>
 
@@ -344,11 +474,57 @@
   .ev-room__glow {
     animation: ev-room-breathe var(--dur-ambient) var(--ease-in-out) infinite alternate;
   }
-  /* An extra on top of the plate as rendered (the consult room's LEDs): from
-     nothing to a little, slowly (scan.md section 9). */
+  /* An extra on top of the plate as rendered (the consult room's LEDs, the
+     lounge's glow layer in the CSS fallback): from nothing to a little and
+     back over 8 s, about a tenth of the LEDs' light (scan.md and home.md
+     section 9: +-5 %, 0.9 <-> 1.0). */
   .ev-room__plate.is-boost {
     opacity: 0;
-    animation: ev-room-boost 8s var(--ease-in-out) infinite alternate;
+    animation: ev-room-boost 4s var(--ease-in-out) infinite alternate;
+  }
+
+  /* The living plate: over the picture, under the overlays. Its first frame is
+     the plate exactly, so it fades in without a seam. */
+  .ev-room__living {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 600ms var(--ease-out);
+  }
+  .ev-room__living.is-live {
+    opacity: 1;
+  }
+  /* While it draws, the plates' own CSS breathing under it has nothing to do. */
+  .is-living .ev-room__plate.is-breathing,
+  .is-living .ev-room__plate.is-boost {
+    animation: none;
+  }
+
+  /* The CSS fallback's lamps: a warm halo breathing (globes) or shivering (candles). */
+  .ev-room__halos {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .ev-room__halo {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(255, 186, 120, 0.3), rgba(255, 170, 110, 0.1) 55%, transparent);
+    mix-blend-mode: plus-lighter;
+    opacity: 0.46;
+    animation: ev-room-lamp 3.5s var(--ease-in-out) infinite alternate;
+  }
+  .ev-room__halo--flicker {
+    animation: ev-room-candle 13s var(--ease-in-out) infinite;
+  }
+  @supports not (mix-blend-mode: plus-lighter) {
+    .ev-room__halo {
+      mix-blend-mode: screen;
+    }
   }
 
   .ev-room__overlay {
@@ -597,7 +773,7 @@
       opacity: 0;
     }
     to {
-      opacity: 0.3;
+      opacity: 0.12;
     }
   }
   @keyframes ev-room-breathe {
@@ -608,14 +784,50 @@
       opacity: 1;
     }
   }
+  @keyframes ev-room-lamp {
+    from {
+      opacity: 0.42;
+    }
+    to {
+      opacity: 0.5;
+    }
+  }
+  /* Irregular, small and slow (a change every two seconds or so): never a flash. */
+  @keyframes ev-room-candle {
+    0% {
+      opacity: 0.47;
+    }
+    17% {
+      opacity: 0.51;
+    }
+    33% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    68% {
+      opacity: 0.44;
+    }
+    84% {
+      opacity: 0.49;
+    }
+    100% {
+      opacity: 0.47;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .ev-room__plate.is-breathing,
     .ev-room__plate.is-boost,
     .ev-room__glow {
       animation: none;
     }
-    .ev-room__stack {
+    .ev-room__stack,
+    .ev-room__living {
       transition: none;
+    }
+    .ev-room__halos {
+      display: none;
     }
   }
   :global([data-reduced-motion='true']) .ev-room__plate.is-breathing,
@@ -623,7 +835,11 @@
   :global([data-reduced-motion='true']) .ev-room__glow {
     animation: none;
   }
-  :global([data-reduced-motion='true']) .ev-room__stack {
+  :global([data-reduced-motion='true']) .ev-room__stack,
+  :global([data-reduced-motion='true']) .ev-room__living {
     transition: none;
+  }
+  :global([data-reduced-motion='true']) .ev-room__halos {
+    display: none;
   }
 </style>

@@ -24,6 +24,7 @@
   import { listVoiceOptions, previewVoice, refreshVoice, signOut } from '@/state/controller.ts';
   import { forgetIntro } from '@/lib/intro.ts';
   import { setSoundEnabled, soundEnabled } from '@/lib/sound.ts';
+  import { requestTilt, stopTilt, tiltAvailable, tiltEnabled, tiltRefused } from '@/stage/living/input.ts';
   import type { ExplanationStyle, MemoryRecord, SkinType, PregnancyStatus } from '@shared/types.ts';
   import { PREGNANCY_STATUSES, PREGNANCY_STATUS_LABELS } from '@shared/types.ts';
   import Card from '@/ui/Card.svelte';
@@ -86,6 +87,24 @@
   });
   let voiceOptions = $state<Array<{ uri: string; name: string; lang: string }>>([]);
   let sound = $state(soundEnabled());
+  /* The rooms' parallax on a phone follows its tilt. iOS asks first, and only from a tap, so the
+     switch is where the prompt comes from; elsewhere tilt starts on the first touch and this turns it off. */
+  const TILT_REFUSED =
+    'Motion access was not allowed, so the room keeps still when the phone moves. To change that, allow motion for this site in the browser’s settings, then reload.';
+  const tiltShown = tiltAvailable() && !!window.matchMedia?.('(pointer: coarse)').matches;
+  let tilt = $state(tiltEnabled());
+  let tiltNote = $state(tiltRefused() ? TILT_REFUSED : '');
+  /* Refused: the browser will not ask again this visit, so the switch rests (the note says why). */
+  let tiltDenied = $state(tiltRefused());
+  /* The system's reduced motion keeps the rooms still too: no prompt for a room that cannot move. */
+  const systemMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  let systemReduced = $state(!!systemMotion?.matches);
+  $effect(() => {
+    if (!systemMotion) return;
+    const onChange = () => (systemReduced = systemMotion.matches);
+    systemMotion.addEventListener?.('change', onChange);
+    return () => systemMotion.removeEventListener?.('change', onChange);
+  });
 
   const SKIN_TYPES: Array<{ value: SkinType; label: string }> = [
     { value: 'unknown', label: 'Not sure yet' },
@@ -177,6 +196,21 @@
   function setSound(on: boolean) {
     sound = on;
     setSoundEnabled(on);
+  }
+
+  /* Called from the switch's tap: requestTilt shows iOS's prompt within that gesture. */
+  function setTilt(on: boolean) {
+    if (!on) {
+      stopTilt();
+      tilt = false;
+      tiltNote = '';
+      return;
+    }
+    void requestTilt().then((granted) => {
+      tilt = granted;
+      tiltDenied = !granted && tiltRefused();
+      tiltNote = granted ? '' : TILT_REFUSED;
+    });
   }
 
   const kindLabel = (kind: string) => kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, ' ');
@@ -318,6 +352,19 @@
             description="Damps the room's movement, the transitions, and the way pages arrive."
             bind:checked={reducedMotion}
           />
+          {#if tiltShown}
+            <div class="toggle-with-note">
+              <Toggle
+                label="Tilt the room"
+                description="The room shifts a little as the phone tilts. The readings only move the picture; nothing is stored or sent. For this visit."
+                bind:checked={tilt}
+                disabled={reducedMotion || systemReduced || tiltDenied}
+                onchange={setTilt}
+              />
+              {#if tiltNote}<p class="toggle-note" role="status">{tiltNote}</p>
+              {:else if systemReduced && !reducedMotion}<p class="toggle-note">Off while this device asks for reduced motion.</p>{/if}
+            </div>
+          {/if}
           <Toggle
             label="Room sound"
             description="A low tone under the room, a tick for the countdown, one note when a reading lands. Remembered on this device."
