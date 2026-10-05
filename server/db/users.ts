@@ -11,6 +11,10 @@ import {
   type SkinType,
   type UserSummary,
 } from '../../shared/types.ts';
+import {
+  validatePreferencesPatch,
+  validateProfilePatch,
+} from '../../shared/boundary-validators.ts';
 
 const SESSION_DAYS = 30;
 
@@ -176,8 +180,12 @@ export async function updateProfile(
   userId: string,
   patch: Partial<SkinProfile>,
 ): Promise<SkinProfile> {
+  // P1-T06: allowlisted at the repository boundary too, so a future caller
+  // cannot bypass the route. Invalid values throw ValidationError (400)
+  // before any write; unknown keys are ignored, never stored.
+  const clean = validateProfilePatch(patch) as Partial<SkinProfile>;
   const current = await getProfile(userId);
-  const next: SkinProfile = { ...current, ...patch, updatedAt: nowIso() };
+  const next: SkinProfile = { ...current, ...clean, updatedAt: nowIso() };
   await run(
     `UPDATE skin_profiles
         SET skin_type = ?, fitzpatrick = ?, concerns_json = ?, sensitivities_json = ?,
@@ -220,7 +228,9 @@ export async function updatePreferences(
   userId: string,
   patch: Partial<Preferences>,
 ): Promise<Preferences> {
-  const next = { ...(await getPreferences(userId)), ...patch };
+  // P1-T06: same repository-boundary allowlist as updateProfile.
+  const clean = validatePreferencesPatch(patch) as Partial<Preferences>;
+  const next = { ...(await getPreferences(userId)), ...clean };
   await run(
     `UPDATE preferences
         SET explanation_style = ?, voice_enabled = ?, voice_uri = ?, reduced_motion = ?,

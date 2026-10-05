@@ -838,6 +838,7 @@ above as the contract and record scoped deviations here before implementation.
 
 | P1-T04 | DONE | PR #18: products ownership (`013_product_ownership.sql`, owner_id NULL=shared), assess/attach 404-as-miss, export/delete scoped | CI `checks` pass (Node 24) incl. test:local + test:pg; 7 new tests; branch p1-t04 squash-merged after green CI | Closed; rebrand PR #15 still deliberately deferred to post-Phase-1 |
 | P1-T05 | DONE | `server/lib/image-input.ts` (new), app/api/analysis/web-lambda wiring, 2 new test files (44 tests) | CI `checks` pass on branch (Node 24); typecheck+check 0; new 44/44; merged via PR after green CI | Closed; face/label/progress share validated bytes; /api/scans off 12mb |
+| P1-T06 | IN PROGRESS | `shared/boundary-validators.ts` (new), api/users/consents validation, `test/request-validation.test.ts` (16 tests) | typecheck 0, check 0; new 16/16 scoped; full lane 0 failed (PGlite-boot flakes only) | Branch p1-t06; server-owned consent evidence; allowlisted writes |
 | P6-T01a | TODO | — | Modernization track: Node LTS, majors, CI actions; per-upgrade gate evidence | SCHEDULED: separate track after P6-T01, never interleaved with Phase 1 |
 
 Allowed statuses: TODO, IN PROGRESS, BLOCKED (named prerequisite), DONE, or DEFERRED
