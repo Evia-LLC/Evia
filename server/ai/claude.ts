@@ -5,6 +5,8 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { log } from '../lib/log.ts';
+import { withReservation } from './budget.ts';
+import { newId } from '../lib/ids.ts';
 
 /*
  * Sonnet by default. The persona plus a user's context block is a few
@@ -27,11 +29,33 @@ export function modelAvailable(): boolean {
 }
 
 function getClient(): Anthropic {
-  if (!client) client = new Anthropic();
+  if (!client) client = new Anthropic({ maxRetries: 0 });
   return client;
 }
 
+/** Every Anthropic request is admitted before I/O and settled before parsing.
+ * UTF-8 bytes plus maximum output is deliberately conservative, not a dollar cap.
+ * Include cache reads/writes in token usage: they still consume provider resources.
+ */
+async function paidMessage(userId: string, params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
+  if (!userId) throw new Error('A budget identity is required.');
+  const estimatedUnits = Buffer.byteLength(JSON.stringify(params), 'utf8') + params.max_tokens;
+  const { result } = await withReservation({
+    operationId: `anthropic:${newId()}`, userId, provider: 'anthropic',
+    unit: 'chat-tokens', estimatedUnits,
+  }, async () => {
+    const response = await getClient().messages.create(params);
+    return { result: response, actual: {
+      inputTokens: response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0)
+        + (response.usage.cache_creation_input_tokens ?? 0),
+      outputTokens: response.usage.output_tokens,
+    } };
+  });
+  return result;
+}
+
 export interface StructuredCallOptions {
+  userId: string;
   /** Frozen prefix — carries the cache breakpoint. Must not vary per turn. */
   personaPrefix: string;
   /** Stable-per-user context. Placed after the persona, before the volatile turn. */
@@ -56,9 +80,8 @@ export interface StructuredCallResult<T> {
 export async function structuredTurn<T>(
   opts: StructuredCallOptions,
 ): Promise<StructuredCallResult<T>> {
-  const anthropic = getClient();
 
-  const response = await anthropic.messages.create({
+  const response = await paidMessage(opts.userId, {
     model: MODEL,
     max_tokens: opts.maxTokens ?? 2000,
     system: [
@@ -110,9 +133,8 @@ export async function structuredTurn<T>(
  * Cheap classification pass. Runs on the small model because it is a labelling
  * job, not a reasoning one, and it sits on the latency path of every turn.
  */
-export async function classifyTurn<T>(prompt: string, schema: unknown): Promise<T> {
-  const anthropic = getClient();
-  const response = await anthropic.messages.create({
+export async function classifyTurn<T>(prompt: string, schema: unknown, userId: string): Promise<T> {
+  const response = await paidMessage(userId, {
     model: CLASSIFIER_MODEL,
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
@@ -134,9 +156,9 @@ export async function describeSkinImage(
   imageBase64: string,
   mediaType: 'image/jpeg' | 'image/png',
   metricSummary: string,
+  userId: string,
 ): Promise<string[]> {
-  const anthropic = getClient();
-  const response = await anthropic.messages.create({
+  const response = await paidMessage(userId, {
     model: MODEL,
     max_tokens: 800,
     system:
@@ -185,10 +207,10 @@ export async function describeSkinImage(
  */
 export async function readProductLabel(
   imageBase64: string,
-  mediaType: 'image/jpeg' | 'image/png' = 'image/jpeg',
+  mediaType: 'image/jpeg' | 'image/png',
+  userId: string,
 ): Promise<{ ingredients: string[]; rawText: string; confidence: number }> {
-  const anthropic = getClient();
-  const response = await anthropic.messages.create({
+  const response = await paidMessage(userId, {
     model: MODEL,
     max_tokens: 2000,
     system:

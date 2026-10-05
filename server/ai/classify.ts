@@ -54,11 +54,11 @@ const CLASSIFY_SCHEMA = {
 export async function classify(
   message: string,
   recent: string[],
-  opts: { cloud?: boolean } = {},
+  opts: { cloud?: boolean; userId?: string } = {},
 ): Promise<TurnClassification> {
   const local = classifyLocally(message);
   if (process.env.ELOHIM_MODEL_CLASSIFIER !== '1') return local;
-  if (opts.cloud !== true) return local;
+  if (opts.cloud !== true || !opts.userId) return local;
 
   try {
     const prompt =
@@ -66,8 +66,7 @@ export async function classify(
       `consultation.\n\nRecent turns:\n${recent.slice(-4).join('\n')}\n\n` +
       `Final user message:\n${message}`;
     const out = await classifyTurn<Omit<TurnClassification, 'escalate' | 'urgent'>>(
-      prompt,
-      CLASSIFY_SCHEMA,
+      prompt, CLASSIFY_SCHEMA, opts.userId,
     );
     // Both safety flags stay local: a control the model can talk its way out of
     // is not a control.

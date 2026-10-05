@@ -92,7 +92,7 @@ app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
       previousText:
         typeof req.body?.previous_text === 'string' ? req.body.previous_text.slice(0, 600) : undefined,
       nextText: typeof req.body?.next_text === 'string' ? req.body.next_text.slice(0, 600) : undefined,
-    });
+    }, 'guest:voice');
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       audio: line.audio.toString('base64'),
@@ -114,6 +114,10 @@ app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
       })) }),
     });
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('over budget:')) {
+      res.status(429).json({ error: 'The shared voice allowance is exhausted. Try again later.' });
+      return;
+    }
     if (err instanceof VoiceUnavailable) {
       res.status(503).json({ error: err.message });
       return;

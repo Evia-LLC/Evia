@@ -531,7 +531,7 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
       previousText:
         typeof req.body?.previous_text === 'string' ? req.body.previous_text.slice(0, 600) : undefined,
       nextText: typeof req.body?.next_text === 'string' ? req.body.next_text.slice(0, 600) : undefined,
-    });
+    }, req.userId!);
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       audio: line.audio.toString('base64'),
@@ -559,6 +559,10 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
           }),
     });
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('over budget:')) {
+      res.status(429).json({ error: 'The shared voice allowance is exhausted. Try again later.' });
+      return;
+    }
     if (err instanceof VoiceUnavailable) {
       res.status(503).json({ error: err.message });
       return;
@@ -731,9 +735,13 @@ apiRouter.post('/products/read-label', visionLimiter, async (req, res) => {
   try {
     // Forward the canonical re-encode of the validated bytes, never the raw
     // client string.
-    const result = await log.timed('products', 'label read', () => readProductLabel(image.bytes.toString('base64')));
+    const result = await log.timed('products', 'label read', () => readProductLabel(image.bytes.toString('base64'), image.type === 'png' ? 'image/png' : 'image/jpeg', req.userId!));
     res.json(result);
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('over budget:')) {
+      res.status(429).json({ error: 'The shared analysis allowance is exhausted. Try again later.' });
+      return;
+    }
     log.error('products', 'label read failed', { error: describeApiError(err) });
     res.status(502).json({ error: 'I could not read that label.' });
   } finally {

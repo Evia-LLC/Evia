@@ -31,6 +31,8 @@
 import { createHash } from 'node:crypto';
 import { row, run } from '../db/index.ts';
 import { log } from '../lib/log.ts';
+import * as budget from '../ai/budget.ts';
+import { newId } from '../lib/ids.ts';
 
 /** ElevenLabs. Overridable for a different provider with the same contract. */
 const DEFAULT_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech';
@@ -313,6 +315,7 @@ async function synthesiseSentence(
   config: VoiceConfig,
   sentence: string,
   context: SpeakContext,
+  budgetUserId: string,
 ): Promise<{ audio: Buffer; contentType: string; words: SpokenWord[]; duration: number; cached: boolean }> {
   const key = cacheKey(config, sentence);
 
@@ -331,7 +334,8 @@ async function synthesiseSentence(
     };
   }
 
-  const response = await fetch(
+  const dispatch = async () => {
+    const response = await fetch(
     `${config.endpoint}/${config.voiceId}/with-timestamps?output_format=mp3_44100_128`,
     {
       method: 'POST',
@@ -359,18 +363,36 @@ async function synthesiseSentence(
         },
       }),
     },
-  );
+    );
 
-  if (!response.ok) {
+    if (!response.ok) {
     const detail = await response.text().catch(() => '');
     log.error('voice', 'synthesis failed', {
       status: response.status,
       detail: detail.slice(0, 300),
     });
-    throw new Error(`Voice synthesis failed (${response.status}).`);
-  }
+      throw new budget.BudgetDispatchError(`Voice synthesis failed (${response.status}).`, true);
+    }
+    return (await response.json()) as AlignedResponse;
+  };
 
-  const payload = (await response.json()) as AlignedResponse;
+  const admitted = await budget.withReservation({
+    operationId: `voice:${newId()}`,
+    userId: budgetUserId,
+    provider: 'elevenlabs',
+    unit: 'tts-chars',
+    estimatedUnits: sentence.length,
+  }, async () => {
+    try {
+      const result = await dispatch();
+      return { result, actual: { units: sentence.length } };
+    } catch (err) {
+      if (err instanceof budget.BudgetDispatchError) throw err;
+      throw new budget.BudgetDispatchError((err as Error).message, true);
+    }
+  });
+
+  const payload = admitted.result;
   const audio = Buffer.from(payload.audio_base64, 'base64');
   const alignment = payload.alignment ?? payload.normalized_alignment ?? null;
   let words = alignment ? wordsFromAlignment(sentence, alignment) : [];
@@ -408,7 +430,7 @@ async function synthesiseSentence(
  * Throws `VoiceUnavailable` when unconfigured so the caller can degrade
  * honestly rather than returning silence that looks like a failed download.
  */
-export async function speakLine(text: string, context: SpeakContext = {}): Promise<SpokenLine> {
+export async function speakLine(text: string, context: SpeakContext = {}, budgetUserId = 'system:voice'): Promise<SpokenLine> {
   const config = voiceConfig();
   if (!config) throw new VoiceUnavailable();
 
@@ -424,7 +446,7 @@ export async function speakLine(text: string, context: SpeakContext = {}): Promi
     const piece = await synthesiseSentence(config, sentence, {
       previousText: i > 0 ? sentences[i - 1] : context.previousText,
       nextText: i < sentences.length - 1 ? sentences[i + 1] : context.nextText,
-    });
+    }, budgetUserId);
     // Sentences are verbatim slices of the cleaned text, so indexOf finds
     // each one; the cursor keeps a repeated sentence from matching twice.
     const found = cleaned.indexOf(sentence, cursor);
