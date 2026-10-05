@@ -18,6 +18,10 @@ bands, so it ships lossless:
   $PY scripts/blender/lounge_post.py publish <out>/products_hero_final_0001.exr public/env/products-hero hero \
       --look hero --sizes 2552,1276 --no-layers --lossless
 Outputs: <out>/products_hero_<tier>_0001.exr (+ anchors json).
+Living-room masks for the web layer (plants/sway, daylight window, pendant, depth; mask_passes.py), ~5 min:
+  $LOCK scripts/blender/room_products_hero.py -- --passes masks --spp 256 --out /path/to/workdir
+  $PY scripts/blender/mask_post.py publish <out>/products_hero_masks.exr --out public/env/products-hero \
+      --prefix hero- --sizes 2552,1276 --anchors public/env/products-hero/anchors.json --depth 1276
 """
 import sys
 import os
@@ -163,6 +167,24 @@ def main():
     os.makedirs(out, exist_ok=True)
     W, H = (PLATE[0] // 2, PLATE[1] // 2) if tier == 'preview' else PLATE
     spp = int(argv[argv.index('--spp') + 1]) if '--spp' in argv else (16 if tier == 'preview' else 32)
+    if '--passes' in argv and argv[argv.index('--passes') + 1] == 'masks':
+        # living-room masks (mask_passes.py) at the published plate size (or --res WxH)
+        import mask_passes as MP
+        W, H = PLATE
+        if '--res' in argv:
+            W, H = (int(v) for v in argv[argv.index('--res') + 1].lower().split('x'))
+        scn, cam, anchors = build(W, H)
+        spec = dict(
+            plants=[dict(name=n, kind='plant', objects=[n] + [o.name for o in bpy.data.objects
+                                                              if o.name.startswith(n + '_stem')],
+                         leaf_objects=[n], base=tuple(bpy.data.objects[n].location)) for n in ('fern', 'rubber')],
+            lamps=[dict(name='pendant', object='pendant', kind='pendant', motion='breathe', tempK=2700)],
+            sky_objects=['daylight_plane'])
+        MP.render_masks(scn, cam.ob, W, H, int(argv[argv.index('--spp') + 1]) if '--spp' in argv else 128, out,
+                        'products_hero', spec, mist=(0.5, 12.0))
+        if '--no-render' not in argv:
+            MP.run('products_hero', out)
+        return
     scn, cam, anchors = build(W, H)
     scn.camera = cam.ob
     L.setup_cycles(scn, W, H, spp, 0.03 if tier == 'final' else 0.05, seed=7)

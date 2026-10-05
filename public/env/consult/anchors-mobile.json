@@ -1357,5 +1357,186 @@
    ],
    "note": "pre-blurred plate for frosted UI panels"
   }
- }
+ },
+ "masks": {
+  "_doc": "Living-room masks for animating the plate (scripts/blender/mask_passes.py + mask_post.py). Same pixel grid as the plate (normalised coordinates are shared). Data maps, NOT plates: never stack them as pictures. Lossless 8-bit WebP (value = byte / 255, ids exact); depth is lossy. See the room README.",
+  "plate": "mobile-plate-1080.webp",
+  "plants": {
+   "src": "mobile-mask-plants-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "leaf/stem coverage",
+   "g": "screen-space sway weight: (distance from the plant base / its camera depth) / swayScale; 0 at the pot .. 1 at the most mobile leaf tip in the scene; feathered to 0 at featherPx outside the silhouette",
+   "b": "plant id / 255 (plants[].id), 0 outside the feather zone",
+   "featherPxAt": {
+    "1080": 9,
+    "720": 6
+   },
+   "swayScale": 0.05558
+  },
+  "sky": {
+   "src": "mobile-mask-sky-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "open sky coverage (R=G=B)"
+  },
+  "glass": {
+   "src": "mobile-mask-glass-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "window glass seen directly (R=G=B)"
+  },
+  "windows": {
+   "src": "mobile-mask-windows-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "lit city windows / street lights, weighted by haze visibility",
+   "g": "per-window random id 0..1",
+   "b": "city coverage (skyline silhouette)"
+  },
+  "coves": {
+   "src": "mobile-mask-coves-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "LED strip / cove coverage",
+   "g": "distance along the strip 0..1 (strips[].lengthM), carried to zonePx",
+   "b": "strip id / 255 (strips[].id), same zone",
+   "zonePxAt": {
+    "1080": 28,
+    "720": 19
+   }
+  },
+  "emitter": {
+   "src": "mobile-mask-emitter-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "emitter rim + inlaid ring intensity",
+   "g": "angle around the pedestal axis 0..1 (0.5 = +X, counter-clockwise from above)",
+   "b": "radius / pedestal radius 0..1; 0 outside the glass top"
+  },
+  "depth": {
+   "src": "mobile-depth-720.webp",
+   "widths": [
+    720
+   ],
+   "lossless": false,
+   "r": "mist depth (R=G=B), linear",
+   "note": "0 = 0.5 m .. 1 = 40.0 m from the camera (linear mist pass of the mask render)"
+  }
+ },
+ "lights": [],
+ "strips": [
+  {
+   "id": 1,
+   "name": "halo_band",
+   "kind": "ring",
+   "group": "ceiling_halo",
+   "lengthM": 2.89,
+   "shape": "ring",
+   "depthM": 3.694,
+   "maskBox": [
+    0.20185,
+    0.26667,
+    0.83611,
+    0.31026
+   ],
+   "maskAreaPx": 46952
+  },
+  {
+   "id": 2,
+   "name": "halo_led",
+   "kind": "ring",
+   "group": "ceiling_halo",
+   "lengthM": 2.865,
+   "shape": "ring",
+   "depthM": 3.694,
+   "maskBox": [
+    0.19444,
+    0.2547,
+    0.84352,
+    0.3141
+   ],
+   "maskAreaPx": 9079
+  },
+  {
+   "id": 17,
+   "name": "ped_led_under",
+   "kind": "under",
+   "group": "pedestal",
+   "lengthM": 5.373,
+   "shape": "ring",
+   "depthM": 3.694,
+   "maskBox": [
+    0.0,
+    0.69744,
+    1.0,
+    0.77821
+   ],
+   "maskAreaPx": 24143
+  }
+ ],
+ "plants": [
+  {
+   "id": 1,
+   "name": "shrub_0",
+   "kind": "shrub",
+   "base": [
+    1.02665,
+    0.61708
+   ],
+   "tip": [
+    1.09941,
+    0.56478
+   ],
+   "reachM": 0.641,
+   "depthM": 11.879,
+   "tipWeight": 0.972,
+   "maskBox": [
+    0.93889,
+    0.55684,
+    1.0,
+    0.61453
+   ]
+  },
+  {
+   "id": 2,
+   "name": "shrub_1",
+   "kind": "shrub",
+   "base": [
+    0.89056,
+    0.61083
+   ],
+   "tip": [
+    0.99515,
+    0.56701
+   ],
+   "reachM": 0.713,
+   "depthM": 12.835,
+   "tipWeight": 1.0,
+   "maskBox": [
+    0.82778,
+    0.55299,
+    1.0,
+    0.60897
+   ]
+  }
+ ]
 }

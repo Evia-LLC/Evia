@@ -22,6 +22,12 @@ RENDER DRIVER. One render per process, always through the lock wrapper (serialis
       --look lounge --sizes 1080,720
   $PY scripts/blender/lounge_post.py publish <out>/cam_sidebar_window_final_0001.exr public/env/lounge \
       strip-window --look strip --sizes 640,320 --soft 320:1.2 --no-layers
+  # living-room masks (plants/sway, sky, glass, city windows, lamps, LED coves, depth) for the web layer's
+  # animation: same scene/camera/DOF at the published plate size, flat AOV shaders, 128 spp, ~3-6 min each
+  # (mask_passes.py), then encoded + merged into the anchors by mask_post.py (see public/env/lounge/README.md):
+  $LOCK $S -- --camera home --passes masks --spp 128 --out /path/to/workdir          # -> home_masks.exr/.json
+  $PY scripts/blender/mask_post.py publish <out>/home_masks.exr --out public/env/lounge --prefix home- \
+      --sizes 2560,1280 --anchors public/env/lounge/anchors.json
 
 Cameras: 'home' = L1 desktop Home plate (16:9; ref1 Home panel framed right-anchored inside a 10 % safe
 margin, recorded as refFrame in the anchors); 'home_mobile' = L2 phone portrait (same lounge, seating
@@ -1206,6 +1212,63 @@ def build_strip_scene():
     return sc, cam
 
 
+# ----------------------------------------------------------------------------- living-room masks
+# `--passes masks` (see mask_passes.py): which objects are plants, lamps, LED strips, glass and city.
+LAMP_KINDS = [  # (object-name regex, kind, suggested motion, colour temperature K)
+    (r'^candle_globe$', 'candle', 'flicker', 2300),
+    (r'^(l3_)?globe_\d+$', 'globe', 'breathe', 2500),
+    (r'^(l3_)?downlight_\d+$', 'downlight', 'steady', 3000),
+    (r'^city_red\d+$', 'beacon', 'blink', None),
+]
+STRIP_KINDS = [  # (object-name regex, kind, group)
+    (r'^cove_(led|wash)$', 'cove', 'island_cove'), (r'^portal_led$', 'cove', 'portal'),
+    (r'^niche_led$', 'outline', 'niche'), (r'^niche_backlight$', 'panel', 'niche'),
+    (r'^fluted_rim_led$', 'ring', 'fluted_planter'), (r'^low_planter_led$', 'edge', 'low_planter'),
+    (r'^(ottoman|banquette)_led$', 'floor', None), (r'^sign_(edge|led)$', 'edge', 'sign'),
+    (r'^l3_disc_(cove|cove_back|rim)$', 'cove', 'soffit'), (r'^l3_step_led_\d+$', 'plinth', 'plinth'),
+    (r'^l3_banq_led$', 'floor', None),
+]
+
+
+def mask_spec(sc):
+    """Object classification for mask_passes.render_masks (lounge scenes: home, home_mobile, sidebar_window)."""
+    import re
+    obs = sorted(bpy.data.objects, key=lambda o: o.name)
+    leaf = sc.mats['leaf'].name
+    plants = []
+    for o in obs:
+        if o.type != 'MESH' or not any(s.material and s.material.name == leaf for s in o.material_slots):
+            continue
+        if o.location.z < -10:          # 'tmp_rng' (built far below the floor only to advance the RNG)
+            continue
+        stems = [s.name for s in obs if re.match(rf'^{re.escape(o.name)}_(stem|trunk)\d+$', s.name)]
+        kind = 'shrub' if o.name.startswith('shrub_') else 'plant'
+        plants.append(dict(name=o.name, kind=kind, objects=[o.name] + stems, leaf_objects=[o.name],
+                           base=tuple(o.location)))
+    lamps = []
+    for rx, kind, motion, temp in LAMP_KINDS:
+        for o in obs:
+            if o.type == 'MESH' and re.match(rx, o.name):
+                lamps.append(dict(name=o.name, object=o.name, kind=kind, motion=motion, tempK=temp))
+    lamp_names = {d['object'] for d in lamps}
+    strips = []
+    seen = set()
+    for ob in sc.glow_objs:
+        if ob.name in seen or ob.name in lamp_names or ob.type not in ('MESH', 'CURVE') or not ob.visible_camera:
+            continue
+        seen.add(ob.name)
+        kind, group = 'strip', ob.name
+        for rx, k, g in STRIP_KINDS:
+            if re.match(rx, ob.name):
+                kind, group = k, (g or ob.name)
+                break
+        strips.append(dict(name=ob.name, object=ob.name, kind=kind, group=group))
+    return dict(plants=plants, lamps=lamps, strips=strips,
+                glass_mats=[sc.mats['glass'].name], pass_mats=[sc.mats['acrylic'].name],
+                facade_mats={sc.mats['facade'].name: dict(hash_channel='Red', haze=True)},
+                city_collections=['city'])
+
+
 CAMERAS = {
     # name: (object name, default preview res, default final res)
     'home': ('cam_home', (960, 540), (2560, 1440)),                  # L1 desktop Home plate (16:9, ref frame + margin)
@@ -1227,7 +1290,7 @@ def add_extra_cameras(sc, which):
 
 def parse_args():
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
-    a = dict(camera='home', tier='preview', out='.', spp=None, res=None, save_blend=None, no_render=False)
+    a = dict(camera='home', tier='preview', out='.', spp=None, res=None, save_blend=None, no_render=False, passes=None)
     i = 0
     while i < len(argv):
         k = argv[i]
@@ -1245,6 +1308,8 @@ def parse_args():
             a['save_blend'] = argv[i + 1]; i += 2
         elif k == '--no-render':
             a['no_render'] = True; i += 1
+        elif k == '--passes':
+            a['passes'] = argv[i + 1]; i += 2
         else:
             i += 1
     return a
@@ -1263,6 +1328,17 @@ def main():
         cam = sc.home if a['camera'] == 'home' else add_extra_cameras(sc, a['camera'])
     focus = {'home': P['focus'], 'home_mobile': 3.9, 'sidebar_window': 4.2}[a['camera']]
     L.set_dof(cam, focus, cam.cd.lens / P['aperture_mm'])
+    if a['passes'] == 'masks':
+        # living-room masks (mask_passes.py): same scene, camera and DOF, at the published plate's full size
+        import mask_passes as MP
+        W, H = a['res'] or res_final
+        MP.render_masks(sc.scn, cam.ob, W, H, a['spp'] or 64, a['out'], a['camera'], mask_spec(sc),
+                        mist=(0.5, 30.0))
+        if a['save_blend']:
+            bpy.ops.wm.save_as_mainfile(filepath=a['save_blend'])
+        if not a['no_render']:
+            MP.run(a['camera'], a['out'])
+        return
     tier = a['tier']
     if a['res']:
         W, H = a['res']

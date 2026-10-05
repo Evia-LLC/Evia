@@ -120,6 +120,30 @@
   "character_head": [
    0.52293,
    0.43394
+  ],
+  "lamp_candle_globe": [
+   0.30633,
+   0.49045
+  ],
+  "lamp_globe_0": [
+   0.8522,
+   0.53854
+  ],
+  "lamp_globe_1": [
+   0.71951,
+   0.57302
+  ],
+  "lamp_downlight_0": [
+   0.42423,
+   0.294
+  ],
+  "lamp_downlight_1": [
+   0.58653,
+   0.30905
+  ],
+  "lamp_downlight_2": [
+   0.78378,
+   0.31705
   ]
  },
  "ellipses": {
@@ -128,6 +152,42 @@
    "cy": 0.63257,
    "rx": 0.2031,
    "ry": 0.02035
+  },
+  "lamp_candle_globe": {
+   "cx": 0.30633,
+   "cy": 0.49045,
+   "rx": 0.01161,
+   "ry": 0.00535
+  },
+  "lamp_globe_0": {
+   "cx": 0.8522,
+   "cy": 0.53854,
+   "rx": 0.0164,
+   "ry": 0.00742
+  },
+  "lamp_globe_1": {
+   "cx": 0.71951,
+   "cy": 0.57302,
+   "rx": 0.01423,
+   "ry": 0.00658
+  },
+  "lamp_downlight_0": {
+   "cx": 0.42423,
+   "cy": 0.294,
+   "rx": 0.00872,
+   "ry": 0.00109
+  },
+  "lamp_downlight_1": {
+   "cx": 0.58653,
+   "cy": 0.30905,
+   "rx": 0.00797,
+   "ry": 0.00092
+  },
+  "lamp_downlight_2": {
+   "cx": 0.78378,
+   "cy": 0.31705,
+   "rx": 0.0076,
+   "ry": 0.00083
   }
  },
  "cameras": {
@@ -273,5 +333,518 @@
    },
    "note": "L2 phone-portrait Home plate; no reference frame exists (composition is new)"
   }
- }
+ },
+ "masks": {
+  "_doc": "Living-room masks for animating the plate (scripts/blender/mask_passes.py + mask_post.py). Same pixel grid as the plate (normalised coordinates are shared). Data maps, NOT plates: never stack them as pictures. Lossless 8-bit WebP (value = byte / 255, ids exact); depth is lossy. See the room README.",
+  "plate": "mobile-1080.webp",
+  "plants": {
+   "src": "mobile-mask-plants-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "leaf/stem coverage",
+   "g": "screen-space sway weight: (distance from the plant base / its camera depth) / swayScale; 0 at the pot .. 1 at the most mobile leaf tip in the scene; feathered to 0 at featherPx outside the silhouette",
+   "b": "plant id / 255 (plants[].id), 0 outside the feather zone",
+   "featherPxAt": {
+    "1080": 9,
+    "720": 6
+   },
+   "swayScale": 0.10208
+  },
+  "sky": {
+   "src": "mobile-mask-sky-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "open sky coverage (R=G=B)"
+  },
+  "glass": {
+   "src": "mobile-mask-glass-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "window glass seen directly (R=G=B)"
+  },
+  "windows": {
+   "src": "mobile-mask-windows-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "lit city windows / street lights, weighted by haze visibility",
+   "g": "per-window random id 0..1",
+   "b": "city coverage (skyline silhouette)"
+  },
+  "lamps": {
+   "src": "mobile-mask-lamps-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "lamp fixture coverage",
+   "g": "lamp id / 255 (lights[].id) on the fixture and its halo zone",
+   "b": "halo weight 1 (centre) .. 0 (haloScale x fixture radius)",
+   "haloScale": 4.0
+  },
+  "coves": {
+   "src": "mobile-mask-coves-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": true,
+   "r": "LED strip / cove coverage",
+   "g": "distance along the strip 0..1 (strips[].lengthM), carried to zonePx",
+   "b": "strip id / 255 (strips[].id), same zone",
+   "zonePxAt": {
+    "1080": 28,
+    "720": 19
+   }
+  },
+  "depth": {
+   "src": "mobile-depth-720.webp",
+   "widths": [
+    720
+   ],
+   "lossless": false,
+   "r": "mist depth (R=G=B), linear",
+   "note": "0 = 0.5 m .. 1 = 30.5 m from the camera (linear mist pass of the beauty render, published with the plate)"
+  },
+  "glow": {
+   "src": "mobile-glow-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": false,
+   "note": "a PICTURE layer, not a data map: display-space glow delta (plate - dim) of the LED/lamp light group, reflections included; draw it over the dim plate with mix-blend-mode plus-lighter and animate its opacity ~0.6..1 to breathe (1 = the plate as rendered)"
+  },
+  "dim": {
+   "src": "mobile-dim-1080.webp",
+   "widths": [
+    720,
+    1080
+   ],
+   "lossless": false,
+   "note": "a PICTURE layer: the plate with the LED/lamp light group at 45 %, the base for breathing"
+  }
+ },
+ "lights": [
+  {
+   "id": 1,
+   "name": "candle_globe",
+   "kind": "candle",
+   "motion": "flicker",
+   "cx": 0.30633,
+   "cy": 0.49045,
+   "rx": 0.01161,
+   "ry": 0.00535,
+   "depthM": 8.433,
+   "radiusM": 0.058,
+   "visible": 0.996,
+   "maskCentre": [
+    0.30631,
+    0.49046
+   ],
+   "maskBox": [
+    0.29352,
+    0.48462,
+    0.31944,
+    0.49615
+   ],
+   "tempK": 2300
+  },
+  {
+   "id": 2,
+   "name": "globe_0",
+   "kind": "globe",
+   "motion": "breathe",
+   "cx": 0.8522,
+   "cy": 0.53854,
+   "rx": 0.0164,
+   "ry": 0.00742,
+   "depthM": 6.847,
+   "radiusM": 0.0653,
+   "visible": 0.997,
+   "maskCentre": [
+    0.85223,
+    0.53855
+   ],
+   "maskBox": [
+    0.83519,
+    0.53077,
+    0.86944,
+    0.54658
+   ],
+   "tempK": 2500
+  },
+  {
+   "id": 3,
+   "name": "globe_1",
+   "kind": "globe",
+   "motion": "breathe",
+   "cx": 0.71951,
+   "cy": 0.57302,
+   "rx": 0.01423,
+   "ry": 0.00658,
+   "depthM": 5.257,
+   "radiusM": 0.0441,
+   "visible": 0.147,
+   "maskCentre": [
+    0.73009,
+    0.57273
+   ],
+   "maskBox": [
+    0.725,
+    0.56709,
+    0.73426,
+    0.57821
+   ],
+   "tempK": 2500
+  },
+  {
+   "id": 4,
+   "name": "downlight_0",
+   "kind": "downlight",
+   "motion": "steady",
+   "cx": 0.42423,
+   "cy": 0.294,
+   "rx": 0.00872,
+   "ry": 0.00109,
+   "depthM": 8.661,
+   "radiusM": 0.0451,
+   "visible": 0.994,
+   "maskCentre": [
+    0.42422,
+    0.29404
+   ],
+   "maskBox": [
+    0.41481,
+    0.29231,
+    0.43426,
+    0.29573
+   ],
+   "tempK": 3000
+  },
+  {
+   "id": 5,
+   "name": "downlight_1",
+   "kind": "downlight",
+   "motion": "steady",
+   "cx": 0.58653,
+   "cy": 0.30905,
+   "rx": 0.00797,
+   "ry": 0.00092,
+   "depthM": 9.524,
+   "radiusM": 0.0451,
+   "visible": 1.0,
+   "maskCentre": [
+    0.58655,
+    0.30908
+   ],
+   "maskBox": [
+    0.57778,
+    0.30769,
+    0.59537,
+    0.31068
+   ],
+   "tempK": 3000
+  },
+  {
+   "id": 6,
+   "name": "downlight_2",
+   "kind": "downlight",
+   "motion": "steady",
+   "cx": 0.78378,
+   "cy": 0.31705,
+   "rx": 0.0076,
+   "ry": 0.00083,
+   "depthM": 10.058,
+   "radiusM": 0.0451,
+   "visible": 0.988,
+   "maskCentre": [
+    0.78376,
+    0.31709
+   ],
+   "maskBox": [
+    0.775,
+    0.31581,
+    0.79259,
+    0.31838
+   ],
+   "tempK": 3000
+  }
+ ],
+ "strips": [
+  {
+   "id": 1,
+   "name": "niche_led",
+   "kind": "outline",
+   "group": "niche",
+   "lengthM": 9.185,
+   "shape": "ring",
+   "depthM": 12.33,
+   "maskBox": [
+    0.75741,
+    0.34615,
+    1.0,
+    0.48932
+   ],
+   "maskAreaPx": 4430
+  },
+  {
+   "id": 2,
+   "name": "portal_led",
+   "kind": "cove",
+   "group": "portal",
+   "lengthM": 10.938,
+   "shape": "path",
+   "depthM": 8.156,
+   "maskBox": [
+    0.0,
+    0.27991,
+    0.26204,
+    0.53504
+   ],
+   "maskAreaPx": 6296
+  },
+  {
+   "id": 3,
+   "name": "cove_led",
+   "kind": "cove",
+   "group": "island_cove",
+   "lengthM": 28.667,
+   "shape": "ring",
+   "depthM": 9.051,
+   "maskBox": [
+    0.0,
+    0.21752,
+    1.0,
+    0.34701
+   ],
+   "maskAreaPx": 5167
+  },
+  {
+   "id": 4,
+   "name": "fluted_rim_led",
+   "kind": "ring",
+   "group": "fluted_planter",
+   "lengthM": 1.353,
+   "shape": "ring",
+   "depthM": 5.521,
+   "maskBox": [
+    0.075,
+    0.55726,
+    0.21574,
+    0.56795
+   ],
+   "maskAreaPx": 1785
+  },
+  {
+   "id": 5,
+   "name": "ottoman_led",
+   "kind": "floor",
+   "group": "ottoman_led",
+   "lengthM": 0.95,
+   "shape": "line",
+   "depthM": 6.675,
+   "maskBox": [
+    0.20833,
+    0.57991,
+    0.32778,
+    0.58504
+   ],
+   "maskAreaPx": 860
+  },
+  {
+   "id": 6,
+   "name": "low_planter_led",
+   "kind": "edge",
+   "group": "low_planter",
+   "lengthM": 5.261,
+   "shape": "path",
+   "depthM": 3.502,
+   "maskBox": [
+    0.0,
+    0.63333,
+    0.0537,
+    0.64274
+   ],
+   "maskAreaPx": 595
+  },
+  {
+   "id": 7,
+   "name": "sign_edge",
+   "kind": "edge",
+   "group": "sign",
+   "lengthM": 0.485,
+   "shape": "path",
+   "depthM": 2.761,
+   "maskBox": [
+    0.625,
+    0.56068,
+    0.73241,
+    0.62906
+   ],
+   "maskAreaPx": 1409
+  },
+  {
+   "id": 8,
+   "name": "sign_led",
+   "kind": "edge",
+   "group": "sign",
+   "lengthM": 0.24,
+   "shape": "line",
+   "depthM": 2.741,
+   "maskBox": [
+    0.625,
+    0.62821,
+    0.73519,
+    0.64231
+   ],
+   "maskAreaPx": 801
+  }
+ ],
+ "plants": [
+  {
+   "id": 1,
+   "name": "palm_0",
+   "kind": "plant",
+   "base": [
+    0.79751,
+    0.50283
+   ],
+   "tip": [
+    0.78141,
+    0.4441
+   ],
+   "reachM": 0.87,
+   "depthM": 11.259,
+   "tipWeight": 0.757,
+   "maskBox": [
+    0.75,
+    0.44359,
+    0.83611,
+    0.49316
+   ]
+  },
+  {
+   "id": 2,
+   "name": "palm_1",
+   "kind": "plant",
+   "base": [
+    0.88037,
+    0.50402
+   ],
+   "tip": [
+    0.91701,
+    0.43092
+   ],
+   "reachM": 1.082,
+   "depthM": 10.953,
+   "tipWeight": 0.967,
+   "maskBox": [
+    0.82593,
+    0.43034,
+    0.9287,
+    0.48932
+   ]
+  },
+  {
+   "id": 5,
+   "name": "plant_fluted",
+   "kind": "plant",
+   "base": [
+    0.14598,
+    0.56305
+   ],
+   "tip": [
+    0.12982,
+    0.48588
+   ],
+   "reachM": 0.564,
+   "depthM": 5.521,
+   "tipWeight": 1.0,
+   "maskBox": [
+    0.07778,
+    0.48547,
+    0.2213,
+    0.56368
+   ]
+  },
+  {
+   "id": 26,
+   "name": "shrub_27",
+   "kind": "shrub",
+   "base": [
+    -0.10845,
+    0.64477
+   ],
+   "tip": [
+    0.01519,
+    0.63691
+   ],
+   "reachM": 0.259,
+   "depthM": 3.662,
+   "tipWeight": 0.694,
+   "maskBox": [
+    0.0,
+    0.63504,
+    0.01481,
+    0.63718
+   ]
+  },
+  {
+   "id": 27,
+   "name": "shrub_28",
+   "kind": "shrub",
+   "base": [
+    -0.05993,
+    0.64109
+   ],
+   "tip": [
+    -0.15664,
+    0.61651
+   ],
+   "reachM": 0.264,
+   "depthM": 3.737,
+   "tipWeight": 0.693,
+   "maskBox": [
+    0.0,
+    0.60684,
+    0.05278,
+    0.63932
+   ]
+  },
+  {
+   "id": 28,
+   "name": "shrub_29",
+   "kind": "shrub",
+   "base": [
+    -0.03899,
+    0.63825
+   ],
+   "tip": [
+    0.05329,
+    0.61746
+   ],
+   "reachM": 0.255,
+   "depthM": 3.796,
+   "tipWeight": 0.658,
+   "maskBox": [
+    0.0,
+    0.60256,
+    0.07037,
+    0.63846
+   ]
+  }
+ ]
 }

@@ -715,6 +715,7 @@ def city_window_material(name, wall_col, lit_warm, lit_cool, density=0.35, emit=
     nb.link(comb.outputs['Vector'], fl.inputs[0])
     wn = nb.node('ShaderNodeTexWhiteNoise')
     wn.noise_dimensions = '3D'
+    wn.label = 'evm_win_hash'      # labels are for mask_passes.py only (no effect on the render)
     nb.link(fl.outputs['Vector'], wn.inputs['Vector'])
     # window mask from fract
     fr = nb.node('ShaderNodeVectorMath')
@@ -737,6 +738,7 @@ def city_window_material(name, wall_col, lit_warm, lit_cool, density=0.35, emit=
     lit = nb.node('ShaderNodeMath'); lit.operation = 'LESS_THAN'; lit.inputs[1].default_value = density
     nb.link(wn.outputs['Value'], lit.inputs[0])
     on = nb.node('ShaderNodeMath'); on.operation = 'MULTIPLY'
+    on.label = 'evm_win_on'
     nb.link(mm.outputs['Value'], on.inputs[0]); nb.link(lit.outputs['Value'], on.inputs[1])
     # colour: warm/cool by the second noise channel
     wc = nb.node('ShaderNodeMix'); wc.data_type = 'RGBA'
@@ -782,6 +784,7 @@ def add_haze(nb, shader_socket, out, haze):
     fr = nb.node('ShaderNodeMath'); fr.operation = 'DIVIDE'
     nb.link(dv.outputs['Value'], fr.inputs[0]); nb.link(a1.outputs['Value'], fr.inputs[1])
     fm = nb.node('ShaderNodeMath'); fm.operation = 'MULTIPLY'; fm.inputs[1].default_value = mx
+    fm.label = 'evm_haze'
     nb.link(fr.outputs['Value'], fm.inputs[0])
     he = nb.node('ShaderNodeEmission')
     he.inputs['Color'].default_value = col

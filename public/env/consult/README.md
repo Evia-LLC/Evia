@@ -76,6 +76,72 @@ plate box.
 - **`light`:** key, rim and ambient colours for tinting the character.
 - **`build`:** Blender version, script hash, seed, spp, render time and every scene parameter.
 
+
+
+
+
+## Living-room masks (for animating the plate)
+
+The plates are still pictures. To give the room life (plants swaying in the air-conditioning, city windows
+twinkling, lamps flickering, LED coves breathing or carrying a slow travelling pulse), the web layer can drive
+small effects from these **data maps**. They were rendered from the same Blender scene, camera, depth of field,
+framing (including the safe margin where the plate has one) and size as the plates they pair with (`--passes masks`,
+`scripts/blender/mask_passes.py`, encoded by `scripts/blender/mask_post.py`), so every mask pixel lies exactly on the
+plate pixel of the same width. The anchors file lists them under `masks` (with the plate they pair with), and adds
+`lights`, `strips` and `plants` (ids used inside the masks) plus `points`/`ellipses` `lamp_<name>` for each lamp.
+
+They are not plates: never show them, sample them. All masks are 8-bit RGB **lossless** WebP (value = byte / 255,
+ids exact); `depth` is lossy. Masks that would be empty in a room are not published.
+
+| mask | R | G | B |
+|---|---|---|---|
+| `mask-plants` | leaf/stem coverage (anti-aliased, soft where the plate is out of focus) | sway weight: (distance from the plant's base / camera depth of the base) / `swayScale`, 0 at the pot .. 1 at the most mobile leaf tip in the frame, feathered to 0 at `featherPx` outside the silhouette | plant id / 255 (`plants[].id`), nearest plant inside the feather zone |
+| `mask-sky` | open sky seen through the glass (R=G=B) | | |
+| `mask-glass` | window glass seen directly (R=G=B) | | |
+| `mask-windows` | lit city windows (and street lights), weighted by haze visibility | per-window random id 0..1 (constant over a window) | city coverage (skyline silhouette) |
+| `mask-lamps` | lamp fixture coverage | lamp id / 255 (`lights[].id`) on the fixture and its halo zone | halo weight, 1 at the lamp centre .. 0 at `haloScale` x the fixture's radius |
+| `mask-coves` | LED strip / cove / ring coverage (only strips the camera sees) | distance along the strip 0..1 (`strips[].lengthM` in metres), carried outward to `zonePx` from the nearest strip | strip id / 255 (`strips[].id`), same zone |
+| `mask-emitter` (consult) | emitter rim + inlaid glass rings | angle around the pedestal axis 0..1 | radius / pedestal radius 0..1 (0 outside the glass top) |
+| `depth` | linear mist depth (R=G=B), range in `masks.depth.note` | | |
+
+Suggested use (not wired into the app yet):
+
+- **WebGL** (one full-screen quad per room; plate, glow/dim layers and masks as textures): plants
+  `uv -= wind(t, id) * G * A / plateWidth` with A about 2-3 px at 1280 wide (keep A below `featherPx`); windows
+  `rgb += rgb * R * twinkle(t, G)`; lamps `rgb *= 1 + B * flicker(t, id)` (candle: fast irregular, globes: slow
+  breathe, beacons: blink); coves `rgb += glowDelta * pulse(G * lengthM - speed * t)` where B > 0 (on closed strips,
+  `shape: "ring"`, use a whole number of waves per loop so the 1 -> 0 wrap never shows; the wrap is placed in a
+  stretch the camera cannot see or, on a ring seen all the way round, at its faintest point, where a few pixels
+  carry a mixed value).
+- **Exact values**: decode with `createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })`
+  and `UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE`; sample id channels with NEAREST, coverage/weights with LINEAR.
+- **Without WebGL**: lamps can pulse as CSS radial-gradient spans at `points.lamp_*` / `ellipses.lamp_*`
+  (`mix-blend-mode: plus-lighter`), coves with the existing glow layers; a grayscale mask (sky, glass) works as a
+  CSS `mask-image` with `mask-mode: luminance`.
+- Everything stays still under `prefers-reduced-motion` (and the app's reduced-motion setting).
+- Re-run `mask_post.py` after re-publishing a plate: the plate's own post step rewrites the anchors file.
+
+### In this folder
+
+| render | masks (widths) | pairs with | depth |
+|---|---|---|---|
+| C1 desktop | `mask-{plants,sky,glass,windows,coves,emitter}-{2560,1280}.webp` | `plate-{2560,1280}.webp` | `depth-1280.webp` (0 = 0.5 m .. 1 = 40 m) |
+| C2 phone | `mobile-mask-{plants,sky,glass,windows,coves,emitter}-{1080,720}.webp` | `mobile-plate-{1080,720}.webp` | `mobile-depth-720.webp` |
+
+- **No lamps mask**: this room has no lamp fixtures. Its lights are LED lines and rings, all in `mask-coves`: the
+  ceiling halo (band + LED line), the wall ring light, the pedestal under-glow ring, the tier, step, sill and plinth
+  lines, and the jamb, pilaster and right-panel strips. Rings have `shape: "ring"` in `strips`.
+- **Emitter**: the blue rim and inlaid rings of the pedestal glass (R), with polar coordinates over the whole glass
+  top (G angle from +X counter-clockwise seen from above, B radius / pedestal radius; the glass outline itself is
+  `ellipses.pedestal_glass`). This is for rings rippling outward from the hologram base or a slow rotating sweep
+  under the code-built hologram; the `glow-emitter` layer stays the way to brighten them.
+- **Plants**: the two blossom trees and the two shrubs on the tier (C1); the two shrubs (C2).
+- **Windows**: lit windows and the street-light river, as the same depth-of-field discs as the plate. No aviation
+  beacon is visible from these cameras.
+- **Sky**: the thin band of night sky between the towers.
+- `consult_post.py` rewrites the anchors files: run `mask_post.py` again after it (commands in the header of
+  `scripts/blender/room_consult.py`).
+
 ## Regenerating
 
 See the header of `scripts/blender/room_consult.py` for the preview and final tiers and

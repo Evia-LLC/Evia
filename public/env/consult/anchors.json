@@ -1367,5 +1367,406 @@
    ],
    "note": "pre-blurred plate for frosted UI panels"
   }
- }
+ },
+ "masks": {
+  "_doc": "Living-room masks for animating the plate (scripts/blender/mask_passes.py + mask_post.py). Same pixel grid as the plate (normalised coordinates are shared). Data maps, NOT plates: never stack them as pictures. Lossless 8-bit WebP (value = byte / 255, ids exact); depth is lossy. See the room README.",
+  "plate": "plate-2560.webp",
+  "plants": {
+   "src": "mask-plants-2560.webp",
+   "widths": [
+    1280,
+    2560
+   ],
+   "lossless": true,
+   "r": "leaf/stem coverage",
+   "g": "screen-space sway weight: (distance from the plant base / its camera depth) / swayScale; 0 at the pot .. 1 at the most mobile leaf tip in the scene; feathered to 0 at featherPx outside the silhouette",
+   "b": "plant id / 255 (plants[].id), 0 outside the feather zone",
+   "featherPxAt": {
+    "2560": 10,
+    "1280": 5
+   },
+   "swayScale": 0.13404
+  },
+  "sky": {
+   "src": "mask-sky-2560.webp",
+   "widths": [
+    1280,
+    2560
+   ],
+   "lossless": true,
+   "r": "open sky coverage (R=G=B)"
+  },
+  "glass": {
+   "src": "mask-glass-2560.webp",
+   "widths": [
+    1280,
+    2560
+   ],
+   "lossless": true,
+   "r": "window glass seen directly (R=G=B)"
+  },
+  "windows": {
+   "src": "mask-windows-2560.webp",
+   "widths": [
+    1280,
+    2560
+   ],
+   "lossless": true,
+   "r": "lit city windows / street lights, weighted by haze visibility",
+   "g": "per-window random id 0..1",
+   "b": "city coverage (skyline silhouette)"
+  },
+  "coves": {
+   "src": "mask-coves-2560.webp",
+   "widths": [
+    1280,
+    2560
+   ],
+   "lossless": true,
+   "r": "LED strip / cove coverage",
+   "g": "distance along the strip 0..1 (strips[].lengthM), carried to zonePx",
+   "b": "strip id / 255 (strips[].id), same zone",
+   "zonePxAt": {
+    "2560": 31,
+    "1280": 15
+   }
+  },
+  "emitter": {
+   "src": "mask-emitter-2560.webp",
+   "widths": [
+    1280,
+    2560
+   ],
+   "lossless": true,
+   "r": "emitter rim + inlaid ring intensity",
+   "g": "angle around the pedestal axis 0..1 (0.5 = +X, counter-clockwise from above)",
+   "b": "radius / pedestal radius 0..1; 0 outside the glass top"
+  },
+  "depth": {
+   "src": "depth-1280.webp",
+   "widths": [
+    1280
+   ],
+   "lossless": false,
+   "r": "mist depth (R=G=B), linear",
+   "note": "0 = 0.5 m .. 1 = 40.0 m from the camera (linear mist pass of the mask render)"
+  }
+ },
+ "lights": [],
+ "strips": [
+  {
+   "id": 1,
+   "name": "halo_band",
+   "kind": "ring",
+   "group": "ceiling_halo",
+   "lengthM": 2.89,
+   "shape": "ring",
+   "depthM": 3.694,
+   "maskBox": [
+    0.37109,
+    0.03819,
+    0.66016,
+    0.11319
+   ],
+   "maskAreaPx": 53082
+  },
+  {
+   "id": 2,
+   "name": "halo_led",
+   "kind": "ring",
+   "group": "ceiling_halo",
+   "lengthM": 2.865,
+   "shape": "ring",
+   "depthM": 3.694,
+   "maskBox": [
+    0.37031,
+    0.01736,
+    0.66172,
+    0.11944
+   ],
+   "maskAreaPx": 10152
+  },
+  {
+   "id": 3,
+   "name": "jamb_left_led",
+   "kind": "wall",
+   "group": "jamb_left_led",
+   "lengthM": 4.0,
+   "shape": "path",
+   "depthM": 13.039,
+   "maskBox": [
+    0.23047,
+    0.0,
+    0.23477,
+    0.61944
+   ],
+   "maskAreaPx": 8657
+  },
+  {
+   "id": 4,
+   "name": "nook_plinth_led_0",
+   "kind": "plinth",
+   "group": "nook",
+   "lengthM": 0.5,
+   "shape": "path",
+   "depthM": 14.39,
+   "maskBox": [
+    0.14492,
+    0.52431,
+    0.18516,
+    0.53125
+   ],
+   "maskAreaPx": 920
+  },
+  {
+   "id": 5,
+   "name": "nook_plinth_led_1",
+   "kind": "plinth",
+   "group": "nook",
+   "lengthM": 0.42,
+   "shape": "path",
+   "depthM": 14.43,
+   "maskBox": [
+    0.18477,
+    0.52431,
+    0.21445,
+    0.53125
+   ],
+   "maskAreaPx": 689
+  },
+  {
+   "id": 6,
+   "name": "nook_sill_led",
+   "kind": "nook",
+   "group": "nook",
+   "lengthM": 4.695,
+   "shape": "path",
+   "depthM": 13.385,
+   "maskBox": [
+    0.0,
+    0.53542,
+    0.19336,
+    0.54375
+   ],
+   "maskAreaPx": 4308
+  },
+  {
+   "id": 7,
+   "name": "pilaster_R_led",
+   "kind": "wall",
+   "group": "pilaster_R_led",
+   "lengthM": 4.0,
+   "shape": "path",
+   "depthM": 13.396,
+   "maskBox": [
+    0.8207,
+    0.0,
+    0.82461,
+    0.61528
+   ],
+   "maskAreaPx": 7839
+  },
+  {
+   "id": 11,
+   "name": "right_strip_h",
+   "kind": "wall",
+   "group": "right_panel",
+   "lengthM": 2.6,
+   "shape": "path",
+   "depthM": 12.261,
+   "maskBox": [
+    0.8375,
+    0.60972,
+    1.0,
+    0.64097
+   ],
+   "maskAreaPx": 2740
+  },
+  {
+   "id": 12,
+   "name": "right_strip_v",
+   "kind": "wall",
+   "group": "right_panel",
+   "lengthM": 4.0,
+   "shape": "path",
+   "depthM": 13.414,
+   "maskBox": [
+    0.83672,
+    0.0,
+    0.84102,
+    0.61389
+   ],
+   "maskAreaPx": 7420
+  },
+  {
+   "id": 13,
+   "name": "ring_light",
+   "kind": "ring",
+   "group": "ring_light",
+   "lengthM": 2.638,
+   "shape": "ring",
+   "depthM": 12.266,
+   "maskBox": [
+    0.89219,
+    0.00347,
+    0.95938,
+    0.15417
+   ],
+   "maskAreaPx": 6656
+  },
+  {
+   "id": 14,
+   "name": "step_led",
+   "kind": "step",
+   "group": "step_led",
+   "lengthM": 5.316,
+   "shape": "path",
+   "depthM": 13.006,
+   "maskBox": [
+    0.0,
+    0.64097,
+    0.14805,
+    0.69444
+   ],
+   "maskAreaPx": 3370
+  },
+  {
+   "id": 15,
+   "name": "tier_0_led",
+   "kind": "tier",
+   "group": "tiers",
+   "lengthM": 4.783,
+   "shape": "path",
+   "depthM": 11.218,
+   "maskBox": [
+    0.76641,
+    0.65208,
+    0.90859,
+    0.74861
+   ],
+   "maskAreaPx": 4296
+  },
+  {
+   "id": 16,
+   "name": "tier_1_led",
+   "kind": "tier",
+   "group": "tiers",
+   "lengthM": 4.803,
+   "shape": "path",
+   "depthM": 13.144,
+   "maskBox": [
+    0.98164,
+    0.65208,
+    1.0,
+    0.66458
+   ],
+   "maskAreaPx": 416
+  },
+  {
+   "id": 17,
+   "name": "ped_led_under",
+   "kind": "under",
+   "group": "pedestal",
+   "lengthM": 5.373,
+   "shape": "ring",
+   "depthM": 3.694,
+   "maskBox": [
+    0.27148,
+    0.77847,
+    0.79336,
+    0.92153
+   ],
+   "maskAreaPx": 29750
+  }
+ ],
+ "plants": [
+  {
+   "id": 1,
+   "name": "shrub_0",
+   "kind": "shrub",
+   "base": [
+    0.7436,
+    0.64326
+   ],
+   "tip": [
+    0.77624,
+    0.55289
+   ],
+   "reachM": 0.641,
+   "depthM": 11.879,
+   "tipWeight": 0.403,
+   "maskBox": [
+    0.7043,
+    0.53889,
+    0.79414,
+    0.64167
+   ]
+  },
+  {
+   "id": 2,
+   "name": "shrub_1",
+   "kind": "shrub",
+   "base": [
+    0.68255,
+    0.63245
+   ],
+   "tip": [
+    0.72947,
+    0.55673
+   ],
+   "reachM": 0.713,
+   "depthM": 12.835,
+   "tipWeight": 0.415,
+   "maskBox": [
+    0.65391,
+    0.53264,
+    0.7332,
+    0.62847
+   ]
+  },
+  {
+   "id": 3,
+   "name": "tree_left",
+   "kind": "tree",
+   "base": [
+    0.10576,
+    0.62158
+   ],
+   "tip": [
+    0.11349,
+    0.34598
+   ],
+   "reachM": 1.698,
+   "depthM": 12.67,
+   "tipWeight": 1.0,
+   "maskBox": [
+    0.05039,
+    0.34444,
+    0.16094,
+    0.61875
+   ]
+  },
+  {
+   "id": 4,
+   "name": "tree_right",
+   "kind": "tree",
+   "base": [
+    0.88527,
+    0.61584
+   ],
+   "tip": [
+    0.88189,
+    0.35846
+   ],
+   "reachM": 1.524,
+   "depthM": 12.178,
+   "tipWeight": 0.934,
+   "maskBox": [
+    0.81797,
+    0.35694,
+    0.95664,
+    0.61111
+   ]
+  }
+ ]
 }

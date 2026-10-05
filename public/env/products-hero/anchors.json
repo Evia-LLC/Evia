@@ -52,9 +52,20 @@
   "character": [
    0.58738,
    0.91578
+  ],
+  "lamp_pendant": [
+   0.74451,
+   0.31952
   ]
  },
- "ellipses": {},
+ "ellipses": {
+  "lamp_pendant": {
+   "cx": 0.74451,
+   "cy": 0.31952,
+   "rx": 0.02599,
+   "ry": 0.08676
+  }
+ },
  "cameras": {
   "products_hero": {
    "room": "products-hero",
@@ -111,5 +122,128 @@
     }
    }
   }
- }
+ },
+ "masks": {
+  "_doc": "Living-room masks for animating the plate (scripts/blender/mask_passes.py + mask_post.py). Same pixel grid as the plate (normalised coordinates are shared). Data maps, NOT plates: never stack them as pictures. Lossless 8-bit WebP (value = byte / 255, ids exact); depth is lossy. See the room README.",
+  "plate": "hero-2552.webp",
+  "plants": {
+   "src": "hero-mask-plants-2552.webp",
+   "widths": [
+    1276,
+    2552
+   ],
+   "lossless": true,
+   "r": "leaf/stem coverage",
+   "g": "screen-space sway weight: (distance from the plant base / its camera depth) / swayScale; 0 at the pot .. 1 at the most mobile leaf tip in the scene; feathered to 0 at featherPx outside the silhouette",
+   "b": "plant id / 255 (plants[].id), 0 outside the feather zone",
+   "featherPxAt": {
+    "2552": 10,
+    "1276": 5
+   },
+   "swayScale": 0.22487
+  },
+  "sky": {
+   "src": "hero-mask-sky-2552.webp",
+   "widths": [
+    1276,
+    2552
+   ],
+   "lossless": true,
+   "r": "open sky coverage (R=G=B)"
+  },
+  "lamps": {
+   "src": "hero-mask-lamps-2552.webp",
+   "widths": [
+    1276,
+    2552
+   ],
+   "lossless": true,
+   "r": "lamp fixture coverage",
+   "g": "lamp id / 255 (lights[].id) on the fixture and its halo zone",
+   "b": "halo weight 1 (centre) .. 0 (haloScale x fixture radius)",
+   "haloScale": 4.0
+  },
+  "depth": {
+   "src": "hero-depth-1276.webp",
+   "widths": [
+    1276
+   ],
+   "lossless": false,
+   "r": "mist depth (R=G=B), linear",
+   "note": "0 = 0.5 m .. 1 = 12.5 m from the camera (linear mist pass of the mask render)"
+  }
+ },
+ "lights": [
+  {
+   "id": 1,
+   "name": "pendant",
+   "kind": "pendant",
+   "motion": "breathe",
+   "cx": 0.74451,
+   "cy": 0.31952,
+   "rx": 0.02599,
+   "ry": 0.08676,
+   "depthM": 5.0,
+   "radiusM": 0.11,
+   "visible": 0.994,
+   "maskCentre": [
+    0.74463,
+    0.31946
+   ],
+   "maskBox": [
+    0.71669,
+    0.22727,
+    0.77234,
+    0.41176
+   ],
+   "tempK": 2700
+  }
+ ],
+ "strips": [],
+ "plants": [
+  {
+   "id": 1,
+   "name": "fern",
+   "kind": "plant",
+   "base": [
+    0.82383,
+    0.75916
+   ],
+   "tip": [
+    0.8041,
+    0.47389
+   ],
+   "reachM": 0.416,
+   "depthM": 5.4,
+   "tipWeight": 0.343,
+   "maskBox": [
+    0.77704,
+    0.46658,
+    0.86364,
+    0.7607
+   ]
+  },
+  {
+   "id": 2,
+   "name": "rubber",
+   "kind": "plant",
+   "base": [
+    0.75157,
+    1.33807
+   ],
+   "tip": [
+    0.75784,
+    0.47278
+   ],
+   "reachM": 1.079,
+   "depthM": 4.8,
+   "tipWeight": 1.0,
+   "maskBox": [
+    0.65165,
+    0.46658,
+    0.80094,
+    1.0
+   ]
+  }
+ ]
 }

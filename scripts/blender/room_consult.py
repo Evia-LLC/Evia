@@ -16,6 +16,11 @@ RUN (always through the lock wrapper so renders never overlap with other agents'
   # final tier C2 mobile portrait: 1080x2340, 64 spp (preview tier: 432x936)
   $LOCK scripts/blender/room_consult.py -- --tier final --camera mobile --out <dir>
   # options: --camera desktop|mobile  --margin F  --spp N  --res WxH  --save-blend f.blend  --no-render
+  # living-room masks for the web layer (plants/sway, sky, glass, city windows, LED coves/rings, emitter, depth):
+  # same scene/camera/DOF/margin as the published plate, flat AOV shaders (mask_passes.py), ~5-8 min:
+  $LOCK scripts/blender/room_consult.py -- --camera desktop --passes masks --spp 128 --out <dir>
+  $PY scripts/blender/mask_post.py publish <dir>/consult_desktop_masks.exr --out public/env/consult --prefix '' \
+      --sizes 2560,1280 --anchors public/env/consult/anchors.json --depth 1280
 
 Each Cycles render writes <out>/consult_<camera>_<tier>.exr (multilayer, half float) with layers
   rgb      denoised beauty (scene-linear Rec.709)
@@ -118,7 +123,7 @@ def hexcol(h, a=1.0):
 def parse_args():
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     a = dict(tier='preview', out='.', camera='desktop', spp=None, res=None, save_blend=None,
-             render=True, margin=None)
+             render=True, margin=None, passes=None)
     i = 0
     while i < len(argv):
         k = argv[i]
@@ -132,6 +137,7 @@ def parse_args():
         elif k == '--res': a['res'] = tuple(int(t) for t in v.lower().split('x'))
         elif k == '--save-blend': a['save_blend'] = v
         elif k == '--margin': a['margin'] = float(v)
+        elif k == '--passes': a['passes'] = v
         i += 2
     return a
 
@@ -754,6 +760,7 @@ def build(scn, args):
     nt.links.new(tkm.outputs[0], tks.inputs[0])
     ad = nt.nodes.new('ShaderNodeMath'); ad.operation = 'ADD'
     nt.links.new(acc, ad.inputs[0]); nt.links.new(tks.outputs[0], ad.inputs[1]); acc = ad.outputs[0]
+    ad.label = 'evm_emit'           # labels are for mask_passes.py only (no effect on the render)
     # emission
     em = nt.nodes.new('ShaderNodeEmission')
     em.inputs['Color'].default_value = hexcol('#86a8f0')
@@ -801,6 +808,7 @@ def build(scn, args):
     ow = nt.nodes.new('ShaderNodeObjectInfo')
     nt.links.new(ow.outputs['Random'], cid.inputs[2])
     wn = nt.nodes.new('ShaderNodeTexWhiteNoise'); wn.noise_dimensions = '3D'
+    wn.label = 'evm_win_hash'
     nt.links.new(cid.outputs[0], wn.inputs['Vector'])
     # more lit windows low down (below the room's eye level), sparse higher up
     thr = nt.nodes.new('ShaderNodeMapRange'); thr.clamp = True
@@ -817,6 +825,7 @@ def build(scn, args):
     nt.links.new(wx1.outputs[0], m1.inputs[0]); nt.links.new(wz1.outputs[0], m1.inputs[1])
     m2 = nt.nodes.new('ShaderNodeMath'); m2.operation = 'MULTIPLY'
     nt.links.new(m1.outputs[0], m2.inputs[0]); nt.links.new(lit.outputs[0], m2.inputs[1])
+    m2.label = 'evm_win_on'
     # warm vs cool per cell
     col_mix = nt.nodes.new('ShaderNodeMix'); col_mix.data_type = 'RGBA'
     col_mix.inputs['A'].default_value = hexcol(COL['city_warm'])
@@ -1536,8 +1545,72 @@ def _plane_rect(scn, cam, pl, box_ref):
 
 
 # ----------------------------------------------------------------------------- main
+# ----------------------------------------------------------------------------- living-room masks
+STRIP_KINDS = [  # (object-name regex, kind, group) for `--passes masks`
+    (r'^halo_(led|band)$', 'ring', 'ceiling_halo'), (r'^ring_light$', 'ring', 'ring_light'),
+    (r'^tier_\d+_led$', 'tier', 'tiers'), (r'^ped_led_under$', 'under', 'pedestal'),
+    (r'^nook_plinth_led_\d+$', 'plinth', 'nook'), (r'^nook_', 'nook', 'nook'), (r'^step_led$', 'step', None),
+    (r'^(jamb_left|pilaster_R)_led$', 'wall', None), (r'^right_strip_', 'wall', 'right_panel'),
+]
+
+
+def mask_spec():
+    """Object classification for mask_passes.render_masks (consult C1 desktop / C2 mobile)."""
+    import re
+    obs = sorted(bpy.data.objects, key=lambda o: o.name)
+    plants = []
+    for o in COLS['plants'].objects if 'plants' in COLS else []:
+        mats = {sl.material.name for sl in o.material_slots if sl.material}
+        if o.type != 'MESH' or not (mats & {'leaf', 'blossom'}):
+            continue
+        stems = [x.name for x in obs if re.match(rf'^{re.escape(o.name)}_stem\d+$', x.name)]
+        plants.append(dict(name=o.name, kind='tree' if o.name.startswith('tree_') else 'shrub',
+                           objects=[o.name] + stems, leaf_objects=[o.name], base=None))
+    plants.sort(key=lambda d: d['name'])
+    lamps = [dict(name=o.name, object=o.name, kind='beacon', motion='blink') for o in obs
+             if o.type == 'MESH' and re.match(r'^bld_\d+_\d+_red$', o.name)]
+    strips = []
+    for cname in ('neon', 'under'):
+        for o in sorted(COLS[cname].objects if cname in COLS else [], key=lambda o: o.name):
+            if o.type not in ('MESH', 'CURVE') or not o.visible_camera:
+                continue
+            kind, group = 'strip', o.name
+            for rx, k, g in STRIP_KINDS:
+                if re.match(rx, o.name):
+                    kind, group = k, (g or o.name)
+                    break
+            strips.append(dict(name=o.name, object=o.name, kind=kind, group=group))
+    pc = P['ped_c']
+    return dict(plants=plants, lamps=lamps, strips=strips, glass_mats=['window_glass'],
+                facade_mats={'city': dict(hash_channel='Green', haze=False)}, street_mats=['city_street'],
+                city_collections=['city'],
+                emitter=dict(objects=['ped_emitter_rim'], glass='ped_glass', centre=(pc[0], pc[1], P['ped_top']),
+                             radius=P['ped_r']))
+
+
+def main_masks(args):
+    """`--passes masks`: the living-room masks for the published plate of this camera (final-tier framing)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mask_passes as MP
+    P['margin'] = args['margin'] if args['margin'] is not None else (0.1 if args['camera'] == 'desktop' else 0.0)
+    scn = reset()
+    build(scn, args)
+    lights(scn)
+    cam = camera(scn, args['camera'])
+    W, H = args['res'] or ((2560, 1440) if args['camera'] == 'desktop' else MOBILE_RES)
+    base = f"consult_{args['camera']}"
+    out_dir = os.path.abspath(args['out'])
+    MP.render_masks(scn, cam, W, H, args['spp'] or 64, out_dir, base, mask_spec(), mist=(0.5, 39.5))
+    if args['save_blend']:
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args['save_blend']))
+    if args['render']:
+        MP.run(base, out_dir)
+
+
 def main():
     args = parse_args()
+    if args['passes'] == 'masks':
+        return main_masks(args)
     if args['margin'] is not None:
         P['margin'] = args['margin']
     elif args['tier'] == 'final' and args['camera'] == 'desktop':

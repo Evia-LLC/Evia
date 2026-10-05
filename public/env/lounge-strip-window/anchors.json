@@ -23,5 +23,343 @@
   }
  ],
  "surfaces": {},
- "points": {}
+ "points": {
+  "lamp_l3_globe_0": [
+   0.95312,
+   0.44722
+  ],
+  "lamp_l3_downlight_0": [
+   0.7375,
+   0.05458
+  ],
+  "lamp_l3_downlight_1": [
+   0.8375,
+   0.06826
+  ]
+ },
+ "masks": {
+  "_doc": "Living-room masks for animating the plate (scripts/blender/mask_passes.py + mask_post.py). Same pixel grid as the plate (normalised coordinates are shared). Data maps, NOT plates: never stack them as pictures. Lossless 8-bit WebP (value = byte / 255, ids exact); depth is lossy. See the room README.",
+  "plate": "/env/lounge/strip-window-640.webp",
+  "plants": {
+   "src": "/env/lounge/strip-window-mask-plants-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": true,
+   "r": "leaf/stem coverage",
+   "g": "screen-space sway weight: (distance from the plant base / its camera depth) / swayScale; 0 at the pot .. 1 at the most mobile leaf tip in the scene; feathered to 0 at featherPx outside the silhouette",
+   "b": "plant id / 255 (plants[].id), 0 outside the feather zone",
+   "featherPxAt": {
+    "640": 8,
+    "320": 4
+   },
+   "swayScale": 0.25728
+  },
+  "sky": {
+   "src": "/env/lounge/strip-window-mask-sky-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": true,
+   "r": "open sky coverage (R=G=B)"
+  },
+  "glass": {
+   "src": "/env/lounge/strip-window-mask-glass-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": true,
+   "r": "window glass seen directly (R=G=B)"
+  },
+  "windows": {
+   "src": "/env/lounge/strip-window-mask-windows-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": true,
+   "r": "lit city windows / street lights, weighted by haze visibility",
+   "g": "per-window random id 0..1",
+   "b": "city coverage (skyline silhouette)"
+  },
+  "lamps": {
+   "src": "/env/lounge/strip-window-mask-lamps-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": true,
+   "r": "lamp fixture coverage",
+   "g": "lamp id / 255 (lights[].id) on the fixture and its halo zone",
+   "b": "halo weight 1 (centre) .. 0 (haloScale x fixture radius)",
+   "haloScale": 4.0
+  },
+  "coves": {
+   "src": "/env/lounge/strip-window-mask-coves-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": true,
+   "r": "LED strip / cove coverage",
+   "g": "distance along the strip 0..1 (strips[].lengthM), carried to zonePx",
+   "b": "strip id / 255 (strips[].id), same zone",
+   "zonePxAt": {
+    "640": 25,
+    "320": 12
+   }
+  },
+  "depth": {
+   "src": "/env/lounge/strip-window-depth-320.webp",
+   "widths": [
+    320
+   ],
+   "lossless": false,
+   "r": "mist depth (R=G=B), linear",
+   "note": "0 = 0.5 m .. 1 = 30.5 m from the camera (linear mist pass of the mask render)"
+  },
+  "glow": {
+   "src": "/env/lounge/strip-window-glow-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": false,
+   "note": "a PICTURE layer, not a data map: display-space glow delta (plate - dim) of the LED/lamp light group, reflections included; draw it over the dim plate with mix-blend-mode plus-lighter and animate its opacity ~0.6..1 to breathe (1 = the plate as rendered)"
+  },
+  "dim": {
+   "src": "/env/lounge/strip-window-dim-640.webp",
+   "widths": [
+    320,
+    640
+   ],
+   "lossless": false,
+   "note": "a PICTURE layer: the plate with the LED/lamp light group at 45 %, the base for breathing"
+  }
+ },
+ "lights": [
+  {
+   "id": 1,
+   "name": "l3_globe_0",
+   "kind": "globe",
+   "motion": "breathe",
+   "cx": 0.95312,
+   "cy": 0.44722,
+   "rx": 0.01279,
+   "ry": 0.00395,
+   "depthM": 14.775,
+   "radiusM": 0.07,
+   "visible": 0.995,
+   "maskCentre": [
+    0.95313,
+    0.44722
+   ],
+   "maskBox": [
+    0.9375,
+    0.44287,
+    0.96875,
+    0.45166
+   ],
+   "tempK": 2500
+  },
+  {
+   "id": 2,
+   "name": "l3_downlight_0",
+   "kind": "downlight",
+   "motion": "steady",
+   "cx": 0.7375,
+   "cy": 0.05458,
+   "rx": 0.0188,
+   "ry": 0.00302,
+   "depthM": 3.982,
+   "radiusM": 0.0281,
+   "visible": 0.993,
+   "maskCentre": [
+    0.7375,
+    0.05467
+   ],
+   "maskBox": [
+    0.71719,
+    0.05127,
+    0.75781,
+    0.05762
+   ],
+   "tempK": 3000
+  },
+  {
+   "id": 3,
+   "name": "l3_downlight_1",
+   "kind": "downlight",
+   "motion": "steady",
+   "cx": 0.8375,
+   "cy": 0.06826,
+   "rx": 0.0181,
+   "ry": 0.00281,
+   "depthM": 4.142,
+   "radiusM": 0.0281,
+   "visible": 0.991,
+   "maskCentre": [
+    0.83752,
+    0.06834
+   ],
+   "maskBox": [
+    0.81875,
+    0.06543,
+    0.85625,
+    0.07129
+   ],
+   "tempK": 3000
+  }
+ ],
+ "strips": [
+  {
+   "id": 1,
+   "name": "l3_disc_cove",
+   "kind": "cove",
+   "group": "soffit",
+   "lengthM": 3.47,
+   "shape": "path",
+   "depthM": 3.694,
+   "maskBox": [
+    0.7625,
+    0.0,
+    0.94062,
+    0.04297
+   ],
+   "maskAreaPx": 1899
+  },
+  {
+   "id": 2,
+   "name": "l3_disc_cove_back",
+   "kind": "cove",
+   "group": "soffit",
+   "lengthM": 2.846,
+   "shape": "path",
+   "depthM": 4.28,
+   "maskBox": [
+    0.76094,
+    0.0,
+    0.96875,
+    0.04639
+   ],
+   "maskAreaPx": 472
+  },
+  {
+   "id": 3,
+   "name": "l3_disc_rim",
+   "kind": "cove",
+   "group": "soffit",
+   "lengthM": 3.48,
+   "shape": "arc",
+   "depthM": 3.671,
+   "maskBox": [
+    0.42344,
+    0.0,
+    0.93281,
+    0.07324
+   ],
+   "maskAreaPx": 13712
+  },
+  {
+   "id": 4,
+   "name": "l3_step_led_0",
+   "kind": "plinth",
+   "group": "plinth",
+   "lengthM": 11.491,
+   "shape": "ring",
+   "depthM": 4.817,
+   "maskBox": [
+    0.0,
+    0.71045,
+    0.97812,
+    0.7749
+   ],
+   "maskAreaPx": 13443
+  },
+  {
+   "id": 5,
+   "name": "l3_step_led_1",
+   "kind": "plinth",
+   "group": "plinth",
+   "lengthM": 9.606,
+   "shape": "ring",
+   "depthM": 4.817,
+   "maskBox": [
+    0.0,
+    0.6333,
+    0.97812,
+    0.70605
+   ],
+   "maskAreaPx": 11793
+  }
+ ],
+ "plants": [
+  {
+   "id": 1,
+   "name": "l3_plant_small",
+   "kind": "plant",
+   "base": [
+    0.56875,
+    0.61235
+   ],
+   "tip": [
+    0.52399,
+    0.50342
+   ],
+   "reachM": 0.492,
+   "depthM": 3.706,
+   "tipWeight": 0.516,
+   "maskBox": [
+    0.425,
+    0.50293,
+    0.7375,
+    0.61133
+   ]
+  },
+  {
+   "id": 2,
+   "name": "l3_plant_tall",
+   "kind": "plant",
+   "base": [
+    0.76875,
+    0.47242
+   ],
+   "tip": [
+    0.55145,
+    0.26631
+   ],
+   "reachM": 1.614,
+   "depthM": 6.275,
+   "tipWeight": 1.0,
+   "maskBox": [
+    0.69531,
+    0.26318,
+    1.0,
+    0.45361
+   ]
+  }
+ ],
+ "ellipses": {
+  "lamp_l3_globe_0": {
+   "cx": 0.95312,
+   "cy": 0.44722,
+   "rx": 0.01279,
+   "ry": 0.00395
+  },
+  "lamp_l3_downlight_0": {
+   "cx": 0.7375,
+   "cy": 0.05458,
+   "rx": 0.0188,
+   "ry": 0.00302
+  },
+  "lamp_l3_downlight_1": {
+   "cx": 0.8375,
+   "cy": 0.06826,
+   "rx": 0.0181,
+   "ry": 0.00281
+  }
+ }
 }

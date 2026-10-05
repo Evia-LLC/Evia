@@ -80,6 +80,83 @@ with `object-fit: cover`. `frame.focus` [0.5, 0.55] keeps the seat. The seat
 (`points.character`) sits at 58 % of the height. The top ~22 % is a plain,
 dark ceiling, which suits the greeting text.
 
+
+
+
+
+## Living-room masks (for animating the plate)
+
+The plates are still pictures. To give the room life (plants swaying in the air-conditioning, city windows
+twinkling, lamps flickering, LED coves breathing or carrying a slow travelling pulse), the web layer can drive
+small effects from these **data maps**. They were rendered from the same Blender scene, camera, depth of field,
+framing (including the safe margin where the plate has one) and size as the plates they pair with (`--passes masks`,
+`scripts/blender/mask_passes.py`, encoded by `scripts/blender/mask_post.py`), so every mask pixel lies exactly on the
+plate pixel of the same width. The anchors file lists them under `masks` (with the plate they pair with), and adds
+`lights`, `strips` and `plants` (ids used inside the masks) plus `points`/`ellipses` `lamp_<name>` for each lamp.
+
+They are not plates: never show them, sample them. All masks are 8-bit RGB **lossless** WebP (value = byte / 255,
+ids exact); `depth` is lossy. Masks that would be empty in a room are not published.
+
+| mask | R | G | B |
+|---|---|---|---|
+| `mask-plants` | leaf/stem coverage (anti-aliased, soft where the plate is out of focus) | sway weight: (distance from the plant's base / camera depth of the base) / `swayScale`, 0 at the pot .. 1 at the most mobile leaf tip in the frame, feathered to 0 at `featherPx` outside the silhouette | plant id / 255 (`plants[].id`), nearest plant inside the feather zone |
+| `mask-sky` | open sky seen through the glass (R=G=B) | | |
+| `mask-glass` | window glass seen directly (R=G=B) | | |
+| `mask-windows` | lit city windows (and street lights), weighted by haze visibility | per-window random id 0..1 (constant over a window) | city coverage (skyline silhouette) |
+| `mask-lamps` | lamp fixture coverage | lamp id / 255 (`lights[].id`) on the fixture and its halo zone | halo weight, 1 at the lamp centre .. 0 at `haloScale` x the fixture's radius |
+| `mask-coves` | LED strip / cove / ring coverage (only strips the camera sees) | distance along the strip 0..1 (`strips[].lengthM` in metres), carried outward to `zonePx` from the nearest strip | strip id / 255 (`strips[].id`), same zone |
+| `mask-emitter` (consult) | emitter rim + inlaid glass rings | angle around the pedestal axis 0..1 | radius / pedestal radius 0..1 (0 outside the glass top) |
+| `depth` | linear mist depth (R=G=B), range in `masks.depth.note` | | |
+
+Suggested use (not wired into the app yet):
+
+- **WebGL** (one full-screen quad per room; plate, glow/dim layers and masks as textures): plants
+  `uv -= wind(t, id) * G * A / plateWidth` with A about 2-3 px at 1280 wide (keep A below `featherPx`); windows
+  `rgb += rgb * R * twinkle(t, G)`; lamps `rgb *= 1 + B * flicker(t, id)` (candle: fast irregular, globes: slow
+  breathe, beacons: blink); coves `rgb += glowDelta * pulse(G * lengthM - speed * t)` where B > 0 (on closed strips,
+  `shape: "ring"`, use a whole number of waves per loop so the 1 -> 0 wrap never shows; the wrap is placed in a
+  stretch the camera cannot see or, on a ring seen all the way round, at its faintest point, where a few pixels
+  carry a mixed value).
+- **Exact values**: decode with `createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })`
+  and `UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE`; sample id channels with NEAREST, coverage/weights with LINEAR.
+- **Without WebGL**: lamps can pulse as CSS radial-gradient spans at `points.lamp_*` / `ellipses.lamp_*`
+  (`mix-blend-mode: plus-lighter`), coves with the existing glow layers; a grayscale mask (sky, glass) works as a
+  CSS `mask-image` with `mask-mode: luminance`.
+- Everything stays still under `prefers-reduced-motion` (and the app's reduced-motion setting).
+- Re-run `mask_post.py` after re-publishing a plate: the plate's own post step rewrites the anchors file.
+
+### In this folder
+
+| render | masks (widths) | pairs with | depth |
+|---|---|---|---|
+| L1 Home | `home-mask-{plants,sky,glass,windows,lamps,coves}-{2560,1280}.webp` | `home-{2560,1280}.webp` (and its dim/glow/fg layers) | `home-depth-1280.webp` (published with the plate) |
+| L2 phone | `mobile-mask-{plants,sky,glass,windows,lamps,coves}-{1080,720}.webp` | `mobile-{1080,720}.webp` | `mobile-depth-720.webp` (published with the plate) |
+| L3 strip | `strip-window-mask-{plants,sky,glass,windows,lamps,coves}-{640,320}.webp` | `strip-window-{640,320}.webp`; the 320 masks also fit `strip-window-soft-320.webp` | `strip-window-depth-320.webp` (0 = 0.5 m .. 1 = 30.5 m) |
+
+`anchors.json` / `anchors-mobile.json` carry the L1 / L2 lists; the strip's are in
+`../lounge-strip-window/anchors.json` (absolute srcs). Each `masks` list also names the plate's breathing layers
+(`glow`, `dim`: pictures, not data maps). The strip now has them too: `strip-window-{dim,glow}-{640,320}.webp`, graded
+by `lounge_post.py` (look `strip`) from the same final render as the published strip, whose plates that run
+reproduces bit for bit. As for Home, draw `glow` over `dim` with `plus-lighter` and animate its opacity ~0.6..1; unlike
+the cove mask, the glow layer includes the LEDs' reflections in the glossy floor.
+
+- **Plants**: the big plant in front of the window, the plant on the fluted planter, the two plants on the sofa ledge
+  and the small shrubs of the low planter, each with its own id so they can move out of phase. The palm at the far
+  left of the scene sits behind the partition and is not in the L1 mask. L3: the tall plant by the window and the small
+  plant on the plinth.
+- **Lamps**: the candle globe on the console (`motion: "flicker"`), the globe lamp by the acrylic sign (`breathe`) and
+  the ceiling downlights (`steady`). The second globe lamp is hidden by the armchair on L1 (partly visible on L2, see
+  `lights[].visible`). The city's red aviation beacons are in the scene but hidden behind towers from these cameras,
+  so none are listed.
+- **Coves**: island ceiling cove, portal arch, niche outline, fluted-planter rim, low-planter edge, ottoman and
+  banquette floor lines, the sign's edge and base (L3: soffit cove and rim, the two plinth rings, banquette line).
+- **Windows**: every lit window of the procedural city, far ones fainter in R (haze); B is the skyline silhouette.
+- **Outside**: the lounge looks out over a city about 60 m below; there are no trees outside. The outside life
+  available is the lit windows (twinkle) and the sky (a slow colour drift under `mask-sky`). Trees on a terrace would
+  need new geometry and a re-render of the plates.
+- Regenerate: `room_lounge.py -- --camera {home|home_mobile|sidebar_window} --passes masks --spp 128`, then
+  `mask_post.py publish ...` (header of `scripts/blender/room_lounge.py`). The render is deterministic (fixed seed).
+
 ## History
 
 - Home plate v2 (current): re-graded from the second L1 final

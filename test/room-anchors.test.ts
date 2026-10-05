@@ -248,4 +248,59 @@ describe('the published renders (public/env), read the one way every room loads'
       }
     }
   });
+
+  /*
+   * The living-room masks (scripts/blender/mask_passes.py + mask_post.py) are data maps for animating a plate:
+   * they must sit on the plate's own pixel grid at every width they are published at, and must never be listed
+   * as plates (Room.svelte would draw them).
+   */
+  const webpSize = (b: Buffer): [number, number] => {
+    const fourcc = b.toString('ascii', 12, 16);
+    if (fourcc === 'VP8L') {
+      const bits = b.readUInt32LE(21);
+      return [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
+    }
+    if (fourcc === 'VP8 ') return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+    if (fourcc === 'VP8X') return [b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1];
+    throw new Error(`not a WebP (${fourcc})`);
+  };
+
+  it("publishes each render's living-room masks on the plate's own pixel grid, never as plates", () => {
+    for (const [room, variants] of Object.entries(PUBLISHED_ROOMS) as [RoomId, RoomVariant[]][]) {
+      for (const variant of variants) {
+        const file = files[room][variant]!;
+        const raw = published(file) as {
+          masks?: Record<string, { src: string; widths: number[] } | string>;
+          lights?: { id: number; name: string; kind: string; cx: number; cy: number }[];
+          strips?: { id: number }[];
+          plants?: { id: number }[];
+        };
+        expect(raw.masks, file).toBeTruthy();
+        const resolve = (src: string) => (src.startsWith('/') ? src : `/env/${room}/${src}`);
+        const size = (src: string) => webpSize(readFileSync(new URL(`../public${resolve(src)}`, import.meta.url)));
+        const plate = raw.masks!.plate as string;
+        const entries = Object.entries(raw.masks!).filter(([, m]) => typeof m === 'object') as [
+          string,
+          { src: string; widths: number[] },
+        ][];
+        expect(entries.map(([name]) => name), file).toContain('plants');
+        for (const [name, mask] of entries) {
+          for (const w of mask.widths) {
+            const at = (src: string) => src.replace(/-\d+\.webp$/, `-${w}.webp`);
+            expect(size(at(mask.src)), `${file} ${name} ${w}`).toEqual(size(at(plate)));
+          }
+        }
+        const anchors = parseAnchors(raw)!;
+        expect(anchors.plates!.some((p) => /mask-|depth-/.test(p.src)), file).toBe(false);
+        for (const list of [raw.lights ?? [], raw.strips ?? [], raw.plants ?? []]) {
+          const ids = list.map((x) => x.id);
+          expect(new Set(ids).size, file).toBe(ids.length);
+          expect(ids.every((id) => Number.isInteger(id) && id >= 1 && id <= 255), file).toBe(true);
+        }
+        for (const lamp of raw.lights ?? []) {
+          if (lamp.kind !== 'beacon') expect(anchors.points?.[`lamp_${lamp.name}`], lamp.name).toEqual([lamp.cx, lamp.cy]);
+        }
+      }
+    }
+  });
 });
