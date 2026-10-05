@@ -35,6 +35,15 @@ vi.mock('../server/ai/claude.ts', () => ({
 vi.mock('../server/ai/budget.ts', () => ({
   allowance: vi.fn(async () => ({ ok: true, reason: '' })),
   record: vi.fn(async () => undefined),
+  withReservation: vi.fn(async (_input: unknown, provider: (r: unknown) => Promise<unknown>) => {
+    const admission = { operationId: 'test-operation' };
+    const outcome = await provider(admission);
+    return { result: (outcome as { result: unknown }).result, reservation: admission };
+  }),
+  BudgetDispatchError: class BudgetDispatchError extends Error {
+    dispatched: boolean;
+    constructor(message: string, dispatched: boolean) { super(message); this.dispatched = dispatched; }
+  },
 }));
 
 vi.mock('../server/db/users.ts', () => ({

@@ -83,9 +83,13 @@ analysisRouter.post('/face', scanLimiter, async (req, res) => {
   const abort = () => controller.abort();
   res.once('close', abort);
   try {
-    const metrics = await analyseWithPerfectCorp(image, { signal: controller.signal });
+    const metrics = await analyseWithPerfectCorp(image, { userId: req.userId!, signal: controller.signal });
     res.json({ provider: 'perfectcorp', metrics, modelVersion: PERFECTCORP_MODEL_VERSION, notes: PERFECTCORP_NOTE });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('over budget:')) {
+      res.status(429).json({ error: 'The shared analysis allowance is exhausted. Try again later.' });
+      return;
+    }
     res.json({ provider: 'local', reason: error instanceof PerfectCorpUnavailable ? error.reason : 'provider_error' });
   } finally {
     image.fill(0);

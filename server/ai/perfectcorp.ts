@@ -1,4 +1,6 @@
 /** Server-only adapter. No images, signed URLs, or vendor error bodies enter logs/storage. */
+import { withReservation, BudgetDispatchError } from './budget.ts';
+import { newId } from '../lib/ids.ts';
 import type { SkinAppearanceMetrics, SkinMetricKey } from '../../shared/types.ts';
 
 const ORIGIN = 'https://yce-api-01.makeupar.com';
@@ -41,7 +43,7 @@ export function mapPerfectCorpOutput(output: unknown): SkinAppearanceMetrics {
 /** No automatic task retries: one task submission can consume trial units. */
 export async function analyseWithPerfectCorp(
   image: Uint8Array,
-  options: { fetch?: typeof fetch; pollMs?: number; timeoutMs?: number; signal?: AbortSignal } = {},
+  options: { userId: string; fetch?: typeof fetch; pollMs?: number; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<SkinAppearanceMetrics> {
   const key = process.env.PERFECTCORP_API_KEY?.trim();
   if (!key) throw new PerfectCorpUnavailable('not_configured');
@@ -61,6 +63,11 @@ export async function analyseWithPerfectCorp(
     if (!json?.data || (json.status !== undefined && json.status !== 200)) throw new PerfectCorpUnavailable('provider_error');
     return json.data;
   }
+  let submitted = false;
+  const { result } = await withReservation({
+    operationId: `perfectcorp:${newId()}`, userId: options.userId,
+    provider: 'perfectcorp', unit: 'vision-tasks', estimatedUnits: 1,
+  }, async () => {
   try {
     const data = await api('file', {
       files: [{ content_type: 'image/jpeg', file_name: 'sample-scan.jpg', file_size: image.byteLength }],
@@ -88,6 +95,7 @@ export async function analyseWithPerfectCorp(
       body: new Uint8Array(image), signal, redirect: 'error',
     });
     if (!uploaded.ok) throw new PerfectCorpUnavailable('upload_failed');
+    submitted = true;
     const task = await api('task/skin-analysis', {
       src_file_id: file.file_id, dst_actions: Object.values(PERFECTCORP_MAPPING), format: 'json',
     });
@@ -114,14 +122,20 @@ export async function analyseWithPerfectCorp(
         } catch {
           // Result delivery must not fail because best-effort retention cleanup did.
         }
-        return mapped;
+        return { result: mapped, actual: { units: 1 } };
       }
       if (status.task_status === 'error') throw new PerfectCorpUnavailable('analysis_failed');
       if (!['running', 'pending', 'queued'].includes(status.task_status)) throw new PerfectCorpUnavailable('invalid_task');
     }
     throw new PerfectCorpUnavailable('timeout');
   } catch (error) {
+    if (!submitted) {
+      const reason = error instanceof PerfectCorpUnavailable ? error.reason : 'network_error';
+      throw new BudgetDispatchError(reason, false);
+    }
     if (error instanceof PerfectCorpUnavailable) throw error;
     throw new PerfectCorpUnavailable(signal.aborted ? 'timeout' : 'network_error');
   }
+  });
+  return result;
 }

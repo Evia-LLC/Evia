@@ -138,7 +138,7 @@ export async function handleTurn(userId: string, message: string): Promise<Elohi
   const classification = await classify(
     message,
     history.map((m) => `${m.role}: ${m.content}`),
-    { cloud },
+    { cloud, userId },
   );
   log.debug('orchestrator', 'classified', classification);
 
@@ -313,6 +313,7 @@ async function callModel(
   }
 
   const { value, usage } = await structuredTurn<RawTurn>({
+    userId,
     personaPrefix: PERSONA,
     contextBlock: ctx.block,
     messages,
@@ -326,7 +327,6 @@ async function callModel(
     cacheWrite: usage.cacheWrite,
     output: usage.output,
   });
-  await budget.record(userId, usage);
 
   const { directive, rejected } = sanitiseDirective(value.directive);
   if (rejected.length) {
