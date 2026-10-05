@@ -1,4 +1,4 @@
-import { row, rows, run } from './index.ts';
+import { row, rows, run, transaction } from './index.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { ProgressPhoto } from '../../shared/types.ts';
 
@@ -24,30 +24,34 @@ export async function createProgressPhoto(
   userId: string,
   input: { skinScanId: string; blobRef: string; capturedAt: string; consentEventId: string; presentation?: Record<string, string> },
 ): Promise<{ photo: ProgressPhoto; created: boolean }> {
-  const existing = await row<PhotoRow>(
-    'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ?', userId, input.skinScanId,
-  );
-  if (existing) return { photo: hydrate(existing), created: false };
   const id = newId();
   const createdAt = nowIso();
-  const inserted = await run(
-    `INSERT INTO progress_photos
-       (id, user_id, skin_scan_id, blob_ref, created_at, captured_at, consent_event_id, presentation_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (user_id, skin_scan_id) DO NOTHING`,
-    id, userId, input.skinScanId, input.blobRef, createdAt, input.capturedAt,
-    input.consentEventId, input.presentation ? JSON.stringify(input.presentation) : null,
-  );
-  if (!inserted) {
-    const winner = await row<PhotoRow>(
-      'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ?', userId, input.skinScanId,
+  return transaction(async (tx) => {
+    const owner = await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    if (!owner) throw new Error('Account no longer exists.');
+    const existing = await tx.row<PhotoRow>(
+      'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ? FOR UPDATE', userId, input.skinScanId,
     );
-    if (!winner) throw new Error('progress photo idempotency conflict could not be resolved');
-    return { photo: hydrate(winner), created: false };
-  }
-  return { photo: hydrate({ id, skin_scan_id: input.skinScanId, created_at: createdAt,
-    captured_at: input.capturedAt, consent_event_id: input.consentEventId,
-    presentation_json: input.presentation ? JSON.stringify(input.presentation) : null }), created: true };
+    if (existing) return { photo: hydrate(existing), created: false };
+    const inserted = await tx.run(
+      `INSERT INTO progress_photos
+         (id, user_id, skin_scan_id, blob_ref, created_at, captured_at, consent_event_id, presentation_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, skin_scan_id) DO NOTHING`,
+      id, userId, input.skinScanId, input.blobRef, createdAt, input.capturedAt,
+      input.consentEventId, input.presentation ? JSON.stringify(input.presentation) : null,
+    );
+    if (!inserted) {
+      const winner = await tx.row<PhotoRow>(
+        'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ? FOR UPDATE', userId, input.skinScanId,
+      );
+      if (!winner) throw new Error('progress photo idempotency conflict could not be resolved');
+      return { photo: hydrate(winner), created: false };
+    }
+    return { photo: hydrate({ id, skin_scan_id: input.skinScanId, created_at: createdAt,
+      captured_at: input.capturedAt, consent_event_id: input.consentEventId,
+      presentation_json: input.presentation ? JSON.stringify(input.presentation) : null }), created: true };
+  });
 }
 
 export async function listProgressPhotos(userId: string): Promise<ProgressPhoto[]> {
@@ -77,8 +81,14 @@ export async function allProgressPhotoRefs(userId: string): Promise<string[]> {
 }
 
 export async function deleteProgressPhoto(userId: string, id: string): Promise<string | null> {
-  const ref = await getProgressPhotoRef(userId, id);
-  if (!ref) return null;
-  await run('DELETE FROM progress_photos WHERE id = ? AND user_id = ?', id, userId);
-  return ref;
+  return transaction(async (tx) => {
+    await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    const found = await tx.row<{ blob_ref: string }>(
+      'SELECT blob_ref FROM progress_photos WHERE id = ? AND user_id = ? FOR UPDATE', id, userId,
+    );
+    if (!found) return null;
+    await tx.run('DELETE FROM progress_photos WHERE id = ? AND user_id = ?', id, userId);
+    await tx.run('DELETE FROM blobs WHERE ref = ?', found.blob_ref);
+    return found.blob_ref;
+  });
 }

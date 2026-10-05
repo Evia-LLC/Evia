@@ -10,7 +10,7 @@
  * is a longitudinal engine that will one day chart a shoulder ratio against a
  * hydration score and present the result as progress.
  */
-import { row, rows, run } from './index.ts';
+import { row, rows, run, transaction } from './index.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { BodyAnalysisRecord } from '../../shared/types.ts';
 
@@ -55,8 +55,11 @@ export async function insertBodyScan(
   refs: { imageRef?: string; profileImageRef?: string } = {},
 ): Promise<BodyAnalysisRecord> {
   const id = newId();
-  await run(
-    `INSERT INTO body_scans (id, user_id, captured_at, image_ref, profile_image_ref,
+  await transaction(async (tx) => {
+    const owner = await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    if (!owner) throw new Error('Account no longer exists.');
+    await tx.run(
+      `INSERT INTO body_scans (id, user_id, captured_at, image_ref, profile_image_ref,
                              metrics_json, waist_source, profile_json, profile_detail_json,
                              landmarks_json, confidence, model_version, profile_model_version)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -73,8 +76,9 @@ export async function insertBodyScan(
     // See scans.ts: NOT NULL column, and `pg` maps undefined to NULL.
     analysis.confidence ?? 0,
     analysis.modelVersion,
-    analysis.profileModelVersion ?? null,
-  );
+      analysis.profileModelVersion ?? null,
+    );
+  });
   return {
     ...analysis,
     id,
@@ -141,12 +145,17 @@ export async function allBodyBlobRefs(userId: string): Promise<string[]> {
  * merely a scan whose image was dropped, and the reader is told which.
  */
 export async function deleteBodyScan(userId: string, scanId: string): Promise<string[]> {
-  const found = await row<{ image_ref: string | null; profile_image_ref: string | null }>(
-    'SELECT image_ref, profile_image_ref FROM body_scans WHERE id = ? AND user_id = ?',
-    scanId,
-    userId,
-  );
-  if (!found) return [];
-  await run('DELETE FROM body_scans WHERE id = ? AND user_id = ?', scanId, userId);
-  return [found.image_ref, found.profile_image_ref].filter((r): r is string => Boolean(r));
+  return transaction(async (tx) => {
+    await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    const found = await tx.row<{ image_ref: string | null; profile_image_ref: string | null }>(
+      'SELECT image_ref, profile_image_ref FROM body_scans WHERE id = ? AND user_id = ? FOR UPDATE',
+      scanId,
+      userId,
+    );
+    if (!found) return [];
+    const refs = [found.image_ref, found.profile_image_ref].filter((r): r is string => Boolean(r));
+    await tx.run('DELETE FROM body_scans WHERE id = ? AND user_id = ?', scanId, userId);
+    for (const ref of refs) await tx.run('DELETE FROM blobs WHERE ref = ?', ref);
+    return refs;
+  });
 }

@@ -1,4 +1,4 @@
-import { row, rows, run } from './index.ts';
+import { row, rows, run, transaction } from './index.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { SkinAnalysis } from '../../shared/types.ts';
 
@@ -37,8 +37,13 @@ export async function insertScan(
   _refs: { imageRef?: string; thumbRef?: string } = {},
 ): Promise<SkinAnalysis> {
   const id = newId();
-  await run(
-    `INSERT INTO skin_scans (id, user_id, captured_at, image_ref, thumb_ref, metrics_json,
+  await transaction(async (tx) => {
+    // Account deletion locks this row first.  Taking the same lock fences a
+    // capture from being inserted after deletion has committed.
+    const owner = await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    if (!owner) throw new Error('Account no longer exists.');
+    await tx.run(
+      `INSERT INTO skin_scans (id, user_id, captured_at, image_ref, thumb_ref, metrics_json,
                              regions_json, capture_quality_json, observations_json,
                              confidence, model_version, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -56,8 +61,9 @@ export async function insertScan(
     // a missing field is a constraint violation rather than a zero.
     analysis.confidence ?? 0,
     analysis.modelVersion,
-    analysis.notes ?? null,
-  );
+      analysis.notes ?? null,
+    );
+  });
   return { ...analysis, id };
 }
 
@@ -122,12 +128,17 @@ export async function allBlobRefs(userId: string): Promise<string[]> {
 }
 
 export async function deleteScan(userId: string, scanId: string): Promise<string[]> {
-  const found = await row<{ image_ref: string | null; thumb_ref: string | null }>(
-    'SELECT image_ref, thumb_ref FROM skin_scans WHERE id = ? AND user_id = ?',
-    scanId,
-    userId,
-  );
-  if (!found) return [];
-  await run('DELETE FROM skin_scans WHERE id = ? AND user_id = ?', scanId, userId);
-  return [found.image_ref, found.thumb_ref].filter((r): r is string => Boolean(r));
+  return transaction(async (tx) => {
+    await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+    const found = await tx.row<{ image_ref: string | null; thumb_ref: string | null }>(
+      'SELECT image_ref, thumb_ref FROM skin_scans WHERE id = ? AND user_id = ? FOR UPDATE',
+      scanId,
+      userId,
+    );
+    if (!found) return [];
+    const refs = [found.image_ref, found.thumb_ref].filter((r): r is string => Boolean(r));
+    await tx.run('DELETE FROM skin_scans WHERE id = ? AND user_id = ?', scanId, userId);
+    for (const ref of refs) await tx.run('DELETE FROM blobs WHERE ref = ?', ref);
+    return refs;
+  });
 }

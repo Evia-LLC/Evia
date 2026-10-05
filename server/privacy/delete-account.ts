@@ -5,6 +5,7 @@ import * as bodyScans from '../db/body-scans.ts';
 import * as progressPhotos from '../db/progress-photos.ts';
 import { shredBlob } from '../lib/crypto.ts';
 import { log } from '../lib/log.ts';
+import { transaction } from '../db/index.ts';
 
 export interface DeleteAccountResult {
   ok: true;
@@ -35,6 +36,11 @@ export async function deleteAccount(
   userId: string,
   dependencies: DeleteAccountDependencies = defaults,
 ): Promise<DeleteAccountResult> {
+  // The production path keeps discovery rows and encrypted blobs in one
+  // Postgres transaction.  The injected path below remains intentionally
+  // compatible with service-level tests and callers that provide storage
+  // adapters.
+  if (dependencies === defaults) return deleteAccountAtomically(userId);
   const refs = [
     ...(await dependencies.skinBlobRefs(userId)),
     ...(await dependencies.bodyBlobRefs(userId)),
@@ -67,4 +73,41 @@ export async function deleteAccount(
     blobsFailed,
   });
   return { ok: true, blobsShredded, blobsFailed };
+}
+
+async function deleteAccountAtomically(userId: string): Promise<DeleteAccountResult> {
+  return transaction(async (tx) => {
+    const owner = await tx.row<{ id: string }>(
+      'SELECT id FROM users WHERE id = ? FOR UPDATE',
+      userId,
+    );
+    // DELETE is idempotent: a second request sees no account and has no work.
+    if (!owner) return { ok: true, blobsShredded: 0, blobsFailed: 0 };
+
+    const refs = await tx.rows<{ ref: string }>(
+      `SELECT image_ref AS ref FROM skin_scans WHERE user_id = ? AND image_ref IS NOT NULL
+       UNION ALL SELECT thumb_ref AS ref FROM skin_scans WHERE user_id = ? AND thumb_ref IS NOT NULL
+       UNION ALL SELECT image_ref AS ref FROM body_scans WHERE user_id = ? AND image_ref IS NOT NULL
+       UNION ALL SELECT profile_image_ref AS ref FROM body_scans WHERE user_id = ? AND profile_image_ref IS NOT NULL
+       UNION ALL SELECT blob_ref AS ref FROM progress_photos WHERE user_id = ? AND blob_ref IS NOT NULL`,
+      userId, userId, userId, userId, userId,
+    );
+    const uniqueRefs = [...new Set(refs.map((entry) => entry.ref))];
+    let blobsShredded = 0;
+    if (uniqueRefs.length) {
+      blobsShredded = await tx.run(
+        `DELETE FROM blobs WHERE ref IN (${uniqueRefs.map(() => '?').join(',')})`,
+        ...uniqueRefs,
+      );
+    }
+    // Explicitly remove owned catalogue rows before the user cascade; shared
+    // rows (owner_id NULL) remain untouched.
+    await tx.run('DELETE FROM products WHERE owner_id = ?', userId);
+    await tx.run('DELETE FROM users WHERE id = ?', userId);
+    log.info('privacy', 'account and all relational data deleted atomically', {
+      blobsShredded,
+      blobsFailed: 0,
+    });
+    return { ok: true, blobsShredded, blobsFailed: 0 };
+  });
 }
