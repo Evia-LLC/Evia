@@ -39,8 +39,25 @@ holo.setActiveRegion(region | null)             // the one being talked about: b
 holo.anchors()                 // Record<FaceRegionKey, { x, y, visible }> in CSS px of the canvas
 holo.resize()                  // re-read the canvas size (automatic where ResizeObserver exists)
 holo.setQuality(q); holo.setReducedMotion(on); holo.pause(); holo.resume()
+holo.setPass(pass | null)      // draws `pass` under the hologram every frame, same canvas and context (below)
+holo.redraw()                  // asks for a frame (under reduced motion frames are otherwise drawn on change only)
 holo.dispose()                 // frees every GPU resource and the context; mount a fresh <canvas> for a new one
 ```
+
+Two options exist for the character prototype (src/character3d, off by default):
+
+- `eye: { x, y }`: the reference point the camera sits straight in front of (default: the canvas centre).
+  A canvas enlarged past `HOLOGRAM_BOX` passes that box's centre, and the canvas becomes a window cut from a
+  larger symmetric view around it (a view offset): the head, its parallax and its anchors are exactly as on
+  the default canvas.
+- `setPass(pass)`: `pass.draw({ renderer, dt, cssW, cssH, anchors, reducedMotion })` is called every frame
+  into the cleared buffer before the hologram, which then draws over it on a fresh depth buffer. The pass
+  shares the DPR cap, quality steps, fps cap, pauses and context; it returns true while it is still moving
+  (for the reduced-motion loop). The engine owns it: a replaced pass, and the last one on `dispose()`, is
+  disposed; one that throws is dropped and the hologram keeps drawing.
+
+Anchors carry `z`, how far the point stands out of the face plane (reference px), for anything reaching
+for it in depth.
 
 Size the canvas with CSS; the engine reads `clientWidth`/`clientHeight` and handles DPR itself. While the
 canvas has no layout size (`display: none`, a collapsed panel on the phone's sequential flow) it keeps its

@@ -8,6 +8,8 @@
 
   The thumbnail carries `data-port`: the page measures it to start the leader
   line that runs to the region's anchor on the hologram.
+
+  `still`: no build-in of its own (the consult tour moves the card itself).
 -->
 <script lang="ts">
   import { thumbLabel as describeThumb, type ScanCallout } from '@/view/scan.ts';
@@ -23,9 +25,11 @@
     /** Order in the build-in stagger. */
     index?: number;
     compact?: boolean;
+    /** No build-in animation (the consult tour animates the card itself). */
+    still?: boolean;
   }
 
-  const { callout, side, crop = null, active = false, index = 0, compact = false }: Props = $props();
+  const { callout, side, crop = null, active = false, index = 0, compact = false, still = false }: Props = $props();
 
   const title = $derived(callout.heading.charAt(0) + callout.heading.slice(1).toLowerCase());
   const thumbLabel = $derived(describeThumb(callout));
@@ -35,6 +39,7 @@
   class="callout callout--{side}"
   class:is-active={active}
   class:is-compact={compact}
+  class:is-still={still}
   data-slot={callout.slot}
   style:--i={index}
   aria-label={title}
@@ -156,6 +161,9 @@
 
   .is-compact .callout__lines li {
     white-space: normal;
+  }
+  .callout.is-still {
+    animation: none;
   }
 
   @keyframes callout-in {

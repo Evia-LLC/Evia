@@ -21,11 +21,12 @@ export function parseCookieRecord(raw: string | null, now = Date.now()): CookieR
 }
 /**
  * Clears the Functional category's browser storage: main's intro and room-sound
- * keys, and (merge with evia-visual-rebuild) the sample-data choice and the
- * Saved product lists, which are gated the same way (src/sample/mode.svelte.ts,
+ * keys, and (merge with evia-visual-rebuild) the sample-data choice, the
+ * character-prototype switch and the Saved product lists, which are gated the
+ * same way (src/sample/mode.svelte.ts, src/character3d/switch.svelte.ts,
  * src/products/saved.svelte.ts). Throws only if storage does.
  */
-export const FUNCTIONAL_KEYS = ['elohim.intro.seen', 'elohim.sound', 'evia.sample'] as const;
+export const FUNCTIONAL_KEYS = ['elohim.intro.seen', 'elohim.sound', 'evia.sample', 'evia.character.proto'] as const;
 export const FUNCTIONAL_PREFIXES = ['evia.products.saved'] as const;
 function clearFunctionalStorage(): void {
   for (const key of FUNCTIONAL_KEYS) localStorage.removeItem(key);

@@ -13,7 +13,11 @@
   reading       the same frame while the real pipeline runs; the header tracks
                 its stages.
   consultation  the hologram of this session's own face mesh with the findings
-                around it (desk, tablet and phone compositions, Consultation).
+                around it (desk, tablet and phone compositions, Consultation),
+                told one place at a time by the consult tour first (prepared
+                here, specs/consult-tour.md; sample every visit, a real reading
+                once while its face is live), then all of it at once, where
+                any place can be explained again and the tour replayed.
   body          a body reading: her words and the ways forward.
   empty         the room without a head: "Scan to see your map".
 
@@ -36,7 +40,7 @@
   reading dock says which analysis the reading came from.
 -->
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import type { FaceRegionKey } from '@shared/types.ts';
   import AIDisclosure from '@/components/legal/AIDisclosure.svelte';
   import FacialScanConsent from '@/components/legal/FacialScanConsent.svelte';
@@ -52,7 +56,12 @@
   import ReadingDock from './scan/ReadingDock.svelte';
   import StatusHeader from './scan/StatusHeader.svelte';
   import { cropRegions, releaseCrops, type CropSet } from './scan/crops.ts';
-  import { syncExplainStyle } from './scan/explain.svelte.ts';
+  import { explain, syncExplainStyle } from './scan/explain.svelte.ts';
+  import type { PlateRect } from './scan/consult-plate.ts';
+  import ReplayRow from './scan/ReplayRow.svelte';
+  import { characterProto } from '@/character3d/switch.svelte.ts';
+  import { tour } from '@/stage/tour.svelte.ts';
+  import { realTourSteps, sampleTourSteps, tourIntro } from '@/scan/tour-steps.ts';
 
   const view = $derived(scanView());
 
@@ -129,6 +138,17 @@
     return { left, bottom, width, maxHeight: Math.max(150, height - bottom - top) };
   });
 
+  /*
+   * Character prototype (off by default, src/character3d): where the room plate is placed,
+   * so the stand-in shares its camera, relative to the desk stage.
+   */
+  let plateRect = $state.raw<PlateRect | null>(null);
+  const stagePlate = $derived(plateRect && stage ? { x: plateRect.x - stage.x, y: plateRect.y - stage.y, w: plateRect.w, h: plateRect.h } : null);
+  const figureOn = $derived(characterProto.on && layout === 'desk');
+  /* While the scan gets ready she gestures toward the capture (or the consent that stands in for it). */
+  let captureEl: HTMLElement | undefined = $state();
+  let consentEl: HTMLElement | undefined = $state();
+
   /** The tablet composition's disclosure bar, measured so the reading can scroll clear of it. */
   let aibarH = $state(0);
 
@@ -164,6 +184,63 @@
   onMount(() => {
     syncExplainStyle();
   });
+
+  /* ---- the consult tour (specs/consult-tour.md): prepared here, played by the runner ---------- */
+  /** The tour's key: 'sample', or the reading's capturedAt. */
+  const tourKey = $derived(consulting ? (view.mode === 'sample' ? 'sample' : view.capturedAt) : null);
+
+  let systemReduced = $state(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  onMount(() => {
+    if (typeof matchMedia !== 'function') return;
+    const q = matchMedia('(prefers-reduced-motion: reduce)');
+    const on = () => (systemReduced = q.matches);
+    q.addEventListener?.('change', on);
+    return () => q.removeEventListener?.('change', on);
+  });
+  const reducedMotion = $derived(systemReduced || (session.user?.preferences.reducedMotion ?? false));
+  $effect(() => {
+    tour.setReducedMotion(reducedMotion);
+  });
+
+  /*
+   * A consultation on screen gets its tour: sample every time it mounts, a real reading once
+   * (while its face is still live); afterwards the summary with re-explain. A new key (the sample
+   * switch, a new reading) ends the old run.
+   */
+  $effect(() => {
+    const key = tourKey;
+    if (!key) return;
+    untrack(() => {
+      const t = tour.view;
+      if (t.key === key && t.phase !== 'off') return;
+      const analysis = view.mode === 'real' ? director.hologram.analysis : null;
+      const steps = view.mode === 'sample' ? sampleTourSteps() : analysis ? realTourSteps(view, analysis, explain.style) : [];
+      tour.prepare({
+        key,
+        mode: view.mode,
+        steps,
+        intro: tourIntro(view),
+        autoplay: view.mode === 'sample' || (view.mesh === 'live' && !tour.hasPlayed(key)),
+        face: view.mesh === 'sample' || view.mesh === 'live',
+        reducedMotion,
+      });
+    });
+  });
+  // The Detailed / Gen-Z register changed in the summary: re-explain and replay say it that way.
+  $effect(() => {
+    const style = explain.style;
+    untrack(() => {
+      const analysis = director.hologram.analysis;
+      if (view.mode === 'real' && analysis && tour.view.key === tourKey) tour.updateSteps(realTourSteps(view, analysis, style));
+    });
+  });
+  onDestroy(() => tour.end('left'));
+
+  const tourSummary = $derived(tour.view.key === tourKey && tour.view.phase === 'summary' && tour.view.beat === null);
+  /** Her reply to a real reading is still to come while its face is live: re-explaining now would talk over it. */
+  const replyPending = $derived(view.mode === 'real' && view.mesh === 'live');
+  const canAgain = $derived(!replyPending && tour.view.steps.length > 0);
+  const canReplay = $derived(!replyPending && tour.view.face && tour.view.steps.length > 0);
 
   $effect(() => {
     void [width, height, view.callouts, layout];
@@ -222,7 +299,15 @@
       withText={consulting && layout === 'desk'}
       engraveLeft={!compact}
       withBooks={view.mode === 'sample'}
+      onrect={(r) => (plateRect = r)}
     />
+  {/if}
+
+  {#if figureOn && capturing}
+    <!-- Loaded only with the prototype on: nothing of it is fetched otherwise. -->
+    {#await import('@/character3d/CharacterStage.svelte') then Stage}
+      <Stage.default plate={plateRect} frame={captureEl ?? consentEl ?? null} />
+    {/await}
   {/if}
 
   {#if width && height}
@@ -243,7 +328,12 @@
           {compact}
           liveMesh={director.hologram.mesh}
           {crops}
+          {tourKey}
+          {canAgain}
+          {canReplay}
           onmisfit={() => (misfit = { w: width, h: height })}
+          characterOn={figureOn}
+          plateRect={stagePlate}
         />
       </div>
       {#if dock}
@@ -254,8 +344,11 @@
           style:width="{dock.width}px"
           style:max-height="{dock.maxHeight}px"
         >
+          {#if tourSummary}
+            <ReplayRow replay={canReplay} again={canAgain} class="scan__replay" />
+          {/if}
           {#if view.mode === 'real'}
-            <div class="scan__dock"><ReadingDock /></div>
+            <div class="scan__dock"><ReadingDock quiet={!tourSummary} /></div>
           {/if}
           <AIDisclosure consultation result tone="holo" class="scan__ai scan__ai--floor" />
         </div>
@@ -263,7 +356,17 @@
     {:else if consulting}
       <div class="scan__scroll" class:is-fixed={layout === 'phone'} style:--aibar-h="{layout === 'tablet' ? aibarH : 0}px">
         <StatusHeader status={view.status} class="scan__status" />
-        <Consultation {view} {layout} u={1} compact={false} liveMesh={director.hologram.mesh} {crops} />
+        <Consultation
+          {view}
+          {layout}
+          u={1}
+          compact={false}
+          liveMesh={director.hologram.mesh}
+          {crops}
+          {tourKey}
+          {canAgain}
+          {canReplay}
+        />
       </div>
       {#if layout === 'tablet'}
         <!-- A footer bar with its own scrim: the reading scrolls under it, never text on text,
@@ -276,7 +379,7 @@
         <StatusHeader status={view.status} backed class="scan__status {layout === 'phone' ? 'scan__status--over' : ''}" />
         {#if capturing}
           {#if facialAccepted}
-            <div class="scan__capture">
+            <div class="scan__capture" bind:this={captureEl}>
               <ScanCapture {layout}>
                 <!-- Not in the phone's fixed sheet: every line there shrinks the face oval
                      above it (this one by about a third at 390x844), and the phone showed it
@@ -289,7 +392,7 @@
             <!-- The consent stands in for the camera: main's capture lede above it and the
                  section 8 notice under it, in its own column (on a phone, its own scroller). -->
             <div class="scan__consent">
-              <div class="scan__consent-col">
+              <div class="scan__consent-col" bind:this={consentEl}>
                 <p class="scan__lede scan__lede--consent">{CAPTURE_LEDE}</p>
                 <FacialScanConsent tone="holo" onAccepted={() => { facialAccepted = true; }} onDeclined={() => router.go('/')} />
                 <AIDisclosure consultation result tone="holo" class="scan__ai scan__ai--consent" />
@@ -495,9 +598,13 @@
     overscroll-behavior: contain;
     border-radius: 14px;
   }
-  .scan .scan__floor > :global(.scan__ai--floor) {
+  .scan .scan__floor > :global(.scan__ai--floor),
+  .scan .scan__floor > :global(.scan__replay) {
     position: static;
     flex: none;
+  }
+  .scan .scan__floor > :global(.scan__replay) {
+    align-self: flex-start;
   }
   .scan :global(.scan__ai) {
     position: absolute;

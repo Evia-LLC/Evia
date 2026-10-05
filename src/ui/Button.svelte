@@ -38,6 +38,11 @@
     rel?: string;
     type?: HTMLButtonAttributes['type'];
     disabled?: boolean;
+    /**
+     * Unavailable but still focusable (`aria-disabled`): the click does nothing and focus is not
+     * lost, for a control that comes and goes under the reader's focus (the consult tour's Previous / Next).
+     */
+    unavailable?: boolean;
     pressed?: boolean;
     label?: string;
     onclick?: (event: MouseEvent) => void;
@@ -60,6 +65,7 @@
     rel,
     type = 'button',
     disabled = false,
+    unavailable = false,
     pressed,
     label,
     onclick,
@@ -105,7 +111,17 @@
     {@render inner()}
   </a>
 {:else}
-  <button class={classes} {type} {disabled} aria-label={label} aria-pressed={pressed} {onclick}>
+  <button
+    class={classes}
+    {type}
+    {disabled}
+    aria-disabled={unavailable || undefined}
+    aria-label={label}
+    aria-pressed={pressed}
+    onclick={(event) => {
+      if (!unavailable) onclick?.(event);
+    }}
+  >
     {@render inner()}
   </button>
 {/if}
@@ -148,7 +164,8 @@
   .ev-btn:active:not(:disabled) {
     transform: translateY(1px) scale(0.99);
   }
-  .ev-btn:disabled {
+  .ev-btn:disabled,
+  .ev-btn[aria-disabled='true'] {
     cursor: not-allowed;
     opacity: 0.5;
   }

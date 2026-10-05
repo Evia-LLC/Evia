@@ -15,6 +15,9 @@ only writers. Components talk back through the few input methods listed at the e
 
 ## `director.character`: for the character (none is drawn yet; the state is kept for when one is)
 
+The one reader today is the character prototype (src/character3d, off by default: a stand-in mannequin on
+the Scan page), which maps these fields to its head, arms and jaw; see its README.
+
 | field | type | meaning |
 |---|---|---|
 | `state` | `CharacterState` | The state from `shared/character-fsm.ts`, after its transition rules: IDLE, LISTENING, THINKING, SPEAKING, HAPPY, CONCERNED, EXCITED, CONFUSED, CLINICAL_ANALYSIS, ANALYSIS_COMPLETE, EXPLAINING, GOODBYE. Pick the pose from this. |
@@ -68,3 +71,13 @@ Related session fields the director writes: `session.sceneMode` (`'lounge'` → 
 
 In development the director is also on `window.__evia.director`, next to `session`, `sample` and
 `router`. `director.step(dt)` advances a line by hand when the pane throttles animation frames.
+
+## Rooms, and the rooms alive
+
+`Room.svelte` draws a room's Blender plate (anchors via `room-anchors.ts`, published renders listed in
+`env-rooms.ts`); `RoomSurface.svelte` pins HTML onto its surfaces. Once the plate is on screen, Room lazily
+mounts the living plate (`living/`, a small WebGL2 renderer driven by the masks each render publishes):
+lamps flicker or breathe, LED coves breathe with a slow travelling bead, plants and trees sway, city
+windows switch off and on, the sky drifts, an aircraft's beacon crosses it, and the room answers the
+pointer (or tilt) with a little parallax. Still under reduced motion (system or app setting), paused while
+hidden or off screen, a CSS fallback without WebGL2. See `living/README.md`.

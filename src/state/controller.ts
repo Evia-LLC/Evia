@@ -25,6 +25,8 @@ import { voice } from '@/voice/controller.ts';
 import { guestEvent, guestTurn } from '@/lib/local-engine.ts';
 import * as sound from '@/lib/sound.ts';
 import { narrationFor, scanSentiment } from '@/scan/choreography.ts';
+import { realTourTexts } from '@/scan/tour-steps.ts';
+import { tour } from '@/stage/tour.svelte.ts';
 import { POKE_LINES, CONNECTION_LOST_LINE, LONG_THINK_LINE } from '@/lib/lines.ts';
 import { introSeen, introWasSkipped } from '@/lib/intro.ts';
 import { BODY_HIGHER_IS_BETTER } from '@/body-analysis/metrics.ts';
@@ -1148,18 +1150,23 @@ export async function runAnalysis(
     director?.setFaceMesh(session.lastMesh);
 
     /*
-     * The reveal, narrated - and hers.
+     * The reading, told one place at a time - and hers.
      *
-     * The regions light one at a time on the hologram, and she says what she
-     * found in each as it lights - the lines are short, deterministic, and
-     * come from the same observations the cards print, so the voice and the
-     * readout can never disagree. Fetched before the reveal starts so the
+     * The Scan page plays the consult tour once the face has formed
+     * (src/stage/tour.svelte.ts, specs/consult-tour.md): she taps each place
+     * on the hologram, a line draws out to its card, and she says what she
+     * can see there, in the words the cards print - so the voice and the
+     * readout can never disagree. It replaces the old metric-by-metric
+     * narration: two voices over one face would collide. Everything she may
+     * say is fetched now, the opening line before the reading shows, so the
      * first word lands with the first light rather than a network hop later.
      */
-    const narration = narrationFor(session.latestScan!, previous);
-    if (narration) await voice.preload([narration.text]).catch(() => {});
+    const scan = session.latestScan!;
+    const lines = realTourTexts(scan, session.user?.preferences.explanationStyle === 'genz' ? 'genz' : 'detailed');
+    await voice.preload(lines.slice(0, 1)).catch(() => {});
+    void voice.preload(lines.slice(1)).catch(() => {});
 
-    director?.presentAnalysis(session.latestScan!, previous, scanSentiment(session.latestScan!, previous));
+    director?.presentAnalysis(scan, previous, scanSentiment(scan, previous));
     session.scanActive = false;
 
     /*
@@ -1168,50 +1175,27 @@ export async function runAnalysis(
      * For an account the server builds the plan from the stored scan; for a
      * guest the nine numbers go up with the request and come back as a plan
      * and picks, and nothing is kept. Either way a failure here costs the
-     * shelf, not the reading - and running it under the narration means the
-     * shelf is usually ready before she finishes the sentence.
+     * shelf, not the reading - and running it under the tour means the shelf
+     * is usually ready before she reaches the last place.
      */
     const picksReady = loadPicks(analysis);
 
-    if (narration && voice.willSpeak(narration.text) !== 'none') {
-      /*
-       * No directive here on purpose. `presentAnalysis` just gave her the
-       * verdict's own face - a smile for an improving read, concern for a
-       * declining one - and a generic focused overlay a tick later erased it
-       * before a single frame rendered, which was her biggest moment
-       * delivered with her flattest face. The pointing arrives per clause
-       * from `revealRegion`, which spreads the verdict directive it finds.
-       */
-      /*
-       * Her voice paces the lights. `spokenChars` is the word-boundary
-       * high-water mark into this exact line (speaking starts it at zero),
-       * so each region lights as she reaches its clause. A plain interval
-       * rather than an $effect - this is a scripted moment inside one call,
-       * not a subscription. When she cannot speak at all, this whole branch
-       * is skipped and the director's own timed reveal carries the moment.
-       */
-      const spoken = voice.speakAndWait(narration.text);
-      let lit = 0;
-      const drive = window.setInterval(() => {
-        while (lit < narration.clauses.length && session.spokenChars >= narration.clauses[lit].charStart) {
-          director?.revealRegion(narration.clauses[lit].key);
-          lit++;
-        }
-      }, 60);
-      await spoken;
-      window.clearInterval(drive);
-      // A line cut short by the guard must still finish the reveal - the
-      // readout cannot be hostage to the audio.
-      while (lit < narration.clauses.length) director?.revealRegion(narration.clauses[lit++].key);
-    }
+    /*
+     * The tour is the page's: it starts when the face forms and ends when
+     * every place has been explained, or the reader asks for all of it at
+     * once. If the page never plays it (the reader left /scan), she carries
+     * on after a short wait.
+     */
+    const run = await tour.awaitRun(scan.capturedAt, { startWithinMs: 8000 });
     sound.settle();
 
     await picksReady;
 
-    // She reads the result out loud, from the numbers that were just stored -
-    // and the reply is told what she already said, so it builds on the
-    // narration instead of reading the same numbers back.
-    await raiseEvent('scan_complete', undefined, narration ? { spokenNarration: narration.text } : undefined);
+    // She replies to the result, from the numbers that were just stored -
+    // and the reply is told what she already said, so it builds on the tour
+    // instead of reading the same numbers back.
+    const spoken = run.spoken || narrationFor(scan, previous)?.text;
+    await raiseEvent('scan_complete', undefined, spoken ? { spokenNarration: spoken } : undefined);
 
     // Then the screen stops being your face and becomes your plan. Deliberately
     // after she has finished speaking: the swap is the punctuation on the

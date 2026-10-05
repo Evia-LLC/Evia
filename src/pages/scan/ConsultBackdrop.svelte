@@ -51,9 +51,11 @@
     engraveLeft?: boolean;
     /** Title the book spines. Off when the reading dock stands over the book stack (real mode). */
     withBooks?: boolean;
+    /** Told where the whole plate is placed (box px), or null without a render (character prototype). */
+    onrect?: (rect: PlateRect | null) => void;
   }
 
-  const { box, stage, pinAt = [0.5, 0.5], withText = false, engraveLeft = true, withBooks = true }: Props = $props();
+  const { box, stage, pinAt = [0.5, 0.5], withText = false, engraveLeft = true, withBooks = true, onrect }: Props = $props();
 
   let plate = $state.raw<ConsultPlate | null>(null);
   /* Which render `plate` is (a missing portrait set falls back to the landscape one). */
@@ -87,6 +89,10 @@
   });
 
   const showPlate = $derived(!!plate && !!rect && status === 'plate');
+
+  $effect(() => {
+    onrect?.(rect);
+  });
 
   /* ---- surfaces: text warped onto the plate's quads ------------------------ */
 

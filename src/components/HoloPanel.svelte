@@ -15,9 +15,17 @@
    * they cannot disagree. Mounted by `App.svelte` while she is out of the
    * lounge; retire it only once the scan page puts every one of these values
    * and the routine plan in the DOM itself.
+   *
+   * It says each reading as the cards do - the band word, never the 0-100
+   * index (a reading is an appearance index, not a quantity; SRS section 5) -
+   * and it is not a live region while the consult tour plays: the tour's own
+   * talk card announces each place, and two announcers would talk over each
+   * other. Its live region comes back with the summary.
    */
   import { session } from '@/state/session.svelte.ts';
   import { selectPresented } from '@/holograms/presented.ts';
+  import { severityFor } from '@/skin-analysis/observations.ts';
+  import { tour } from '@/stage/tour.svelte.ts';
   import {
     METRIC_HIGHER_IS_BETTER,
     METRIC_LABELS,
@@ -38,22 +46,25 @@
    * a trend out of measurement jitter.
    */
   function describe(key: SkinMetricKey): string {
-    const value = scan ? Math.round(scan.metrics[key]) : null;
-    if (value === null) return `${METRIC_LABELS[key]}: not measured yet`;
+    if (!scan) return `${METRIC_LABELS[key]}: not measured yet`;
+    const { severity, severityLabel } = severityFor(key, scan.metrics[key]);
+    // The cards' word: "Not flagged" rather than "Clear", which reads as a clean bill of health.
+    const band = severity === 'clear' ? 'Not flagged' : severityLabel;
 
     const trend: MetricTrend | undefined = trends.get(key);
     const delta = trend?.significant ? trend.deltaFromPrevious : null;
     if (delta === null || delta === undefined || delta === 0) {
-      return `${METRIC_LABELS[key]}: ${value}, holding steady`;
+      return `${METRIC_LABELS[key]}: ${band}, holding steady`;
     }
     const better = METRIC_HIGHER_IS_BETTER[key] ? delta > 0 : delta < 0;
-    return `${METRIC_LABELS[key]}: ${value}, ${Math.abs(Math.round(delta))} points ${
-      better ? 'better' : 'worse'
-    } than last time`;
+    return `${METRIC_LABELS[key]}: ${band}, ${better ? 'better' : 'worse'} than last time`;
   }
+
+  /** The consult tour is telling the reading place by place: it is the one announcer then. */
+  const touring = $derived(tour.view.phase === 'forming' || tour.view.phase === 'clean' || tour.view.phase === 'step');
 </script>
 
-<section class="sr-only" aria-live="polite">
+<section class="sr-only" aria-live={touring ? 'off' : 'polite'}>
   {#if session.panelMode === 'routine'}
     <h2>Suggested routine</h2>
     <ol>

@@ -255,7 +255,8 @@ describe('sample mode never writes to the server', () => {
 
     await startScanFlow('face');
     const run = runAnalysis({} as never, 'face');
-    await vi.advanceTimersByTimeAsync(5_000);
+    // No page plays the consult tour here, so the controller waits its 8 s for one, then carries on.
+    await vi.advanceTimersByTimeAsync(10_000);
     await run;
 
     expect(api.saveScan).not.toHaveBeenCalled();

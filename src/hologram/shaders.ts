@@ -22,6 +22,35 @@ uniform float uMotion;    // 0 under reduced motion
 vec4 light(vec3 c) { return vec4(c, max(c.r, max(c.g, c.b))); }
 `;
 
+/**
+ * The tap ripple (specs/consult-tour.md 8.1), shared by the face surface and its dot lattice: a
+ * Gaussian ring of radius uRipR and width uRipW (world px) around uRipC, of strength uRipA, core
+ * #dcffff fading to #86ddf8 at its edge; and a small bloom (uBloomA) on the spot itself.
+ */
+const RIPPLE = /* glsl */ `
+uniform vec3 uRipC;
+uniform float uRipR;
+uniform float uRipW;
+uniform float uRipA;
+uniform float uBloomA;
+float rippleRing(vec3 p) {
+  if (uRipA <= 0.0) return 0.0;
+  float d = distance(p, uRipC);
+  float s = uRipW / 2.355;
+  float k = (d - uRipR) / s;
+  return uRipA * exp(-0.5 * k * k);
+}
+vec3 rippleLight(vec3 p) {
+  if (uRipA <= 0.0 && uBloomA <= 0.0) return vec3(0.0);
+  float d = distance(p, uRipC);
+  float ring = rippleRing(p);
+  float edge = clamp(abs(d - uRipR) / max(1.0, uRipW * 0.5), 0.0, 1.0);
+  vec3 c = mix(vec3(0.863, 1.0, 1.0), vec3(0.525, 0.867, 0.973), edge);
+  float bloom = uBloomA * exp(-2.0 * (d * d) / (14.0 * 14.0));
+  return c * ring + vec3(0.863, 1.0, 1.0) * bloom;
+}
+`;
+
 export const FACE_VERT = /* glsl */ `
 ${COMMON}
 attribute float aEdge;
@@ -61,6 +90,7 @@ uniform float uTopY;      // world y of the face's top edge
 uniform float uFaceH;
 uniform vec2 uFaceC;      // world x, y of the face's bounding-box centre
 uniform float uFaceW;
+${RIPPLE}
 varying vec3 vN;
 varying vec3 vWorld;
 varying vec2 vUv;
@@ -117,6 +147,9 @@ void main() {
   float dy = vWorld.y - uScanY;
   emit += uScanOn * (exp(-dy * dy / 90.0) * 0.07 + exp(-dy * dy / 5.0) * 0.12) * vec3(0.78, 0.92, 1.0);
 
+  // The tap: one ring spreading over the surface from the touched spot, and a bloom on the spot.
+  emit += rippleLight(vWorld);
+
   // Coverage: about 0.95 facing, 0.75 at grazing angles; fades out on the silhouette
   // and, over the upper face, along a dome that follows the outline: the forehead
   // dissolves into the lattice over its last tenth or so instead of stopping at a
@@ -149,6 +182,7 @@ uniform float uScanY;
 uniform float uScanOn;
 uniform float uTopY;
 uniform float uFaceH;
+${RIPPLE}
 attribute vec3 aNormal;
 attribute vec2 aUv;
 attribute float aEdge;
@@ -173,12 +207,15 @@ void main() {
   float a = mix(0.4 + 0.18 * lit, 0.8, zone) * mix(1.0, 0.8 + 0.2 * uBreath, zone);
   a = (a + act * 0.15) * twinkle + band * 0.45;
   a *= smoothstep(0.02, 0.4, aEdge) * smoothstep(0.02, 0.3, ndv) * mix(0.15, 1.0, top) * uPresence;
-  vAlpha = a;
   // Inside a zone the dots take a pale version of its hue.
   vec3 dotCol = vec3(0.965, 0.910, 0.988);
   vec3 hue = z / max(zmax, 1e-3);
   vTint = mix(dotCol, mix(hue, vec3(1.0), 0.4), zone * 0.8);
-  float size = (mix(1.15, 1.6, zone) + band * 0.5 + act * 0.25) * (0.8 + 0.45 * fract(aSeed * 17.31));
+  // Dots the tap's ring passes lift to the hologram's core colour for the moment it does.
+  float rip = rippleRing(wp.xyz);
+  vAlpha = a + rip * 0.5 * uPresence * smoothstep(0.02, 0.4, aEdge);
+  vTint = mix(vTint, vec3(0.863, 1.0, 1.0), clamp(rip * 1.4, 0.0, 1.0));
+  float size = (mix(1.15, 1.6, zone) + band * 0.5 + act * 0.25 + rip * 0.4) * (0.8 + 0.45 * fract(aSeed * 17.31));
   gl_PointSize = max(1.0, size * uPxScale * 2.0);
   gl_Position = projectionMatrix * viewMatrix * wp;
 }

@@ -13,6 +13,9 @@ import { session } from '../src/state/session.svelte.ts';
 import { AudioLockedSpeechTrack, SpeechTrack } from '../src/character/speech.ts';
 import type { SkinAnalysis, SkinAppearanceMetrics } from '../shared/types.ts';
 import type { BodyAnalysis } from '../src/body-analysis/pipeline.ts';
+import { tour } from '../src/stage/tour.svelte.ts';
+import { OFF_VIEW } from '../src/stage/tour-machine.ts';
+import { sampleTourSteps } from '../src/scan/tour-steps.ts';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -213,5 +216,104 @@ describe('touch', () => {
     vi.advanceTimersByTime(7_100);
     expect(calls).toBe(1);
     director.onLongThink = null;
+  });
+});
+
+describe('the consult tour', () => {
+  const metrics: SkinAppearanceMetrics = {
+    hydration: 20,
+    oiliness: 85,
+    redness: 80,
+    texture: 50,
+    pores: 50,
+    darkSpots: 50,
+    evenness: 50,
+    underEye: 50,
+    acneIndicators: 50,
+  };
+  const reading = {
+    id: 'scan-1',
+    capturedAt: '2026-09-20T10:00:00.000Z',
+    metrics,
+    confidence: 0.9,
+    quality: { brightness: 0.5, blur: 0.1, faceCoverage: 0.6, ok: true, issues: [] },
+    regions: {},
+    modelVersion: 'test',
+    imageStored: false,
+  } as unknown as SkinAnalysis;
+  const quietVoice = { speakAndWait: async () => {}, willSpeak: () => 'none' as const, stopSpeaking: () => {} };
+  const steps = sampleTourSteps();
+
+  afterEach(() => {
+    tour.detach();
+  });
+
+  function attach() {
+    tour.attach({
+      director,
+      voice: quietVoice,
+      now: () => performance.now(),
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    });
+  }
+
+  it('publishes the tour record only through publishTour, and forwards her stage\'s reports', () => {
+    const seen: unknown[] = [];
+    expect(director.tour.phase).toBe('off');
+    const view = { ...director.tour, phase: 'clean' as const };
+    director.publishTour(view);
+    expect(director.tour).toBe(view);
+    director.onTourReport = (r) => seen.push(r);
+    director.reportTour({ kind: 'contact', seq: 3 });
+    expect(seen).toEqual([{ kind: 'contact', seq: 3 }]);
+    director.onTourReport = null;
+    director.publishTour(OFF_VIEW);
+  });
+
+  it('releases a lit region: nothing active and the point let go, her state kept', () => {
+    director.applyDirective({ state: 'EXPLAINING', expression: 'warm', gesture: 'point_to_hologram', intensity: 0.6 });
+    director.revealRegion('redness');
+    expect(director.hologram.activeRegion).toBe('redness');
+    director.releaseRegion();
+    expect(director.hologram.activeRegion).toBeNull();
+    expect(director.character.gesture).toBeNull();
+    expect(director.character.state).toBe('EXPLAINING');
+  });
+
+  it('keeps the timed reveal dark while a tour runs, or while the controller waits for one', () => {
+    director.publishTour({ ...OFF_VIEW, phase: 'clean' });
+    director.presentAnalysis(reading, null, 'steady');
+    vi.advanceTimersByTime(20_000);
+    expect(director.hologram.revealed).toEqual([]);
+    director.publishTour({ ...OFF_VIEW, awaited: true });
+    director.presentAnalysis(reading, null, 'steady');
+    vi.advanceTimersByTime(20_000);
+    expect(director.hologram.revealed).toEqual([]);
+    director.publishTour(OFF_VIEW);
+  });
+
+  it('ends the tour when she leaves the consult room, and on reset', async () => {
+    attach();
+    await director.enterClinical();
+    vi.runOnlyPendingTimers();
+    tour.prepare({ key: 'sample', mode: 'sample', steps, intro: 'Hello.', autoplay: true, face: false, reducedMotion: false });
+    expect(director.tour.phase).toBe('clean');
+    director.exitClinical();
+    expect(director.tour.phase).toBe('off');
+    tour.prepare({ key: 'sample', mode: 'sample', steps, intro: 'Hello.', autoplay: true, face: false, reducedMotion: false });
+    director.reset();
+    expect(director.tour.phase).toBe('off');
+  });
+
+  it('lights the step\'s metric at the tap through the director', () => {
+    attach();
+    tour.prepare({ key: 'sample', mode: 'sample', steps, intro: 'Hello.', autoplay: true, face: true, reducedMotion: true });
+    tour.faceFormed('sample');
+    tour.next();
+    expect(director.tour.phase).toBe('step');
+    expect(director.hologram.activeRegion).toBe(steps[0].metric);
+    tour.showAll();
+    expect(director.hologram.activeRegion).toBeNull();
   });
 });

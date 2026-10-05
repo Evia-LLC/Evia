@@ -19,7 +19,9 @@
  * The zone thumbnails are neutral skin-texture tiles (no faces, BUILD-PLAN
  * decision 3), drawn by the page from `art`.
  */
-import type { ScanView } from '@/view/scan.ts';
+import type { FaceRegionKey, SkinMetricKey } from '@shared/types.ts';
+import type { RegionHighlight } from '@/hologram/regions.ts';
+import type { CalloutSlot, ScanView } from '@/view/scan.ts';
 
 export const SAMPLE_SCAN: ScanView = {
   mode: 'sample',
@@ -48,6 +50,7 @@ export const SAMPLE_SCAN: ScanView = {
       heading: 'FOREHEAD',
       lines: ['Uneven texture', 'Early congestion', 'Slight dehydration'],
       anchor: 'forehead',
+      regions: ['forehead'],
       thumb: { kind: 'sample', art: 'forehead' },
       metrics: [],
     },
@@ -57,6 +60,7 @@ export const SAMPLE_SCAN: ScanView = {
       lines: ['Visible pores', 'Oil activity (T-zone)', 'Texture irregularity'],
       // The mockup's PORES leader lands on the left under-eye crescent (758,283).
       anchor: 'periorbitalLeft',
+      regions: ['glabella', 'nose'],
       thumb: { kind: 'sample', art: 'pores' },
       metrics: [],
     },
@@ -65,6 +69,7 @@ export const SAMPLE_SCAN: ScanView = {
       heading: 'CHEEKS',
       lines: ['Mild redness', 'Barrier sensitivity', 'Uneven tone'],
       anchor: 'cheekLeft',
+      regions: ['cheekLeft', 'cheekRight'],
       thumb: { kind: 'sample', art: 'cheeks' },
       metrics: [],
     },
@@ -73,6 +78,7 @@ export const SAMPLE_SCAN: ScanView = {
       heading: 'UNDER-EYES',
       lines: ['Mild dark circles', 'Dehydration lines', 'Loss of elasticity'],
       anchor: 'periorbitalRight',
+      regions: ['periorbitalLeft', 'periorbitalRight'],
       thumb: { kind: 'sample', art: 'underEyes' },
       metrics: [],
     },
@@ -81,6 +87,7 @@ export const SAMPLE_SCAN: ScanView = {
       heading: 'CHIN',
       lines: ['Congestion', 'Texture irregularity', 'Post-blemish marks'],
       anchor: 'chin',
+      regions: ['chin'],
       thumb: { kind: 'sample', art: 'chin' },
       metrics: [],
     },
@@ -142,3 +149,67 @@ export const SAMPLE_SCAN: ScanView = {
   ],
   capturedAt: null,
 };
+
+/**
+ * The consult tour in sample mode (specs/consult-tour.md 5.7): the five callouts in the mockup's
+ * reading order, each with the spot that is tapped, what glows while it is explained, the metric
+ * the director lights for it, and her sentence. The sentences are written for the tour, not
+ * measured from the mockup: they restate the callouts above as cosmetic observations ("I can see",
+ * "looks"), leaving out what is on the counsel list, and like the rest of this file they appear
+ * only in sample mode, under the badge (strings S1-S5 in design/counsel/scan.md section 10).
+ *
+ * The T-zone step taps the nose ("then nose"); the summary keeps the mockup's PORES leader,
+ * which ends on the left under-eye crescent. The summary's own highlights stay SAMPLE_SCAN's.
+ */
+export const SAMPLE_TOUR: readonly {
+  slot: CalloutSlot;
+  metric: SkinMetricKey;
+  contact: FaceRegionKey;
+  zones: RegionHighlight[];
+  text: string;
+}[] = [
+  {
+    slot: 'forehead',
+    metric: 'texture',
+    contact: 'forehead',
+    zones: [{ region: 'forehead', tone: 'pink', strength: 0.85 }],
+    text: 'Starting with the forehead: I can see some uneven texture and a little early congestion.',
+  },
+  {
+    slot: 'tzone',
+    metric: 'pores',
+    contact: 'nose',
+    zones: [
+      { region: 'glabella', tone: 'pink', strength: 0.55 },
+      { region: 'nose', tone: 'pink', strength: 0.7 },
+    ],
+    text: 'Across the T-zone, the pores look more visible, and I can see some oil activity.',
+  },
+  {
+    slot: 'cheeks',
+    metric: 'redness',
+    contact: 'cheekLeft',
+    zones: [
+      { region: 'cheekLeft', tone: 'pink', strength: 0.8 },
+      { region: 'cheekRight', tone: 'pink', strength: 0.55 },
+    ],
+    text: 'On the cheeks, I can see mild redness, and the tone looks a little uneven.',
+  },
+  {
+    slot: 'underEyes',
+    metric: 'underEye',
+    contact: 'periorbitalRight',
+    zones: [
+      { region: 'periorbitalLeft', tone: 'lavender', strength: 0.6 },
+      { region: 'periorbitalRight', tone: 'periwinkle', strength: 0.8 },
+    ],
+    text: 'Under the eyes, I can see mild dark circles and a few fine lines.',
+  },
+  {
+    slot: 'chin',
+    metric: 'acneIndicators',
+    contact: 'chin',
+    zones: [{ region: 'chin', tone: 'lavender', strength: 0.7 }],
+    text: 'And on the chin, I can see some congestion and a few darker marks.',
+  },
+];

@@ -18,6 +18,10 @@
   Corp, or the local reading as the selected or backup analysis, with the
   reason ("using backup analysis - ...") - and, for a Perfect Corp reading,
   its mapping disclosure. Shown as a quiet status line above her words.
+
+  While the consult tour plays (`quiet`) her words are left out, so their live
+  region cannot talk over the tour; the provider line, any error, the actions
+  and the photo choice (Discard included) stay where they are.
 -->
 <script lang="ts" module>
   /*
@@ -44,9 +48,14 @@
      * targets in the touch compositions (tablet, phone).
      */
     size?: 'sm' | 'md';
+    /**
+     * While the consult tour plays: her reply line (and its live region) is left out, so it cannot
+     * talk over the tour; which analysis the reading came from, errors and the actions stay.
+     */
+    quiet?: boolean;
   }
 
-  const { class: className = '', size = 'sm' }: Props = $props();
+  const { class: className = '', size = 'sm', quiet = false }: Props = $props();
 
   const lastWord = $derived.by(() => {
     const last = session.messages[session.messages.length - 1];
@@ -104,15 +113,17 @@
       {#if scan?.modelVersion === 'perfectcorp-v2.1'}<p class="dock__provider-note">{scan.notes}</p>{/if}
     </div>
   {/if}
-  <p class="dock__words" aria-live="polite">
-    {#if session.thinking}
-      <span class="dock__thinking">Thinking</span>
-    {:else if lastWord}
-      {shownWords}{#if stillTyping}<span class="dock__caret" aria-hidden="true"></span>{/if}
-    {:else}
-      Ask me about any part of this reading, and I will explain it.
-    {/if}
-  </p>
+  {#if !quiet}
+    <p class="dock__words" aria-live="polite">
+      {#if session.thinking}
+        <span class="dock__thinking">Thinking</span>
+      {:else if lastWord}
+        {shownWords}{#if stillTyping}<span class="dock__caret" aria-hidden="true"></span>{/if}
+      {:else}
+        Ask me about any part of this reading, and I will explain it.
+      {/if}
+    </p>
+  {/if}
 
   {#if session.chatError}
     <p class="dock__error" role="alert">{session.chatError}</p>

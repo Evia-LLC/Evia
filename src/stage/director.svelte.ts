@@ -46,7 +46,10 @@ import type {
   HologramView,
   PokeZone,
   ScanSentiment,
+  TourReport,
 } from './director.ts';
+import { OFF_VIEW, type TourView } from './tour-machine.ts';
+import { tour } from './tour.svelte.ts';
 
 type Timer = ReturnType<typeof setTimeout> | undefined;
 
@@ -110,10 +113,17 @@ class HologramModel implements HologramView {
 class StageDirector implements Director {
   readonly character = new CharacterModel();
   readonly hologram = new HologramModel();
+  /** The consult tour's view, as the tour runner last published it. */
+  private tourView = $state.raw<TourView>(OFF_VIEW);
 
   onPoked: ((zone: PokeZone) => void) | null = null;
   onMetricPicked: ((key: SkinMetricKey) => void) | null = null;
   onLongThink: (() => void) | null = null;
+  onTourReport: ((report: TourReport) => void) | null = null;
+
+  get tour(): TourView {
+    return this.tourView;
+  }
 
   /**
    * The turn's directive, after the state machine. What she shows can
@@ -264,6 +274,8 @@ class StageDirector implements Director {
   exitClinical(): void {
     if (session.sceneMode === 'lounge') return;
     if (session.sceneMode === 'transitioning' && this.roomTarget === 'lounge') return;
+    // The tour belongs to the room too: it ends (quiet, nothing lit) before the reading goes.
+    tour.end('left');
     const token = ++this.roomToken;
     this.roomTarget = 'lounge';
     session.sceneMode = 'transitioning';
@@ -369,6 +381,21 @@ class StageDirector implements Director {
     }
   }
 
+  releaseRegion(): void {
+    this.hologram.activeRegion = null;
+    // The point that lit the region is let go; her state and face stay the turn's.
+    if (this.current.gesture !== 'none') this.current = { ...this.current, gesture: 'none' };
+    this.show(this.current);
+  }
+
+  publishTour(next: TourView): void {
+    this.tourView = next;
+  }
+
+  reportTour(report: TourReport): void {
+    this.onTourReport?.(report);
+  }
+
   /**
    * No demonstrations ship with the 2D stage - the old library played
    * painted clips of the old character. Null keeps the controller's
@@ -440,6 +467,7 @@ class StageDirector implements Director {
   // -------------------------------------------------------------------------
 
   reset(): void {
+    tour.end('reset');
     this.stopEverything();
     if (this.roomTarget === 'clinical') sound.stopRoom();
     this.roomTarget = 'lounge';
@@ -456,6 +484,7 @@ class StageDirector implements Director {
   }
 
   dispose(): void {
+    tour.end('reset');
     this.stopEverything();
     this.clearHologram();
     this.onPoked = null;
@@ -628,6 +657,9 @@ class StageDirector implements Director {
 
   private revealNext(): void {
     this.revealTimer = undefined;
+    // The consult tour lights the regions, one place at a time: the timed reveal lights nothing
+    // while a tour is on, or while the controller waits for the first run of this reading.
+    if (this.tourView.phase !== 'off' || this.tourView.awaited) return;
     const queue = this.hologram.revealQueue;
     const next = queue[this.hologram.revealed.length];
     if (next === undefined) return;

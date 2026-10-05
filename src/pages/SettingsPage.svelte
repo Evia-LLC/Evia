@@ -5,8 +5,9 @@
 
   It also carries the switches that are not pages: Evia's voice and the room's
   sound (without them a guest had no way to turn the voice off at all - the
-  profile page's switch saves to an account, and a guest has none), and the
-  sample-data switch.
+  profile page's switch saves to an account, and a guest has none), the
+  sample-data switch and the character prototype's (src/character3d, off by
+  default: a stand-in mannequin on the Scan page).
 
   The SRS section 11 controls that do not exist yet (withdrawing scan consent,
   marketing and cookie preferences, the history of accepted policy versions,
@@ -26,6 +27,7 @@
   import { setGuestVoice, setVoiceEnabled, signOut, stopSpeaking } from '@/state/controller.ts';
   import { setSoundEnabled, soundEnabled } from '@/lib/sound.ts';
   import { sample, setSample } from '@/sample/mode.svelte.ts';
+  import { characterProto, setCharacterProto } from '@/character3d/switch.svelte.ts';
   import { LEGAL_CONTENT, type LegalContentId } from '@shared/legal-content.ts';
   import Card from '@/ui/Card.svelte';
   import SectionHeader from '@/ui/SectionHeader.svelte';
@@ -157,6 +159,12 @@
             description="Fill every page with the design's sample data, labelled on screen the whole time. While it is on, no account data is shown and nothing is saved."
             checked={sample.on}
             onchange={(on) => setSample(on)}
+          />
+          <Toggle
+            label="Character prototype"
+            description="A prototype stand-in (a plain mannequin, not Evia) beside the Scan hologram, looking at and pointing to each region. Off by default; large screens only. Remembered on this device when Functional cookies are allowed, otherwise for this visit."
+            checked={characterProto.on}
+            onchange={(on) => setCharacterProto(on)}
           />
         </div>
       </Card>

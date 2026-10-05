@@ -23,6 +23,7 @@ import type { BodyAnalysis } from '@/body-analysis/pipeline.ts';
 import type { SpeechTrackLike, Viseme } from '@/character/speech.ts';
 import type { ScanMesh } from '@/scan/mesh.ts';
 import type { ScanSentiment } from '@/scan/choreography.ts';
+import type { TourCaps, TourView } from './tour-machine.ts';
 import type {
   CharacterDirective,
   CharacterState,
@@ -33,6 +34,12 @@ import type {
 } from '@shared/types.ts';
 
 export type { ScanSentiment };
+export type { TourView, TourStep, TourSide, TourBeat, TourCaps } from './tour-machine.ts';
+
+/** What her stage (and the page) report to the consult tour (specs/consult-tour.md 5.3). */
+export type TourReport =
+  | { kind: 'contact'; seq: number } // her fingertip met the spot (her stage)
+  | { kind: 'figure'; present: boolean; caps: TourCaps }; // her stage appeared / went (her stage or the page)
 
 /** Where a tap landed on her: her face, or the rest of her. */
 export type PokeZone = 'face' | 'body';
@@ -100,6 +107,11 @@ export interface HologramView {
 export interface Director {
   readonly character: CharacterView;
   readonly hologram: HologramView;
+  /**
+   * What the consult tour is doing (the region-by-region walkthrough on the Scan page). Reactive.
+   * Written only by the tour runner (`src/stage/tour.svelte.ts`, through `publishTour`).
+   */
+  readonly tour: TourView;
 
   /** A tap landed on her. Installed by the controller. */
   onPoked: ((zone: PokeZone) => void) | null;
@@ -107,6 +119,8 @@ export interface Director {
   onMetricPicked: ((key: SkinMetricKey) => void) | null;
   /** She has been visibly thinking for a long while. Installed by the controller. */
   onLongThink: (() => void) | null;
+  /** Her stage's (and the page's) reports to the tour. Installed by the tour runner at attach. */
+  onTourReport: ((report: TourReport) => void) | null;
 
   // --- the conversation ---------------------------------------------------
   /** Adopts a directive, through the state machine's transition rules. */
@@ -143,6 +157,12 @@ export interface Director {
   presentBody(analysis: BodyAnalysis, previous: BodyAnalysis | null, sentiment?: ScanSentiment): void;
   /** Lights the metric her narration just reached (and everything queued before it). */
   revealRegion(key: SkinMetricKey): void;
+  /** The tour's step is over: nothing is lit any more (`activeRegion` null) and her held gesture is released (no state change). */
+  releaseRegion(): void;
+  /** The tour runner's writer. Nobody else calls it. */
+  publishTour(next: TourView): void;
+  /** Her stage (and the page) report to the tour. Forwarded to `onTourReport`. */
+  reportTour(report: TourReport): void;
   /** The demonstration for a body reading, or null when there is none. */
   demoForBody(keys: readonly string[]): unknown | null;
   showDemo(clip: unknown): void;

@@ -38,6 +38,13 @@ export interface HologramAnchor {
   y: number;
   /** False without a face, while it builds in, or when the point faces away or leaves the canvas. */
   visible: boolean;
+  /**
+   * How far the point stands out of the face plane toward the viewer, in reference px (world
+   * units). Set on computed anchors; a figure reaching for the point uses it for depth.
+   */
+  z?: number;
+  /** The point in ref4 px (x right, y down, z toward the viewer): the consult tour's contact point. */
+  ref?: { x: number; y: number; z: number };
 }
 
 export type HologramAnchors = Record<FaceRegionKey, HologramAnchor>;
@@ -52,9 +59,42 @@ export interface HologramRenderer {
   forceContextLoss?(): void;
 }
 
+/**
+ * A drawing that shares the hologram's canvas, context and frame loop, drawn
+ * under it every frame (the Scan page's character prototype). It inherits the
+ * engine's DPR cap and quality steps, its pauses (hidden tab, off-screen,
+ * context loss) and its reduced-motion rule: under reduced motion frames are
+ * only drawn while something changes, so `draw` returns true for as long as it
+ * is still moving. The engine owns a pass it is given and disposes it.
+ */
+export interface HologramPass {
+  draw(frame: HologramPassFrame): boolean;
+  dispose(): void;
+}
+
+export interface HologramPassFrame {
+  /** The engine's renderer: the pass renders its own scene and camera into the cleared buffer. */
+  renderer: THREE.WebGLRenderer;
+  /** Seconds since the last frame (0 on a first frame, at most 0.1). */
+  dt: number;
+  /** Canvas CSS size. */
+  cssW: number;
+  cssH: number;
+  /** The region anchors of this frame (CSS px of the canvas, with depth). */
+  anchors: HologramAnchors;
+  reducedMotion: boolean;
+}
+
 export interface HologramOptions {
   /** Which part of the reference frame the canvas shows. Default `HOLOGRAM_BOX` (x 560-1110, y 0-620 of ref4). */
   box?: RefBox;
+  /**
+   * The reference point the camera sits straight in front of. Default: the point at the canvas
+   * centre. A canvas enlarged beyond `HOLOGRAM_BOX` (to take in a figure beside the pedestal)
+   * passes that box's centre here, so the head is drawn exactly as on the default canvas: same
+   * eye, same parallax, only a wider window (an off-axis view).
+   */
+  eye?: { x: number; y: number };
   /** How that box fits the canvas. Default 'contain'. */
   fit?: Fit;
   /** Where the box sits in spare room, 0..1 per axis (like object-position). Default centred. */
@@ -67,6 +107,13 @@ export interface HologramOptions {
   maxFps?: number;
   /** Called after a frame whenever an anchor moved or changed visibility. */
   onAnchors?: (anchors: HologramAnchors) => void;
+  /**
+   * Called once per mesh when the face has fully formed (its build-in reached the end; at once under
+   * reduced motion, on the first frame drawn with it). The consult tour starts from here.
+   */
+  onFormed?: () => void;
+  /** The clock the tap ripple runs on, in ms (default `performance.now`); the tour passes its own. */
+  clock?: () => number;
   /** Tests only: draw with this instead of a WebGL renderer. */
   renderer?: HologramRenderer;
 }
@@ -76,10 +123,21 @@ export interface HologramController {
   readonly supported: boolean;
   /** The live session mesh, or null to clear the face (rings only). */
   setMesh(mesh: ScanMesh | null): void;
-  /** Which regions glow, in which tone, how strongly. Replaces the previous set. */
-  setRegions(highlights: RegionHighlight[]): void;
+  /**
+   * Which regions glow, in which tone, how strongly. Replaces the previous set; a new set fades in
+   * over about 550 ms. Emptying it fades the zones out over `fadeOutMs` (default 550; 0 under
+   * reduced motion) before their texture is cleared.
+   */
+  setRegions(highlights: RegionHighlight[], opts?: { fadeOutMs?: number }): void;
   /** The region being talked about right now: brighter, with its dots lifted. */
   setActiveRegion(region: FaceRegionKey | null): void;
+  /**
+   * The tap (consult tour): one ring spreading from the region's anchor over the face surface and
+   * its dots, with a bloom on the spot. No-op without a face and under reduced motion.
+   */
+  pulse(region: FaceRegionKey): void;
+  /** The projected face oval's bounding box, CSS px of the canvas, or null without a face. */
+  faceBounds(): { x: number; y: number; w: number; h: number } | null;
   /** Where each region's anchor is on the canvas right now (CSS px). */
   anchors(): HologramAnchors;
   /** Re-reads the canvas's CSS size. Called automatically on resize where ResizeObserver exists. */
@@ -89,6 +147,10 @@ export interface HologramController {
   /** Stops drawing until `resume()` (the engine also pauses itself when hidden or off-screen). */
   pause(): void;
   resume(): void;
+  /** Draws `pass` under the hologram every frame (null removes it). The engine disposes a pass it is given. */
+  setPass(pass: HologramPass | null): void;
+  /** Asks for a frame now (under reduced motion frames are otherwise only drawn when the engine changes). */
+  redraw(): void;
   /** Frees every GPU resource and the context itself. The canvas cannot host another hologram afterwards. */
   dispose(): void;
 }
@@ -197,12 +259,18 @@ const NOOP: HologramController = {
   setMesh() {},
   setRegions() {},
   setActiveRegion() {},
+  pulse() {},
+  faceBounds: () => null,
   anchors: emptyAnchors,
   resize() {},
   setQuality() {},
   setReducedMotion() {},
   pause() {},
   resume() {},
+  setPass(pass) {
+    pass?.dispose();
+  },
+  redraw() {},
   dispose() {},
 };
 
@@ -257,6 +325,12 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
     uFaceH: { value: FACE_SLOT.height },
     uFaceC: { value: new THREE.Vector2(0, 0) },
     uFaceW: { value: FACE_SLOT.height * 0.75 },
+    // The tap ripple (pulse): centre in world units, ring radius and width, strength, bloom.
+    uRipC: { value: new THREE.Vector3() },
+    uRipR: { value: 0 },
+    uRipW: { value: 10 },
+    uRipA: { value: 0 },
+    uBloomA: { value: 0 },
   };
 
   // ---- Static base: rings, orb, specks, glows. Always present. ----------------
@@ -406,6 +480,8 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
   shellMat.side = THREE.DoubleSide;
   const envMat = sparkMat(U.uPresence, 10, own);
   const nodeMat = sparkMat(U.uPresence, 0, own);
+  // The zones' own sparkle fades with the zones.
+  const zoneNodeMat = sparkMat(faceU.uZoneMix, 0, own);
   const wireMat = own(
     additive(
       new THREE.ShaderMaterial({
@@ -449,6 +525,18 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
   let highlights: RegionHighlight[] = [];
   let active: FaceRegionKey | null = null;
   const presenceTarget = { face: 0, zones: 0, active: 0 };
+  /** How fast the zones fade (mix per second): in over ~550 ms, out at the caller's pace. */
+  const ZONE_RATE = 1.8;
+  let zoneRate = ZONE_RATE;
+  /** A set waiting for the zones to finish fading out before it is painted. */
+  let nextZones: RegionHighlight[] | null = null;
+  /** The face formed: `onFormed` has fired for this mesh (or is due once this frame is drawn). */
+  let formed = false;
+  let formedDue = false;
+  /** The tap in flight: where (in the head's own space, so it rides the head) and when. */
+  const rippleClock = options.clock ?? (() => (typeof performance !== 'undefined' ? performance.now() : 0));
+  let ripple: { local: THREE.Vector3; at: number } | null = null;
+  const RIPPLE_MS = 700;
 
   function clearFace(): void {
     for (const d of faceDisposables) d.dispose();
@@ -467,6 +555,14 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
   function uvPx(size: number): (i: number) => [number, number] {
     const uvs = surface!.uvs;
     return (i) => [uvs[i * 2] * size, (1 - uvs[i * 2 + 1]) * size];
+  }
+
+  function applyZones(list: RegionHighlight[]): void {
+    highlights = list;
+    zoneRate = ZONE_RATE;
+    presenceTarget.zones = highlights.length ? 1 : 0;
+    paintZoneTexture();
+    buildNodes();
   }
 
   function paintZoneTexture(): void {
@@ -515,7 +611,7 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       }
     }
     if (!P.length) return;
-    nodes = sparks(P, Sz, A, C, Sd, nodeMat);
+    nodes = sparks(P, Sz, A, C, Sd, zoneNodeMat);
     nodes.renderOrder = 14;
     faceParts.add(nodes);
   }
@@ -765,10 +861,24 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
     bufferDpr = dpr;
     const f = fitBox(box, cssW, cssH, fit, align);
     U.uPxScale.value = f.scale * dpr;
-    camera.fov = fovFor(f, cssH);
-    camera.aspect = cssW / cssH;
-    camera.position.set(f.centreX, -f.centreY, CAMERA_DISTANCE);
-    camera.lookAt(f.centreX, -f.centreY, 0);
+    // The eye: the canvas centre, or a point the caller pins (an enlarged canvas keeps the
+    // default canvas's eye). Off the canvas centre, the canvas is a window cut from a larger
+    // symmetric view around the eye (a view offset), so nothing about the head changes.
+    const ex = options.eye?.x ?? f.centreX;
+    const ey = options.eye?.y ?? f.centreY;
+    const dx = (f.centreX - ex) * f.scale;
+    const dy = (f.centreY - ey) * f.scale;
+    const fullW = cssW + 2 * Math.abs(dx);
+    const fullH = cssH + 2 * Math.abs(dy);
+    camera.fov = fovFor(f, fullH);
+    camera.aspect = fullW / fullH;
+    camera.position.set(ex, -ey, CAMERA_DISTANCE);
+    camera.lookAt(ex, -ey, 0);
+    if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
+      camera.setViewOffset(fullW, fullH, fullW / 2 + dx - cssW / 2, fullH / 2 + dy - cssH / 2, cssW, cssH);
+    } else {
+      camera.clearViewOffset();
+    }
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
   }
@@ -777,9 +887,11 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   let lastNow = t0;
   let clock = 0;
+  let lastDt = 0;
 
   function step(now: number): boolean {
     const dt = Math.min(0.1, Math.max(0, (now - lastNow) / 1000));
+    lastDt = dt;
     lastNow = now;
     clock += dt;
     const t = clock;
@@ -796,8 +908,18 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       return next;
     };
     U.uPresence.value = approach(U.uPresence.value, presenceTarget.face, 1.4);
-    faceU.uZoneMix.value = approach(faceU.uZoneMix.value, presenceTarget.zones, 1.8);
+    faceU.uZoneMix.value = approach(faceU.uZoneMix.value, presenceTarget.zones, zoneRate);
     faceU.uActiveMix.value = approach(faceU.uActiveMix.value, presenceTarget.active, 3.5);
+    // Zones that faded out are cleared (or replaced by the set waiting for them) only now.
+    if (nextZones && faceU.uZoneMix.value <= 0) {
+      applyZones(nextZones);
+      nextZones = null;
+    }
+    if (surface && !formed && U.uPresence.value >= 1) {
+      formed = true;
+      formedDue = true;
+    }
+    if (stepRipple()) settling = true;
 
     // Idle: yaw of +-4 degrees over 10 s, float of +-3 px over 6 s, zones breathe over 2.4 s.
     pivot.rotation.y = motion * Math.sin((t * Math.PI * 2) / 10) * THREE.MathUtils.degToRad(4);
@@ -813,6 +935,34 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       faceU.uScanOn.value = 0;
     }
     return settling;
+  }
+
+  // ---- The tap ripple -------------------------------------------------------------
+  const rippleWorld = new THREE.Vector3();
+  /** Advances the ripple's uniforms; true while it is still spreading or its bloom settling. */
+  function stepRipple(): boolean {
+    if (!ripple || !surface) {
+      faceU.uRipA.value = 0;
+      faceU.uBloomA.value = 0;
+      return false;
+    }
+    const ms = rippleClock() - ripple.at;
+    const t = Math.max(0, Math.min(1, ms / RIPPLE_MS));
+    const e = 1 - Math.pow(1 - t, 3);
+    rippleWorld.copy(ripple.local).applyMatrix4(head.matrixWorld);
+    faceU.uRipC.value.copy(rippleWorld);
+    faceU.uRipR.value = 72 * e;
+    faceU.uRipW.value = 10 + 8 * e;
+    faceU.uRipA.value = t >= 1 ? 0 : 0.55 * Math.pow(1 - t, 1.5);
+    // The bloom peaks at 120 ms and settles by 500 ms.
+    faceU.uBloomA.value = ms < 120 ? 0.9 * Math.max(0, ms) / 120 : ms < 500 ? 0.9 - 0.75 * ((ms - 120) / 380) : 0;
+    if (ms >= Math.max(RIPPLE_MS, 500)) {
+      ripple = null;
+      faceU.uRipA.value = 0;
+      faceU.uBloomA.value = 0;
+      return false;
+    }
+    return true;
   }
 
   // ---- Anchors ------------------------------------------------------------------
@@ -833,19 +983,21 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       tmp.fromArray(anchorPoint(surface.positions, k, anchorXyz)).applyMatrix4(head.matrixWorld);
       tmpN.fromArray(surface.normals, i * 3).applyMatrix3(normalMat).normalize();
       const facing = tmpN.dot(tmpV.copy(camera.position).sub(tmp).normalize());
+      const z = tmp.z;
+      const ref = { x: tmp.x, y: -tmp.y, z };
       tmp.project(camera);
       const x = ((tmp.x + 1) / 2) * cssW;
       const y = ((1 - tmp.y) / 2) * cssH;
       const inside = x >= 0 && x <= cssW && y >= 0 && y <= cssH;
-      out[k] = { x, y, visible: U.uPresence.value > 0.5 && facing > -0.2 && inside };
+      out[k] = { x, y, visible: U.uPresence.value > 0.5 && facing > -0.2 && inside, z, ref };
     }
     return out;
   }
 
   let lastAnchors: HologramAnchors = emptyAnchors();
-  function publishAnchors(): void {
+  function publishAnchors(computed?: HologramAnchors): void {
     if (!options.onAnchors) return;
-    const next = computeAnchors();
+    const next = computed ?? computeAnchors();
     let changed = false;
     for (const k of FACE_REGIONS) {
       const a = next[k], b = lastAnchors[k];
@@ -858,6 +1010,23 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       lastAnchors = next;
       options.onAnchors(next);
     }
+  }
+
+  /** The face oval (its silhouette landmarks) projected onto the canvas: its bounding box. */
+  function computeFaceBounds(): { x: number; y: number; w: number; h: number } | null {
+    if (!surface || !sized) return null;
+    scene.updateMatrixWorld();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const i of surface.oval) {
+      tmp.fromArray(surface.positions, i * 3).applyMatrix4(head.matrixWorld).project(camera);
+      const x = ((tmp.x + 1) / 2) * cssW;
+      const y = ((1 - tmp.y) / 2) * cssH;
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+    return Number.isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
   }
 
   // ---- Loop ---------------------------------------------------------------------
@@ -876,11 +1045,45 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
   const canRun = (): boolean => !disposed && !paused && !hidden && inView && !lost && sized;
   const fpsCap = (): number => Math.min(options.maxFps ?? (touch ? 30 : 60), QUALITY[quality].fps);
 
+  let pass: HologramPass | null = null;
+  function tellFormed(): void {
+    if (!formedDue) return;
+    formedDue = false;
+    options.onFormed?.();
+  }
+
   function renderNow(now: number): boolean {
     const settling = step(now);
+    if (!pass) {
+      renderer.render(scene, camera);
+      publishAnchors();
+      tellFormed();
+      return settling;
+    }
+    // The pass draws first into the cleared buffer; the hologram is light over it, on a
+    // fresh depth buffer (it is nearer the viewer than anything the pass draws).
+    const anchors = computeAnchors();
+    const gl = renderer as HologramRenderer & Partial<Pick<THREE.WebGLRenderer, 'autoClear' | 'clear' | 'clearDepth'>>;
+    const layered = typeof gl.clear === 'function' && typeof gl.clearDepth === 'function';
+    if (layered) {
+      gl.autoClear = false;
+      gl.clear!();
+    }
+    let busy = false;
+    try {
+      busy = pass.draw({ renderer: renderer as THREE.WebGLRenderer, dt: lastDt, cssW, cssH, anchors, reducedMotion: reduced });
+    } catch (err) {
+      // A broken pass must never take the reading down with it.
+      console.warn('[hologram] pass failed and was removed', err);
+      pass.dispose();
+      pass = null;
+    }
+    if (layered) gl.clearDepth!();
     renderer.render(scene, camera);
-    publishAnchors();
-    return settling;
+    if (layered) gl.autoClear = true;
+    publishAnchors(anchors);
+    tellFormed();
+    return settling || busy;
   }
 
   function frame(now: number): void {
@@ -983,7 +1186,9 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
     supported: true,
     setMesh(next) {
       if (disposed) return;
+      if (next !== mesh) formed = false;
       mesh = next;
+      ripple = null;
       if (mesh) {
         buildFace();
         presenceTarget.face = 1;
@@ -997,13 +1202,33 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       }
       invalidate();
     },
-    setRegions(next) {
+    setRegions(next, opts) {
       if (disposed) return;
-      highlights = next.filter((h) => FACE_REGIONS.includes(h.region)).map((h) => ({ ...h }));
-      presenceTarget.zones = highlights.length ? 1 : 0;
-      paintZoneTexture();
-      buildNodes();
+      const list = next.filter((h) => FACE_REGIONS.includes(h.region)).map((h) => ({ ...h }));
+      const fadeOutMs = reduced ? 0 : Math.max(0, opts?.fadeOutMs ?? 550);
+      if (!list.length && highlights.length && fadeOutMs > 0 && faceU.uZoneMix.value > 0) {
+        // Fade the zones out first; their texture is cleared when the mix reaches 0 (step()).
+        nextZones = list;
+        zoneRate = 1000 / fadeOutMs;
+        presenceTarget.zones = 0;
+        invalidate();
+        return;
+      }
+      nextZones = null;
+      applyZones(list);
       invalidate();
+    },
+    pulse(region) {
+      if (disposed || reduced || !surface || !FACE_REGIONS.includes(region)) return;
+      const i = ANCHOR_LANDMARK[region];
+      const toward = ANCHOR_BLEND[region]?.toward ?? i;
+      if (i >= surface.landmarkCount || toward >= surface.landmarkCount) return;
+      ripple = { local: new THREE.Vector3().fromArray(anchorPoint(surface.positions, region, anchorXyz)), at: rippleClock() };
+      invalidate();
+    },
+    faceBounds() {
+      if (disposed) return null;
+      return computeFaceBounds();
     },
     setActiveRegion(region) {
       if (disposed || region === active) return;
@@ -1039,10 +1264,26 @@ export function createHologram(canvas: HTMLCanvasElement, options: HologramOptio
       paused = false;
       invalidate();
     },
+    setPass(next) {
+      if (disposed) {
+        next?.dispose();
+        return;
+      }
+      if (pass && pass !== next) pass.dispose();
+      pass = next;
+      invalidate();
+    },
+    redraw() {
+      if (disposed) return;
+      invalidate();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       stop();
+      // The pass draws with this context: its resources go before the context does.
+      pass?.dispose();
+      pass = null;
       io?.disconnect();
       ro?.disconnect();
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);

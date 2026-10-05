@@ -14,6 +14,7 @@
   } from '@/state/controller.ts';
   import { isLegalRoute, router } from '@/router/router.svelte.ts';
   import { director } from '@/stage/director.ts';
+  import { tour, tourNow } from '@/stage/tour.svelte.ts';
   import { sample } from '@/sample/mode.svelte.ts';
   import Shell from '@/shell/Shell.svelte';
   import SampleBadge from '@/shell/SampleBadge.svelte';
@@ -24,6 +25,7 @@
   import HoloPanel from '@/components/HoloPanel.svelte';
   import { primeSound } from '@/lib/sound.ts';
   import { primeSynthesis } from '@/voice/synthesis.ts';
+  import { voice } from '@/voice/controller.ts';
   import { introSeen } from '@/lib/intro.ts';
   import HomePage from '@/pages/HomePage.svelte';
   import ScanPage from '@/pages/ScanPage.svelte';
@@ -68,15 +70,25 @@
    * first means the intro, the greeting and the voice all find it there.
    */
   registerDirector(director);
+  // The consult tour plays through the director and the voice (src/stage/tour.svelte.ts).
+  tour.attach({
+    director,
+    voice,
+    now: tourNow,
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (handle) => window.clearTimeout(handle as number),
+  });
   onMount(() => () => {
+    tour.detach();
     registerDirector(null);
     director.dispose();
   });
 
-  // A handle for development: the director, the store and the sample switch
-  // from the console, where a throttled pane makes timing hard to judge.
+  // A handle for development: the director, the store, the sample switch and the
+  // tour (with a hand-driven clock) from the console, where a throttled pane makes
+  // timing hard to judge.
   if (import.meta.env.DEV) {
-    (window as unknown as { __evia?: unknown }).__evia = { director, session, sample, router };
+    (window as unknown as { __evia?: unknown }).__evia = { director, session, sample, router, tour: tour.devHandle() };
   }
 
   onMount(async () => {

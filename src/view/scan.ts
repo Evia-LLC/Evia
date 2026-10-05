@@ -24,11 +24,11 @@
  *   a gauge, and only for metrics that exist: there is no "Barrier support".
  * - Thumbnails are crops of this session's capture while it is still in
  *   memory (the page cuts them; nothing is stored), else neutral tiles.
- * - The header says what the real pipeline is doing, never a timer.
+ * - The header says what the real pipeline is doing, never a timer; while the
+ *   consult tour explains the reading, the place it is on ("NOW · FOREHEAD").
  */
 import {
   METRIC_HIGHER_IS_BETTER,
-  METRIC_LABELS,
   type FaceRegionKey,
   type SkinAnalysis,
   type SkinMetricKey,
@@ -39,6 +39,7 @@ import { SAMPLE_SCAN } from '@/sample/fixtures/scan.ts';
 import { captureStatus, type CameraState } from '@/scan/capture-status.svelte.ts';
 import { sample } from '@/sample/mode.svelte.ts';
 import { director } from '@/stage/director.ts';
+import type { TourPhase, TourView } from '@/stage/tour-machine.ts';
 import { session } from '@/state/session.svelte.ts';
 
 // ---------------------------------------------------------------------------
@@ -95,8 +96,10 @@ export interface ScanCallout {
   lines: string[];
   /** The hologram anchor its leader line ends on. */
   anchor: FaceRegionKey;
+  /** The zones it speaks for: what glows while the tour explains it (real: the regions its findings' loci name). */
+  regions: FaceRegionKey[];
   thumb: CalloutThumb;
-  /** The metrics it speaks for (real mode), so the one being narrated can light it. */
+  /** The metrics it speaks for (real mode), the one furthest into its band first. */
   metrics: SkinMetricKey[];
 }
 
@@ -161,7 +164,7 @@ export interface ScanView {
    */
   mesh: 'sample' | 'live' | 'cleared' | 'none';
   highlights: RegionHighlight[];
-  /** The callout her narration is on right now. */
+  /** The callout the consult tour is explaining right now. */
   activeSlot: CalloutSlot | null;
   callouts: ScanCallout[];
   concerns: { rows: ScanConcern[]; empty: string | null };
@@ -189,7 +192,8 @@ export const LOCUS_PLACE: Record<string, { slot: CalloutSlot; regions: FaceRegio
   'Most visible around the chin.': { slot: 'chin', regions: ['chin'] },
 };
 
-const SLOT_ORDER: CalloutSlot[] = ['forehead', 'tzone', 'cheeks', 'underEyes', 'chin'];
+/** The places around the head in reading order: the order the consult tour goes through them. */
+export const SLOT_ORDER: readonly CalloutSlot[] = ['forehead', 'tzone', 'cheeks', 'underEyes', 'chin'];
 
 /** The mockup's zone colours: forehead and cheeks pink, chin and left under-eye lavender, right under-eye periwinkle. */
 const REGION_TONE: Record<FaceRegionKey, ZoneTone> = {
@@ -243,7 +247,7 @@ const TONE: Record<SkinMetricKey, ConcernTone> = {
  * diagnosis and never reassurance that skin is healthy (SRS MED-01, section
  * 10). On the counsel list (design/counsel/scan.md).
  */
-const FLAGGED_COPY: Record<SkinMetricKey, Record<ExplainStyle, string>> = {
+export const FLAGGED_COPY: Record<SkinMetricKey, Record<ExplainStyle, string>> = {
   hydration: {
     detailed: 'The surface reads rough, which often goes with dryness. Not a water test.',
     genz: 'Giving a little dry. It reads texture, not actual water.',
@@ -295,7 +299,7 @@ const CLEAR_COPY: Record<ExplainStyle, string> = {
   genz: 'Nothing flagged in this pic. One photo, not a check-up.',
 };
 
-const BEYOND_COPY: Record<ExplainStyle, string> = {
+export const BEYOND_COPY: Record<ExplainStyle, string> = {
   detailed: 'Past the range a photo can read, so no band for this one.',
   genz: 'Out of range for a photo read, so no call on this one.',
 };
@@ -309,11 +313,6 @@ function copyFor(o: SkinObservation): Record<ExplainStyle, string> {
 /** How much attention a reading asks for, whichever way the metric runs (as observations.ts). */
 function concernOf(o: SkinObservation): number {
   return METRIC_HIGHER_IS_BETTER[o.key] ? 100 - o.value : o.value;
-}
-
-/** A metric key as the header says it. */
-export function metricName(key: SkinMetricKey): string {
-  return METRIC_LABELS[key];
 }
 
 function headingFor(slot: CalloutSlot, regions: Set<FaceRegionKey>): string {
@@ -359,10 +358,8 @@ export interface ScanInput {
   scanActive: boolean;
   scanProgress: number;
   scanStage: string;
-  activeMetric: SkinMetricKey | null;
-  /** Her narration still has regions to light. */
-  revealing: boolean;
-  speaking: boolean;
+  /** The consult tour (the region-by-region walkthrough): where it is, and the place it is explaining. */
+  tour?: ScanTour;
   /** What the capture's camera is doing (capture phase). Defaults to 'live'. */
   camera?: CameraState;
   /**
@@ -371,6 +368,20 @@ export interface ScanInput {
    * consent. The capture header then does not say "read on this device".
    */
   providerMayRead?: boolean;
+}
+
+/** What the view needs to know of the consult tour. */
+export interface ScanTour {
+  phase: TourPhase;
+  paused: boolean;
+  /** The place being explained (a tour step), or null. */
+  slot: CalloutSlot | null;
+}
+
+/** The tour as the view reads it, from the director's published tour. */
+export function scanTourOf(t: TourView): ScanTour {
+  const step = t.phase === 'step' ? t.steps[t.index] : undefined;
+  return { phase: t.phase, paused: t.paused, slot: step?.slot ?? null };
 }
 
 function timeOf(iso: string | null): string {
@@ -398,7 +409,7 @@ const CAMERA_EYEBROW_PROVIDER: Record<CameraState, string> = {
 };
 
 /** The live header: what the pipeline, or her explanation, is doing now. */
-function statusFor(input: ScanInput, phase: ScanPhase, capturedAt: string | null): ScanStatus {
+function statusFor(input: ScanInput, phase: ScanPhase, capturedAt: string | null, callouts: ScanCallout[]): ScanStatus {
   switch (phase) {
     case 'capture':
       return {
@@ -415,12 +426,13 @@ function statusFor(input: ScanInput, phase: ScanPhase, capturedAt: string | null
     case 'empty':
       return { title: 'Scan to see your map', eyebrow: 'FACE MAPS ARE NEVER STORED', live: false };
     case 'consultation': {
-      const explaining = input.revealing || (input.speaking && input.activeMetric !== null);
-      if (explaining) {
+      const tour = input.tour;
+      if (tour && (tour.phase === 'forming' || tour.phase === 'clean' || tour.phase === 'step')) {
+        const heading = tour.slot ? callouts.find((c) => c.slot === tour.slot)?.heading : undefined;
         return {
           title: 'Going through your reading',
-          eyebrow: input.activeMetric ? `NOW · ${metricName(input.activeMetric).toUpperCase()}` : 'FACE MAP · APPEARANCE ONLY',
-          live: true,
+          eyebrow: heading ? `NOW · ${heading}` : 'FACE MAP · APPEARANCE ONLY',
+          live: !tour.paused,
         };
       }
       const at = timeOf(capturedAt);
@@ -444,7 +456,7 @@ export function buildScanView(input: ScanInput): ScanView {
   const base: ScanView = {
     mode: 'real',
     phase,
-    status: statusFor(input, phase, capturedAt),
+    status: statusFor(input, phase, capturedAt, []),
     // The face is shown only with its reading: a mesh without one is mid-hand-off.
     mesh: input.analysis ? (input.hasMesh ? 'live' : 'cleared') : 'none',
     highlights: [],
@@ -479,6 +491,7 @@ export function buildScanView(input: ScanInput): ScanView {
       heading: headingFor(slot, regions),
       lines: obs.slice(0, 3).map((o) => `${o.label} · ${o.severityLabel}`),
       anchor,
+      regions: [...regions],
       thumb: input.hasCapture ? { kind: 'capture', region: anchor } : { kind: 'none' },
       metrics: obs.map((o) => o.key),
     };
@@ -516,10 +529,11 @@ export function buildScanView(input: ScanInput): ScanView {
       metric: o.key,
     }));
 
-  const activeSlot = input.activeMetric ? (callouts.find((c) => c.metrics.includes(input.activeMetric!))?.slot ?? null) : null;
+  const activeSlot = input.tour?.slot && callouts.some((c) => c.slot === input.tour!.slot) ? input.tour.slot : null;
 
   return {
     ...base,
+    status: statusFor(input, phase, capturedAt, callouts),
     highlights,
     activeSlot,
     callouts,
@@ -531,9 +545,19 @@ export function buildScanView(input: ScanInput): ScanView {
   };
 }
 
+/**
+ * Sample mode's view: the fixture, with the place the consult tour is explaining marked
+ * (`activeSlot`). Outside a tour step it is the fixture itself.
+ */
+export function sampleView(tour: ScanTour | null): ScanView {
+  const slot = tour?.slot ?? null;
+  return slot ? { ...SAMPLE_SCAN, activeSlot: slot } : SAMPLE_SCAN;
+}
+
 /** The page's view: the sample fixture, or the live reading. Reactive; call it inside `$derived`. */
 export function scanView(): ScanView {
-  if (sample.on) return SAMPLE_SCAN;
+  const tour = scanTourOf(director.tour);
+  if (sample.on) return sampleView(tour);
   const h = director.hologram;
   return buildScanView({
     analysis: h.analysis,
@@ -543,9 +567,7 @@ export function scanView(): ScanView {
     scanActive: session.scanActive,
     scanProgress: session.scanProgress,
     scanStage: session.scanStage,
-    activeMetric: h.activeRegion,
-    revealing: h.revealed.length < h.revealQueue.length,
-    speaking: session.speaking,
+    tour,
     camera: captureStatus.camera,
     providerMayRead: !session.guest && session.user !== null,
   });

@@ -7,7 +7,7 @@ import type { FaceRegionKey, RegionStats, SkinAnalysis } from '../shared/types.t
 import { FACE_REGIONS } from '../shared/types.ts';
 import { SAMPLE_SCAN } from '../src/sample/fixtures/scan.ts';
 import { sample } from '../src/sample/mode.svelte.ts';
-import { LOCUS_PLACE, NOT_FLAGGED, buildScanView, scanView, thumbLabel, type ScanInput } from '../src/view/scan.ts';
+import { LOCUS_PLACE, NOT_FLAGGED, buildScanView, sampleView, scanView, thumbLabel, type ScanInput } from '../src/view/scan.ts';
 
 function stats(over: Partial<RegionStats> = {}): RegionStats {
   return { samples: 400, L: 60, a: 8, b: 14, sigmaL: 3, specular: 0.02, highFreq: 3, darkFraction: 0.02, ...over };
@@ -56,9 +56,6 @@ function input(over: Partial<ScanInput> = {}): ScanInput {
     scanActive: false,
     scanProgress: 0,
     scanStage: '',
-    activeMetric: null,
-    revealing: false,
-    speaking: false,
     ...over,
   };
 }
@@ -79,6 +76,18 @@ describe('scan view: sample mode', () => {
     expect(view.concerns.rows.map((r) => r.severity)).toEqual(['High', 'Moderate', 'Moderate', 'Moderate', 'Mild']);
     // No faces in the sample thumbnails: neutral texture tiles only.
     expect(view.callouts.every((c) => c.thumb.kind === 'sample')).toBe(true);
+    // Each callout names the zones it speaks for (what glows while the tour explains it).
+    expect(view.callouts.map((c) => c.regions)).toEqual([['forehead'], ['glabella', 'nose'], ['cheekLeft', 'cheekRight'], ['periorbitalLeft', 'periorbitalRight'], ['chin']]);
+  });
+
+  it('marks the place the consult tour is on, and is the fixture itself otherwise', () => {
+    expect(sampleView(null)).toBe(SAMPLE_SCAN);
+    expect(sampleView({ phase: 'clean', paused: false, slot: null })).toBe(SAMPLE_SCAN);
+    const on = sampleView({ phase: 'step', paused: false, slot: 'underEyes' });
+    expect(on.activeSlot).toBe('underEyes');
+    expect(on.callouts).toBe(SAMPLE_SCAN.callouts);
+    // The sample header is the mockup's whatever the tour does.
+    expect(on.status).toBe(SAMPLE_SCAN.status);
   });
 });
 
@@ -93,6 +102,9 @@ describe('scan view: real mode', () => {
     expect(bySlot.forehead.anchor).toBe('forehead');
     expect(bySlot.cheeks.lines).toEqual(['Redness · Marked']);
     expect(bySlot.cheeks.thumb).toEqual({ kind: 'capture', region: 'cheekLeft' });
+    // The zones each callout speaks for: the regions its findings' loci name.
+    expect(bySlot.forehead.regions).toEqual(['forehead']);
+    expect([...bySlot.cheeks.regions].sort()).toEqual(['cheekLeft', 'cheekRight']);
     // Pores has no locus and hydration reads "fairly even": neither is pinned to the face.
     expect(view.callouts.flatMap((c) => c.metrics)).not.toContain('pores');
     expect(view.callouts.flatMap((c) => c.metrics)).not.toContain('hydration');
@@ -137,10 +149,18 @@ describe('scan view: real mode', () => {
     const reading = buildScanView(input({ analysis: null, scanActive: true, scanProgress: 0.42, scanStage: 'measuring' }));
     expect(reading.phase).toBe('reading');
     expect(reading.status).toEqual({ title: 'Reading your skin', eyebrow: 'MEASURING · 42%', live: true });
-    const narrating = buildScanView(input({ revealing: true, activeMetric: 'redness' }));
-    expect(narrating.status.eyebrow).toBe('NOW · REDNESS');
-    expect(narrating.status.live).toBe(true);
-    expect(narrating.activeSlot).toBe('cheeks');
+    // The consult tour on a place: the header names it and its dot pulses (not while paused).
+    const touring = buildScanView(input({ tour: { phase: 'step', paused: false, slot: 'cheeks' } }));
+    expect(touring.status).toEqual({ title: 'Going through your reading', eyebrow: 'NOW · CHEEKS', live: true });
+    expect(touring.activeSlot).toBe('cheeks');
+    expect(buildScanView(input({ tour: { phase: 'step', paused: true, slot: 'cheeks' } })).status.live).toBe(false);
+    const clean = buildScanView(input({ tour: { phase: 'clean', paused: false, slot: null } }));
+    expect(clean.status).toEqual({ title: 'Going through your reading', eyebrow: 'FACE MAP · APPEARANCE ONLY', live: true });
+    expect(clean.activeSlot).toBeNull();
+    // The summary: the reading, steady.
+    const summary = buildScanView(input({ tour: { phase: 'summary', paused: false, slot: null } }));
+    expect(summary.status.title).toBe('Your reading');
+    expect(summary.status.live).toBe(false);
     expect(buildScanView(input()).status.live).toBe(false);
   });
 

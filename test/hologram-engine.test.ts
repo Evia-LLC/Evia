@@ -6,7 +6,7 @@
  * enough to check where the callout anchors land on the canvas, that nothing
  * is drawn as a face without a mesh, and that dispose frees everything.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import sampleFile from '../src/sample/fixtures/scan-face-mesh.json';
 import { LATTICE_PITCH, boundaryLoops, buildCraniumShell, buildFaceSurface, sampleLattice, trianglesFromEdges } from '../src/hologram/geometry.ts';
@@ -390,5 +390,136 @@ describe('hologram dispose', () => {
     expect(log.renders).toBe(rendersBefore);
     expect(log.disposed).toBe(1);
     expect(Object.values(holo.anchors()).every((a) => !a.visible)).toBe(true);
+  });
+});
+
+describe('the consult tour on the hologram', () => {
+  /** The face surface's material, whose uniforms carry the zone mix and the ripple. */
+  function faceUniforms(scene: THREE.Object3D | null): Record<string, { value: unknown }> {
+    let u: Record<string, { value: unknown }> | null = null;
+    scene?.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
+      if (m && m.fragmentShader === FACE_FRAG) u = m.uniforms as Record<string, { value: unknown }>;
+    });
+    if (!u) throw new Error('no face');
+    return u;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('says once per face when it has formed (at once under reduced motion)', () => {
+    const { renderer } = fakeRenderer();
+    let formed = 0;
+    const holo = createHologram(fakeCanvas(550, 620), { renderer, reducedMotion: true, onFormed: () => formed++ });
+    holo.setMesh(mesh);
+    expect(formed).toBe(1);
+    holo.redraw();
+    expect(formed).toBe(1);
+    holo.setMesh(null);
+    holo.setMesh(mesh);
+    expect(formed).toBe(2);
+    holo.dispose();
+  });
+
+  it('forms over its build-in with motion allowed, and only then says so', () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    const { renderer } = fakeRenderer();
+    let formed = 0;
+    const holo = createHologram(fakeCanvas(550, 620), { renderer, reducedMotion: false, onFormed: () => formed++ });
+    holo.setMesh(mesh);
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(50);
+      holo.redraw();
+    }
+    expect(formed).toBe(0);
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(50);
+      holo.redraw();
+    }
+    expect(formed).toBe(1);
+    holo.dispose();
+  });
+
+  it('taps: one ring and a bloom from the spot, gone in under a second; nothing without a face or with motion reduced', () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    const { renderer, log } = fakeRenderer();
+    let now = 0;
+    const holo = createHologram(fakeCanvas(550, 620), { renderer, reducedMotion: false, clock: () => now });
+    holo.pulse('forehead');
+    holo.setMesh(mesh);
+    holo.redraw();
+    const u = faceUniforms(log.scene);
+    expect(u.uRipA.value).toBe(0);
+    holo.pulse('forehead');
+    now = 120;
+    vi.advanceTimersByTime(16);
+    holo.redraw();
+    expect(u.uRipA.value as number).toBeGreaterThan(0.3);
+    expect(u.uBloomA.value as number).toBeCloseTo(0.9, 5);
+    expect(u.uRipR.value as number).toBeGreaterThan(20);
+    expect(u.uRipR.value as number).toBeLessThan(40);
+    now = 900;
+    vi.advanceTimersByTime(16);
+    holo.redraw();
+    expect(u.uRipA.value).toBe(0);
+    expect(u.uBloomA.value).toBe(0);
+    holo.setReducedMotion(true);
+    holo.pulse('chin');
+    now = 1000;
+    holo.redraw();
+    expect(u.uRipA.value).toBe(0);
+    holo.dispose();
+  });
+
+  it('fades emptied zones out before their texture is cleared', () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    const { renderer, log } = fakeRenderer();
+    const holo = createHologram(fakeCanvas(550, 620), { renderer, reducedMotion: false });
+    holo.setMesh(mesh);
+    holo.setRegions([{ region: 'chin', tone: 'lavender', strength: 0.8 }]);
+    for (let i = 0; i < 30; i++) {
+      vi.advanceTimersByTime(50);
+      holo.redraw();
+    }
+    const u = faceUniforms(log.scene);
+    expect(u.uZoneMix.value).toBe(1);
+    const zoneTexture = u.uZones.value;
+    holo.setRegions([], { fadeOutMs: 550 });
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(50);
+      holo.redraw();
+    }
+    expect(u.uZoneMix.value as number).toBeGreaterThan(0.4);
+    expect(u.uZoneMix.value as number).toBeLessThan(0.7);
+    // Still the painted zone while it fades.
+    expect(u.uZones.value).toBe(zoneTexture);
+    for (let i = 0; i < 8; i++) {
+      vi.advanceTimersByTime(50);
+      holo.redraw();
+    }
+    expect(u.uZoneMix.value).toBe(0);
+    holo.dispose();
+  });
+
+  it('gives each anchor its place in ref4 px, and the face oval\'s box', () => {
+    const { renderer } = fakeRenderer();
+    const holo = createHologram(fakeCanvas(HOLOGRAM_BOX.w, HOLOGRAM_BOX.h), { renderer, reducedMotion: true });
+    expect(holo.faceBounds()).toBeNull();
+    holo.setMesh(mesh);
+    const a = holo.anchors();
+    for (const k of FACE_REGIONS) {
+      const [rx, ry] = anchorRef(k);
+      expect(Math.abs(a[k].ref!.x - rx)).toBeLessThan(3);
+      expect(Math.abs(a[k].ref!.y - ry)).toBeLessThan(3);
+    }
+    const b = holo.faceBounds()!;
+    // The sample face spans about x 713-1024, y 155-484 of ref4 (the canvas starts at x 560).
+    expect(Math.abs(b.x + HOLOGRAM_BOX.x - 713)).toBeLessThan(12);
+    expect(Math.abs(b.x + b.w + HOLOGRAM_BOX.x - 1024)).toBeLessThan(12);
+    expect(Math.abs(b.y - 155)).toBeLessThan(12);
+    expect(Math.abs(b.y + b.h - 484)).toBeLessThan(12);
+    holo.dispose();
   });
 });
