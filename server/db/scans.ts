@@ -1,4 +1,4 @@
-import { row, rows, run, transaction } from './index.ts';
+import { row, rows, transaction } from './index.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { SkinAnalysis } from '../../shared/types.ts';
 
