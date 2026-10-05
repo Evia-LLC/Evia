@@ -12,6 +12,14 @@
  * So this translates in both directions. The body always travels as base64 -
  * both ways - so bytes come out exactly as they went in, whatever the
  * content type says about them.
+ *
+ * P1-T05 transport note: no explicit byte bound is added here. The bridge
+ * must materialise the whole body for serverless-http either way, and the
+ * platform itself caps request payloads first (~6 MB on Netlify; the
+ * function never sees more). Past that, Express enforces the 12 MB / 64 KB
+ * JSON ceilings in server/app.ts, and server/lib/image-input.ts enforces
+ * per-purpose decoded-byte/dimension ceilings post-auth. An in-bridge bound
+ * would duplicate those with a second failure mode and no new protection.
  */
 
 /** What `serverless-http` returns for an API Gateway (v1) event. */

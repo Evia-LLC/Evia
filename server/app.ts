@@ -30,9 +30,13 @@ import { log } from './lib/log.ts';
 
 export const app = express();
 
-// Only the two routes that carry an image get the large body limit; every
-// other endpoint was accepting 12 MB of JSON for no reason.
-const IMAGE_ROUTES = ['/api/analysis/face', '/api/scans', '/api/products/read-label', '/api/admin/catalogue/import'];
+// Only routes that carry an image get the large body limit. Path-based limits
+// stay because the adapters need the body to route, but auth still runs at
+// the router before any image bytes are validated, and per-purpose decoded
+// ceilings in server/lib/image-input.ts apply post-auth. POST /api/scans is
+// NOT listed: it stores structured readings only (raw capture bytes are
+// stripped there), so it rides the 64kb small body like every other endpoint.
+const IMAGE_ROUTES = ['/api/analysis/face', '/api/products/read-label', '/api/admin/catalogue/import'];
 const largeBody = express.json({ limit: '12mb' });
 const smallBody = express.json({ limit: '64kb' });
 app.use((req, res, next) =>
@@ -123,7 +127,18 @@ app.use('/api/public', publicRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api', apiRouter);
 
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // Body-limit routing answers with the right status instead of a generic
+  // 500: 413 when a payload dies at the transport ceiling above, 400 when the
+  // JSON itself cannot be parsed. Anything else stays a 500.
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    res.status(413).json({ error: 'That upload is too large.' });
+    return;
+  }
+  if (err?.status === 400) {
+    res.status(400).json({ error: 'That request could not be read.' });
+    return;
+  }
   log.error('http', 'unhandled error', { error: err.message });
   res.status(500).json({ error: 'Something went wrong.' });
 });

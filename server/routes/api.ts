@@ -31,6 +31,7 @@ import {
   getBlob,
   shredBlob,
 } from '../lib/crypto.ts';
+import { ImageInputError, validateImageInput, type ValidatedImage } from '../lib/image-input.ts';
 import { newId } from '../lib/ids.ts';
 import { chatLimiter, scanLimiter, visionLimiter, voiceLimiter } from '../lib/rate-limit.ts';
 import { log } from '../lib/log.ts';
@@ -272,16 +273,28 @@ apiRouter.post('/scans/:id/progress-photo', scanLimiter, async (req, res) => {
     res.status(403).json({ error: 'Progress-photo consent is required before saving.' });
     return;
   }
-  const imageBase64 = req.body?.imageBase64;
-  if (typeof imageBase64 !== 'string' || imageBase64.length < 100) {
-    res.status(400).json({ error: 'The pending capture is required.' });
+  // Consent above runs first: a denial returns before the payload is even
+  // decoded, so nothing is stored or encrypted for a refused capture.
+  // Availability is a config check rather than a storage call, so it also
+  // stays ahead of the decode.
+  let image: ValidatedImage;
+  try {
+    image = validateImageInput(req.body?.imageBase64, 'progress');
+  } catch (err) {
+    delete req.body?.imageBase64;
+    const inputError = err instanceof ImageInputError ? err : null;
+    const status = inputError?.status ?? 400;
+    res.status(status).json({ error: status === 400 ? 'The pending capture is required.' : (err as Error).message });
     return;
   }
+  delete req.body?.imageBase64;
   if (!blobStorageAvailable()) {
+    image.bytes.fill(0);
     res.status(503).json({ error: 'Encrypted photo storage is unavailable.' });
     return;
   }
-  const blobRef = await putBlob(Buffer.from(imageBase64, 'base64'), `${newId()}.bin`);
+  const blobRef = await putBlob(image.bytes, `${newId()}.bin`);
+  image.bytes.fill(0);
   try {
     const { photo, created } = await progressPhotos.createProgressPhoto(req.userId!, {
       skinScanId: scanId,
@@ -624,25 +637,39 @@ apiRouter.post('/products/:id/assess', async (req, res) => {
  * scan, because a label photo is still a photo the user took.
  */
 apiRouter.post('/products/read-label', visionLimiter, async (req, res) => {
-  const imageBase64 = req.body?.imageBase64;
-  if (typeof imageBase64 !== 'string' || imageBase64.length < 100) {
-    res.status(400).json({ error: 'An image is required.' });
-    return;
-  }
-  if (!modelAvailable()) {
-    res.status(503).json({ error: 'No model is configured; use the on-device reader.' });
-    return;
-  }
+  // Consent first: a denial returns before the payload is even decoded, so
+  // no image leaves for the provider on a refused read.
   if (!approvedConsent((await consentsRepo.currentConsents(req.userId!))[CONSENT_KEYS.CLOUD_REASONING])) {
+    delete req.body?.imageBase64;
     res.status(403).json({ error: 'Cloud reading is off. Turn it on in Privacy, or use on-device OCR.' });
     return;
   }
+  if (!modelAvailable()) {
+    delete req.body?.imageBase64;
+    res.status(503).json({ error: 'No model is configured; use the on-device reader.' });
+    return;
+  }
+  let image: ValidatedImage;
   try {
-    const result = await log.timed('products', 'label read', () => readProductLabel(imageBase64));
+    image = validateImageInput(req.body?.imageBase64, 'label');
+  } catch (err) {
+    delete req.body?.imageBase64;
+    const inputError = err instanceof ImageInputError ? err : null;
+    const status = inputError?.status ?? 400;
+    res.status(status).json({ error: status === 400 ? 'An image is required.' : (err as Error).message });
+    return;
+  }
+  delete req.body?.imageBase64;
+  try {
+    // Forward the canonical re-encode of the validated bytes, never the raw
+    // client string.
+    const result = await log.timed('products', 'label read', () => readProductLabel(image.bytes.toString('base64')));
     res.json(result);
   } catch (err) {
     log.error('products', 'label read failed', { error: describeApiError(err) });
     res.status(502).json({ error: 'I could not read that label.' });
+  } finally {
+    image.bytes.fill(0);
   }
 });
 
