@@ -1,5 +1,6 @@
 import { newId, nowIso } from '../lib/ids.ts';
 import { row, rows } from './index.ts';
+import { ValidationError } from '../../shared/boundary-validators.ts';
 import type {
   ConsentDecision,
   ConsentState,
@@ -13,6 +14,24 @@ export interface ConsentMetadata extends Record<string, unknown> {
   idempotencyKey?: string;
   actorType?: string;
   actorId?: string;
+}
+
+/**
+ * P1-T06 — server-constructed consent evidence.
+ *
+ * Actor identity and provenance are derived from the authenticated request
+ * (req.userId, server-chosen source, req.ip) and passed here — never read
+ * from client-supplied metadata. When `server` is present, any client
+ * `actorType`/`actorId`/`source`/`ip` smuggled inside `metadata` is stripped
+ * and the server values win. Callers without `server` are internal,
+ * server-side constructions (registration, analysis routes, fixtures) whose
+ * actor values are already server-derived.
+ */
+export interface ConsentServerEvidence {
+  actorType: string;
+  actorId: string;
+  source: string;
+  ip?: string | null;
 }
 
 interface ConsentRow {
@@ -41,9 +60,36 @@ function summary(value: ConsentDecision): ConsentSummary {
 export async function recordConsentDecision(
   userId: string, consentType: ConsentType, wordingVersionId: string,
   state: ConsentState, metadata: ConsentMetadata = {},
+  server?: ConsentServerEvidence,
 ): Promise<ConsentDecision> {
-  const idempotencyKey = metadata.idempotencyKey ?? newId();
-  const { idempotencyKey: _key, actorType, actorId, ...evidence } = metadata;
+  if (state !== 'granted' && state !== 'withdrawn') {
+    throw new ValidationError('State must be granted or withdrawn.');
+  }
+  if (typeof wordingVersionId !== 'string' || !wordingVersionId.trim() || wordingVersionId.length > 200) {
+    throw new ValidationError('wordingVersionId: must be a non-blank string of at most 200 characters.');
+  }
+  const rawKey = metadata.idempotencyKey;
+  if (rawKey !== undefined && (typeof rawKey !== 'string' || !rawKey.trim() || rawKey.length > 100)) {
+    throw new ValidationError('idempotencyKey: must be a non-blank string of at most 100 characters.');
+  }
+  const idempotencyKey = rawKey ?? newId();
+  // Server evidence wins: strip every client-supplied identity/provenance
+  // field so a forged actorId/actorType/source/ip can never reach storage.
+  const { idempotencyKey: _dropped, ...rest } = metadata;
+  const legacyActorType = rest.actorType;
+  const legacyActorId = rest.actorId;
+  delete rest.actorType;
+  delete rest.actorId;
+  delete rest.source;
+  delete rest.ip;
+  const evidence = rest;
+  const actorType = server?.actorType ?? (typeof legacyActorType === 'string' ? legacyActorType : null);
+  const actorId = server?.actorId ?? (typeof legacyActorId === 'string' ? legacyActorId : null);
+  const storedEvidence: Record<string, unknown> = { ...evidence };
+  if (server) {
+    storedEvidence.source = server.source;
+    storedEvidence.ip = server.ip ?? null;
+  }
   const id = newId();
   const recordedAt = nowIso();
   const inserted = await row<ConsentRow>(
@@ -55,7 +101,7 @@ export async function recordConsentDecision(
      RETURNING *`,
     id, userId, consentType, wordingVersionId, state, recordedAt,
     actorType ?? null, actorId ?? null,
-    Object.keys(evidence).length ? JSON.stringify(evidence) : null, idempotencyKey,
+    Object.keys(storedEvidence).length ? JSON.stringify(storedEvidence) : null, idempotencyKey,
   );
   if (inserted) return decision(inserted);
   const existing = await row<ConsentRow>(
