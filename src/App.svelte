@@ -166,7 +166,7 @@
   <ElohimStage />
 
   {#if booting}
-    <div class="auth"><div class="auth__mark">Elohim</div></div>
+    <div class="auth"><div class="auth__mark">Evia</div></div>
   {:else if isLegalRoute(router.id)}
     {#key router.id}
       {#if router.is('legal-age-assurance')}<AgeAssurancePage />

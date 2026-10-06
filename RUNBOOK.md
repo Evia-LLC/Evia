@@ -1,4 +1,4 @@
-# Elohim — operator runbook
+# Evia — operator runbook
 
 What to set where, and what each thing switches on. Nothing here is needed
 to run the app on a laptop: `node scripts/dev.mjs` starts a local Postgres,

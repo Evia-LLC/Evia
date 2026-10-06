@@ -162,7 +162,7 @@
            children. Wrapping is also why the disclosures travel with the pitch
            rather than with the fields. -->
       <div class="auth__pitch">
-        <h1 class="auth__wordmark">Elohim</h1>
+        <h1 class="auth__wordmark">Evia</h1>
 
         <p class="auth__lede">
           <span class="auth__lede-a">A beauty consultant</span>
@@ -220,7 +220,7 @@
               <div class="auth__note auth__note--engine">
                 <span class="auth__note-tag">Local engine</span>
                 <span class="auth__note-body">
-                  conversation is running the built-in Elohim rather than the full model — your
+                  conversation is running the built-in Evia rather than the full model — your
                   scans, storage and trends are real either way
                 </span>
               </div>

@@ -1,10 +1,10 @@
-# Elohim — Technical Architecture
+# Evia — Technical Architecture
 
-> Elohim is a persistent AI beauty companion who happens to have a physical digital
+> Evia is a persistent AI beauty companion who happens to have a physical digital
 > presence. Every decision below is downstream of that sentence. If a change makes
-> Elohim feel more like a dashboard and less like a person, it is the wrong change.
+> Evia feel more like a dashboard and less like a person, it is the wrong change.
 
-**Status:** Phase 1 (Elohim Core) + the skeleton every later phase plugs into.
+**Status:** Phase 1 (Evia Core) + the skeleton every later phase plugs into.
 **MVP art direction:** procedural / low-poly / holographic. Deliberately stylised, never
 unfinished. All visual assets sit behind interfaces so they can be replaced wholesale.
 
@@ -106,7 +106,7 @@ Two deliberate choices:
 
 **`memories` is separate from `messages`.** §7 of the brief demands the system distinguish
 durable facts from conversational noise. `messages` is the transcript; `memories` is what
-Elohim actually *knows*. A fact is promoted into `memories` only by the extraction pass
+Evia actually *knows*. A fact is promoted into `memories` only by the extraction pass
 (§6 below), keyed so a later contradiction updates rather than duplicates.
 
 **`model_version` on every scan.** Metric formulas will change. Comparing a v1 hydration
@@ -171,7 +171,7 @@ rest. `SkinAnalysis.confidence` is the product of capture quality and ROI confid
 is surfaced to the user when it is low.
 
 **These are appearance measurements, not diagnoses.** The type is literally named
-`SkinAppearanceMetrics`, and Elohim's system prompt forbids diagnostic phrasing (§11).
+`SkinAppearanceMetrics`, and Evia's system prompt forbids diagnostic phrasing (§11).
 
 **Optional cloud reasoning.** With explicit consent, the image can additionally go to
 Claude vision for qualitative observations. It layers *on top of* the deterministic
@@ -267,14 +267,14 @@ timeline; every beat is interruptible.
 
 | Beat | What happens |
 |---|---|
-| 1 | Elohim says the line. Nothing visual yet. |
+| 1 | Evia says the line. Nothing visual yet. |
 | 2 | Lounge key light dims and cools over 1.2 s |
 | 3 | Lounge geometry dissolves; clinical room resolves (shared floor plane anchors it) |
 | 4 | Outfit cross-fade, casual to clinical, 0.8 s |
 | 5 | Holographic frame boots: rails, then panels, staggered |
 | 6 | Capture and analysis; scan-line sweep tracks real pipeline progress |
 | 7 | Metrics resolve into orbit around the face model |
-| 8 | Elohim turns to the user and explains |
+| 8 | Evia turns to the user and explains |
 
 The clinical environment module is **lazy-loaded** on first entry (§9) — the lounge boots
 without paying for it.
@@ -291,7 +291,7 @@ Layout is a `HoloLayout` solver, not hardcoded positions: it takes N elements pl
 viewport aspect and produces an arc in landscape, a stack in portrait. That is what makes
 "recompose, don't shrink" (§29 of the brief) actually true rather than aspirational.
 
-Numbers are deliberately sparse. Elohim is the interpreter; the holograms are her whiteboard.
+Numbers are deliberately sparse. Evia is the interpreter; the holograms are her whiteboard.
 
 ---
 
@@ -374,7 +374,7 @@ than only when that exact token happens to be presented again.
 
 ## 11. Safety positioning
 
-Elohim is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
+Evia is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
 device and the product must never imply she is. Enforced in three places, because a system
 prompt alone is not a control:
 
@@ -448,7 +448,7 @@ reports no boundaries — some do not — the estimated track keeps playing rath
 face freezing.
 
 Holograms are real controls: each metric is a focusable `<button>`, and tapping one asks
-Elohim about that metric rather than opening a detail panel. She stays the interpreter. The
+Evia about that metric rather than opening a detail panel. She stays the interpreter. The
 slot solver guarantees that whatever she is about to name — the biggest mover and the
 biggest one going the other way — is on screen, because otherwise she points at a ring that
 is not there.
