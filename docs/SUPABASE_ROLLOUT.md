@@ -32,7 +32,7 @@ not an excuse to rehearse against production.
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Supabase project for staging Auth/Storage    | **CUTOVER BLOCKER B1** (owner: operator) — new isolated project, placeholder ref `https://xyzcompany.supabase.co`                                                                                                                                                                                                                                                       |
 | Supabase project for production Auth/Storage | **CUTOVER BLOCKER B1** (owner: operator) — separate project from staging; never reuse one project's keys in another environment                                                                                                                                                                                                                                         |
-| Region                                       | **CUTOVER BLOCKER B1** (owner: operator) — colocate with the serving hosts where possible. Reference point: the current Neon database sits in `aws-us-east-2` (Ohio), the same region as the Netlify function, so queries do not cross the country (`RUNBOOK.md` "Where things stand"). Apply the same colocation reasoning to the Supabase region choice and record it |
+| Region                                       | **DECIDED 2026-10-06: AWS EU West (Ireland)** (owner: operator) — operator chose EU presence; projects still to be created. Reference point: the current Neon database sits in `aws-us-east-2` (Ohio), the same region as the Netlify function, so queries do not cross the country (`RUNBOOK.md` "Where things stand"). Apply the same colocation reasoning to the Supabase region choice and record it |
 | Data API exposure                            | Decided already by the plan: **disabled, or an empty dedicated schema only** (P2-T04). No browser table access until a later explicit RLS decision. Re-state at provisioning; do not accept dashboard defaults silently                                                                                                                                                 |
 
 ## 3. SMTP + Auth redirect URLs
@@ -44,7 +44,7 @@ and not a production sender; a custom SMTP sender is the expected production sha
 
 | Requirement                                                           | Status                                                                                                                                                                                                                                                 |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Per-environment sender (SMTP host, from-address, domain verification) | **CUTOVER BLOCKER B2** (owner: operator). Local lane uses a mail sink (P2-T05), never real delivery. Staging and production each need their own verified sender. No SMTP host is recorded here because none has been chosen                            |
+| Per-environment sender (SMTP host, from-address, domain verification) | **DECIDED 2026-10-06: Supabase built-in mail** (owner: operator); dashboard configuration pending. Local lane uses a mail sink (P2-T05), never real delivery. Staging and production each need their own verified sender. No SMTP host is recorded here because none has been chosen                            |
 | Redirect URL allowlist, local                                         | `http://localhost:5195/**` (matches default `ELOHIM_WEB_PORT`; adjust if the port changes). Signup/recovery/magic-link callbacks outside the allowlist must fail closed                                                                                |
 | Redirect URL allowlist, staging                                       | **CUTOVER BLOCKER B3** (owner: operator) — register the staging host origin once B8 lands                                                                                                                                                              |
 | Redirect URL allowlist, production                                    | **CUTOVER BLOCKER B3** (owner: operator) — register the Netlify origin and the Vercel origin as two explicit entries; a single "production" entry covering only one host will break callbacks on the other                                             |
@@ -108,8 +108,8 @@ database backup nor any object backup is worth anything without the encryption k
 | Environment              | RPO (max data loss)                                                                      | RTO (restore time)                                                   | Status                                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Local / disposable lanes | None — nothing worth restoring                                                           | Re-run the launcher                                                  | No backup. By design                                                                                   |
-| Staging                  | ≤ 24 h (nightly or on-demand before rehearsals)                                          | ≤ 4 h                                                                | Proposed; **BLOCKER B6** (owner: operator) to confirm schedule                                         |
-| Production               | ≤ 24 h point-in-time for Postgres; Storage objects versioned/copied on the same schedule | ≤ 8 h to a verified isolated restore (reads + deletion work, P4-T06) | Proposed; **BLOCKER B6** (owner: operator) to confirm against the Supabase plan's backup/PITR offering |
+| Staging                  | ≤ 24 h (nightly or on-demand before rehearsals)                                          | ≤ 4 h                                                                | CONFIRMED 2026-10-06 (owner: operator)                                         |
+| Production               | ≤ 24 h point-in-time for Postgres; Storage objects versioned/copied on the same schedule | ≤ 8 h to a verified isolated restore (reads + deletion work, P4-T06) | CONFIRMED 2026-10-06 (owner: operator) |
 
 **Procedure A — database recovery (per environment).** Record backup ID, restore into an
 _isolated_ target (never over the live project on first pass), run migrations to the
@@ -121,7 +121,7 @@ deleted users or resurrect deleted objects.
 `ELOHIM_BLOB_KEY` from the offline copy **first** — current known copy:
 `.secrets/production-blob-key.txt` (git-ignored) plus "somewhere safer than this
 folder" per the runbook; confirming that safer copy exists and who holds it is
-**BLOCKER B7** (owner: operator). (2) Restore object copies independently of the DB
+**DECIDED 2026-10-06: password-manager copy** (owner: operator); execution pending. (2) Restore object copies independently of the DB
 restore. (3) Prove decryption of sample rows before declaring recovery complete.
 **Rotation shape** (not timed here): generate new 32-byte key → record new key version
 (P4-T01 envelope carries a key ID) → re-encrypt/backfill → keep the old key readable
@@ -250,17 +250,17 @@ A fresh isolated environment is provisioned from this file plus `RUNBOOK.md`,
 
 ## 11. Cutover blocker register
 
-| ID  | Blocker                                                                                                      | Owner                 | Gates                                                           |
-| --- | ------------------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------- |
-| B1  | Supabase staging + production projects and regions undecided (placeholders only in this file)                | operator              | P2-T02 and everything after                                     |
-| B2  | Custom SMTP sender(s) undecided; mail MUST precede recovery flows                                            | operator              | P3-T03 rehearsal, P3-T06, P3-T07                                |
-| B3  | Per-environment Auth redirect URL allowlists unregistered (local known; staging + both production hosts TBD) | operator              | P3-T03, P3-T06, P3-T07                                          |
-| B4  | Supabase direct/session vs pooler connection paths unrecorded                                                | operator              | P2-T05 lane, any migration against a Supabase-hosted DB surface |
-| B5  | Storage bucket name, private policies, plan quota, per-user ceilings undecided                               | operator              | P4-T02, P4-T05, P4-T07                                          |
-| B6  | RPO/RTO targets + backup/PITR schedule unconfirmed (proposals in §6)                                         | operator              | P3-T07, P4-T06, P4-T07                                          |
-| B7  | Blob-key offline copy holder + rotation runbook unconfirmed (only `.secrets/` copy attested)                 | operator              | P4-T06, P4-T07, any recovery claim                              |
-| B8  | No staging environment exists (host, URLs, project)                                                          | operator              | P3-T06, P4-T06 rehearsals                                       |
-| B9  | App-DB consolidation (Neon → Supabase?) explicitly deferred to P6-T02; NOT an Auth/Storage prerequisite      | operator (at Phase 6) | Nothing in Phases 2–5                                           |
+| ID  | Blocker                                                                                                                                                 | Owner                 | Gates                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
+| B1  | Region DECIDED 2026-10-06: AWS EU West (Ireland) — operator chose EU presence over Neon colocation; projects still to be created (staging + production) | operator              | P2-T02 and everything after                                     |
+| B2  | Sender DECIDED 2026-10-06: Supabase built-in mail (low-volume auth mail); dashboard configuration pending — mail MUST precede recovery flows            | operator              | P3-T03 rehearsal, P3-T06, P3-T07                                |
+| B3  | Per-environment Auth redirect URL allowlists unregistered (local known; staging + both production hosts TBD)                                            | operator              | P3-T03, P3-T06, P3-T07                                          |
+| B4  | Supabase direct/session vs pooler connection paths unrecorded                                                                                           | operator              | P2-T05 lane, any migration against a Supabase-hosted DB surface |
+| B5  | Storage bucket name, private policies, plan quota, per-user ceilings undecided                                                                          | operator              | P4-T02, P4-T05, P4-T07                                          |
+| B6  | CONFIRMED 2026-10-06: staging ≤24h/≤4h, prod ≤24h+PITR/≤8h verified restore (P4-T06)                                                                    | operator              | P3-T07, P4-T06, P4-T07                                          |
+| B7  | Holder DECIDED 2026-10-06: encrypted password-manager copy (separate from daily driver); offline copy + rotation runbook still to be executed           | operator              | P4-T06, P4-T07, any recovery claim                              |
+| B8  | No staging environment exists (host, URLs, project)                                                                                                     | operator              | P3-T06, P4-T06 rehearsals                                       |
+| B9  | App-DB consolidation (Neon → Supabase?) explicitly deferred to P6-T02; NOT an Auth/Storage prerequisite                                                 | operator (at Phase 6) | Nothing in Phases 2–5                                           |
 
 ## 12. P2-T01 self-check (evidence review, 2026-10-06)
 
