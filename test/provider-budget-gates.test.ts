@@ -73,8 +73,11 @@ describe('vision and voice dispatch gates', () => {
   it('serves a cached voice line without a reservation or provider request', async () => {
     dbRow.mockResolvedValue({
       audio: Buffer.from('audio'), content_type: 'audio/mpeg', words_json: '[]', duration: 1,
+      created_at: new Date().toISOString(),
     });
-    const line = await speakLine('A cached line.', {}, 'u1');
+    // P1-T11: only exact stock-line hits are cacheable, so the cached
+    // fixture must be a real stock sentence; arbitrary text always misses.
+    const line = await speakLine("Hey, it's Elohim. This is what I sound like.", {}, 'u1');
     expect(line.cached).toBe(true);
     expect(admit).not.toHaveBeenCalled();
     expect(vendorFetch).not.toHaveBeenCalled();
