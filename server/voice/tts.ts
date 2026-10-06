@@ -32,15 +32,19 @@
  * time per word. The client fires its word boundaries from those, so the lips
  * follow the recording rather than an estimate spread over its length.
  */
-import { createHash } from 'node:crypto';
-import { row, run } from '../db/index.ts';
-import { log } from '../lib/log.ts';
-import * as budget from '../ai/budget.ts';
-import { newId } from '../lib/ids.ts';
-import { STOCK_CACHE_MAX_ROWS, STOCK_CACHE_TTL_DAYS, STOCK_LINES } from './stock-lines.ts';
+import { createHash } from "node:crypto";
+import { row, run } from "../db/index.ts";
+import { log } from "../lib/log.ts";
+import * as budget from "../ai/budget.ts";
+import { newId } from "../lib/ids.ts";
+import {
+  STOCK_CACHE_MAX_ROWS,
+  STOCK_CACHE_TTL_DAYS,
+  STOCK_LINES,
+} from "./stock-lines.ts";
 
 /** ElevenLabs. Overridable for a different provider with the same contract. */
-const DEFAULT_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech';
+const DEFAULT_ENDPOINT = "https://api.elevenlabs.io/v1/text-to-speech";
 
 export interface VoiceConfig {
   apiKey: string;
@@ -62,7 +66,7 @@ export function voiceConfig(): VoiceConfig | null {
     // The offline batch (scripts/voice-lines-synth.mjs) keeps multilingual/v3
     // for the shipped lines, where render quality wins and latency is free.
     // The env override still decides, when set.
-    modelId: process.env.ELOHIM_VOICE_MODEL ?? 'eleven_turbo_v2_5',
+    modelId: process.env.ELOHIM_VOICE_MODEL ?? "eleven_turbo_v2_5",
   };
 }
 
@@ -72,13 +76,15 @@ export function clonedVoiceAvailable(): boolean {
 
 /** Whether someone without an account may hear the cloned voice. */
 export function guestVoiceAllowed(): boolean {
-  return clonedVoiceAvailable() && process.env.ELOHIM_GUEST_VOICE !== '0';
+  return clonedVoiceAvailable() && process.env.ELOHIM_GUEST_VOICE !== "0";
 }
 
 export class VoiceUnavailable extends Error {
   constructor() {
-    super('No cloned voice is configured (ELOHIM_VOICE_API_KEY / ELOHIM_VOICE_ID unset).');
-    this.name = 'VoiceUnavailable';
+    super(
+      "No cloned voice is configured (ELOHIM_VOICE_API_KEY / ELOHIM_VOICE_ID unset).",
+    );
+    this.name = "VoiceUnavailable";
   }
 }
 
@@ -105,10 +111,10 @@ const MAX_CHARS = 1200;
  */
 export function speakableOf(text: string): string {
   return text
-    .replace(/\p{Extended_Pictographic}|[\u{FE0F}\u{200D}]/gu, '')
-    .replace(/\*+/g, '')
-    .replace(/^[-•]\s+/gm, '')
-    .replace(/\s+/g, ' ')
+    .replace(/\p{Extended_Pictographic}|[\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\*+/g, "")
+    .replace(/^[-•]\s+/gm, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -146,11 +152,15 @@ export function splitSentences(text: string): string[] {
   const merged: string[] = [];
   for (const piece of pieces) {
     const last = merged.length - 1;
-    if (last >= 0 && merged[last].length < MIN_SENTENCE_CHARS) merged[last] += ` ${piece}`;
+    if (last >= 0 && merged[last].length < MIN_SENTENCE_CHARS)
+      merged[last] += ` ${piece}`;
     else merged.push(piece);
   }
   // A short tail joins the sentence before it rather than dangling alone.
-  if (merged.length > 1 && merged[merged.length - 1].length < MIN_SENTENCE_CHARS) {
+  if (
+    merged.length > 1 &&
+    merged[merged.length - 1].length < MIN_SENTENCE_CHARS
+  ) {
     const short = merged.pop() as string;
     merged[merged.length - 1] += ` ${short}`;
   }
@@ -221,7 +231,7 @@ interface AlignedResponse {
     character_start_times_seconds: number[];
     character_end_times_seconds: number[];
   } | null;
-  normalized_alignment?: AlignedResponse['alignment'];
+  normalized_alignment?: AlignedResponse["alignment"];
 }
 
 /**
@@ -235,7 +245,7 @@ interface AlignedResponse {
  */
 export function wordsFromAlignment(
   text: string,
-  alignment: NonNullable<AlignedResponse['alignment']>,
+  alignment: NonNullable<AlignedResponse["alignment"]>,
 ): SpokenWord[] {
   const words: SpokenWord[] = [];
   const chars = alignment.characters;
@@ -249,7 +259,7 @@ export function wordsFromAlignment(
     }
     const from = i;
     while (i < chars.length && !/\s/.test(chars[i])) i++;
-    const word = chars.slice(from, i).join('');
+    const word = chars.slice(from, i).join("");
     words.push({
       word,
       charIndex: from,
@@ -261,7 +271,7 @@ export function wordsFromAlignment(
   // The alignment's character stream is the text; if a provider ever
   // normalises it (numbers to words, say), indices drift. Fall back to the
   // text's own word positions, keeping the timings in order.
-  if (words.length && chars.join('') !== text) {
+  if (words.length && chars.join("") !== text) {
     const own = [...text.matchAll(/\S+/g)];
     if (own.length === words.length) {
       own.forEach((m, k) => {
@@ -282,7 +292,13 @@ function estimatedWords(text: string, duration: number): SpokenWord[] {
   let t = 0;
   return matches.map((m, k) => {
     const span = (weights[k] / total) * duration;
-    const word = { word: m[0], charIndex: m.index ?? 0, charLength: m[0].length, start: t, end: t + span };
+    const word = {
+      word: m[0],
+      charIndex: m.index ?? 0,
+      charLength: m[0].length,
+      start: t,
+      end: t + span,
+    };
     t += span;
     return word;
   });
@@ -302,9 +318,9 @@ function durationOf(words: SpokenWord[], bytes: number): number {
  * since the original cache, which is why pre-fix rows share it.
  */
 export function cacheKey(config: VoiceConfig, text: string): string {
-  return createHash('sha256')
+  return createHash("sha256")
     .update(`${config.voiceId}\n${config.modelId}\n${text}`)
-    .digest('hex');
+    .digest("hex");
 }
 
 /**
@@ -358,16 +374,43 @@ function isExpired(createdAt: string): boolean {
  * identity — the account route passes the authenticated user id.)
  */
 function isGuestBudgetUser(userId: string): boolean {
-  return userId === 'guest:voice' || userId.startsWith('guest:');
+  return userId === "guest:voice" || userId.startsWith("guest:");
 }
+
+/**
+ * P1-T12 — voice request budget.
+ *
+ * Host bounds (established by inspection, never assumed): Vercel
+ * `maxDuration: 30` → 30 s; Netlify sets no function timeout in repo config
+ * (platform default 10 s synchronous, raisable to 26 s — an operator action).
+ * Design host = 26 s (Netlify raised) / 30 s (Vercel).
+ *
+ * Voice budget: provider 10 s per sentence < line 20 s (whole speakLine call,
+ * enforced below) < host 26/30 s. Arithmetic: the line deadline stops new
+ * sentence dispatches after 20 s (a 1200-char line is ~10 sentences; only the
+ * fast ones fit, the rest fail the line honestly to browser-voice fallback
+ * instead of outliving the host); 20 s leaves 6–10 s for response transfer.
+ * There is no vendor task handle to clean up — a timed-out synthesis is an
+ * aborted fetch, and the unobserved call settles via the fail path (see
+ * below), exactly once, through P1-T07.
+ */
+export const TTS_SENTENCE_TIMEOUT_MS = 10_000;
+export const TTS_LINE_TIMEOUT_MS = 20_000;
 
 /**
  * Per-call synthesis options. `guest` defaults to the budget-identity
  * convention above; it exists so tests and future server callers can state
  * the intent explicitly rather than minting identities.
+ *
+ * P1-T12: `timeoutMs` (whole-line budget), `sentenceTimeoutMs` (per-fetch
+ * budget) and `signal` (caller disconnect) are deadline wiring only — they
+ * change no P1-T11 cache admission, read or write semantics.
  */
 export interface SpeakOptions {
   guest?: boolean;
+  timeoutMs?: number;
+  sentenceTimeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 interface CachedRow {
@@ -400,24 +443,36 @@ async function synthesiseSentence(
   context: SpeakContext,
   budgetUserId: string,
   canWrite: boolean,
-): Promise<{ audio: Buffer; contentType: string; words: SpokenWord[]; duration: number; cached: boolean }> {
+  deadline?: { signal: AbortSignal; timeoutMs: number },
+): Promise<{
+  audio: Buffer;
+  contentType: string;
+  words: SpokenWord[];
+  duration: number;
+  cached: boolean;
+}> {
   const stock = isStockSentence(sentence);
   const key = cacheKey(config, sentence);
 
   if (stock) {
     const hit = await row<CachedRow>(
-      'SELECT audio, content_type, words_json, duration, created_at FROM voice_lines WHERE key = ?',
+      "SELECT audio, content_type, words_json, duration, created_at FROM voice_lines WHERE key = ?",
       key,
     ).catch(() => undefined);
     if (hit) {
-      if (isExpired(hit.created_at ?? '')) {
+      if (isExpired(hit.created_at ?? "")) {
         // Bounded lifetime: an expired stock row is a miss. Delete it so the
         // table cannot accumulate stale entries nobody re-requests.
-        void run('DELETE FROM voice_lines WHERE key = ?', key).catch(() => {});
+        void run("DELETE FROM voice_lines WHERE key = ?", key).catch(() => {});
       } else {
-        void run('UPDATE voice_lines SET hits = hits + 1 WHERE key = ?', key).catch(() => {});
+        void run(
+          "UPDATE voice_lines SET hits = hits + 1 WHERE key = ?",
+          key,
+        ).catch(() => {});
         return {
-          audio: Buffer.isBuffer(hit.audio) ? hit.audio : Buffer.from(hit.audio),
+          audio: Buffer.isBuffer(hit.audio)
+            ? hit.audio
+            : Buffer.from(hit.audio),
           contentType: hit.content_type,
           words: JSON.parse(hit.words_json) as SpokenWord[],
           duration: hit.duration,
@@ -428,68 +483,97 @@ async function synthesiseSentence(
   }
 
   const dispatch = async () => {
+    // P1-T12 — every outbound TTS call carries a deadline: the per-sentence
+    // provider budget, raced against the line/caller signal so a client
+    // disconnect stops dispatch instead of orphaning billable synthesis.
+    const sentenceTimeout = AbortSignal.timeout(
+      deadline?.timeoutMs ?? TTS_SENTENCE_TIMEOUT_MS,
+    );
+    const signal = deadline
+      ? AbortSignal.any([sentenceTimeout, deadline.signal])
+      : sentenceTimeout;
     const response = await fetch(
-    `${config.endpoint}/${config.voiceId}/with-timestamps?output_format=mp3_44100_128`,
-    {
-      method: 'POST',
-      headers: {
-        'xi-api-key': config.apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: sentence,
-        model_id: config.modelId,
-        // The neighbouring sentences, so each chunk is read as part of the
-        // line rather than cold: intonation falls where the thought actually
-        // ends, not at every chunk boundary.
-        ...(context.previousText ? { previous_text: context.previousText } : {}),
-        ...(context.nextText ? { next_text: context.nextText } : {}),
-        voice_settings: {
-          // Directed rather than flat. Lower stability and more style than
-          // the launch settings, because a consultant who never varies her
-          // delivery reads as a kiosk; the sentence-level pauses and context
-          // above keep the expressiveness from tipping into performance.
-          stability: 0.45,
-          similarity_boost: 0.8,
-          style: 0.35,
-          use_speaker_boost: true,
+      `${config.endpoint}/${config.voiceId}/with-timestamps?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        signal,
+        headers: {
+          "xi-api-key": config.apiKey,
+          "Content-Type": "application/json",
         },
-      }),
-    },
+        body: JSON.stringify({
+          text: sentence,
+          model_id: config.modelId,
+          // The neighbouring sentences, so each chunk is read as part of the
+          // line rather than cold: intonation falls where the thought actually
+          // ends, not at every chunk boundary.
+          ...(context.previousText
+            ? { previous_text: context.previousText }
+            : {}),
+          ...(context.nextText ? { next_text: context.nextText } : {}),
+          voice_settings: {
+            // Directed rather than flat. Lower stability and more style than
+            // the launch settings, because a consultant who never varies her
+            // delivery reads as a kiosk; the sentence-level pauses and context
+            // above keep the expressiveness from tipping into performance.
+            stability: 0.45,
+            similarity_boost: 0.8,
+            style: 0.35,
+            use_speaker_boost: true,
+          },
+        }),
+      },
     );
 
     if (!response.ok) {
-    // Never log the provider body: error payloads may echo the sentence,
-    // which for non-stock lines is personal content. Status plus size is
-    // enough to diagnose quota, voice-id and model problems.
-    const detail = await response.text().catch(() => '');
-    log.error('voice', 'synthesis failed', {
-      status: response.status,
-      bodyBytes: detail.length,
-    });
-      throw new budget.BudgetDispatchError(`Voice synthesis failed (${response.status}).`, true);
+      // Never log the provider body: error payloads may echo the sentence,
+      // which for non-stock lines is personal content. Status plus size is
+      // enough to diagnose quota, voice-id and model problems.
+      const detail = await response.text().catch(() => "");
+      log.error("voice", "synthesis failed", {
+        status: response.status,
+        bodyBytes: detail.length,
+      });
+      throw new budget.BudgetDispatchError(
+        `Voice synthesis failed (${response.status}).`,
+        true,
+      );
     }
     return (await response.json()) as AlignedResponse;
   };
 
-  const admitted = await budget.withReservation({
-    operationId: `voice:${newId()}`,
-    userId: budgetUserId,
-    provider: 'elevenlabs',
-    unit: 'tts-chars',
-    estimatedUnits: sentence.length,
-  }, async () => {
-    try {
-      const result = await dispatch();
-      return { result, actual: { units: sentence.length } };
-    } catch (err) {
-      if (err instanceof budget.BudgetDispatchError) throw err;
-      throw new budget.BudgetDispatchError((err as Error).message, true);
-    }
-  });
+  const admitted = await budget.withReservation(
+    {
+      operationId: `voice:${newId()}`,
+      userId: budgetUserId,
+      provider: "elevenlabs",
+      unit: "tts-chars",
+      estimatedUnits: sentence.length,
+    },
+    async () => {
+      try {
+        const result = await dispatch();
+        return { result, actual: { units: sentence.length } };
+      } catch (err) {
+        if (err instanceof budget.BudgetDispatchError) throw err;
+        // P1-T12 — deadline/disconnect with no observed vendor acceptance:
+        // the call never ran from our side, so it settles via the fail path
+        // (releases the estimate, records nothing), exactly once, through
+        // withReservation. Residual: the vendor may have billed an
+        // unobserved synthesis; see the P1-T12 report.
+        if ((err as Error)?.name === "AbortError" || deadline?.signal.aborted) {
+          throw new budget.BudgetDispatchError(
+            "Voice synthesis timed out.",
+            false,
+          );
+        }
+        throw new budget.BudgetDispatchError((err as Error).message, true);
+      }
+    },
+  );
 
   const payload = admitted.result;
-  const audio = Buffer.from(payload.audio_base64, 'base64');
+  const audio = Buffer.from(payload.audio_base64, "base64");
   const alignment = payload.alignment ?? payload.normalized_alignment ?? null;
   let words = alignment ? wordsFromAlignment(sentence, alignment) : [];
   const duration = durationOf(words, audio.length);
@@ -507,14 +591,16 @@ async function synthesiseSentence(
       config.modelId,
       sentence,
       audio,
-      'audio/mpeg',
+      "audio/mpeg",
       JSON.stringify(words),
       duration,
       new Date().toISOString(),
     ).catch((err: Error) =>
       // Codes only: a database error message is not a place for sentence
       // text, and the sentence is all this statement carries.
-      log.warn('voice', 'could not cache line', { code: (err as { code?: string }).code ?? 'cache-write-failed' }),
+      log.warn("voice", "could not cache line", {
+        code: (err as { code?: string }).code ?? "cache-write-failed",
+      }),
     );
     // Bounded size: keep the newest STOCK_CACHE_MAX_ROWS rows by creation
     // time, evicting the oldest first. (The cap is a code constant, safe to
@@ -526,8 +612,12 @@ async function synthesiseSentence(
     ).catch(() => {});
   }
 
-  log.info('voice', 'line synthesised', { chars: sentence.length, words: words.length, duration });
-  return { audio, contentType: 'audio/mpeg', words, duration, cached: false };
+  log.info("voice", "line synthesised", {
+    chars: sentence.length,
+    words: words.length,
+    duration,
+  });
+  return { audio, contentType: "audio/mpeg", words, duration, cached: false };
 }
 
 /**
@@ -550,7 +640,7 @@ async function synthesiseSentence(
 export async function speakLine(
   text: string,
   context: SpeakContext = {},
-  budgetUserId = 'system:voice',
+  budgetUserId = "system:voice",
   opts: SpeakOptions = {},
 ): Promise<SpokenLine> {
   const config = voiceConfig();
@@ -559,29 +649,68 @@ export async function speakLine(
   const guest = opts.guest ?? isGuestBudgetUser(budgetUserId);
   const canWrite = !guest;
 
+  // P1-T12 — whole-line budget: no new sentence dispatch starts after this.
+  // Combined with the caller's disconnect signal when one is supplied (the
+  // voice route does not forward one yet — see the P1-T12 residual — so this
+  // defaults to the line budget alone).
+  const lineTimeout = AbortSignal.timeout(
+    opts.timeoutMs ?? TTS_LINE_TIMEOUT_MS,
+  );
+  const lineSignal = opts.signal
+    ? AbortSignal.any([lineTimeout, opts.signal])
+    : lineTimeout;
+  const sentenceTimeoutMs = opts.sentenceTimeoutMs ?? TTS_SENTENCE_TIMEOUT_MS;
+
   const cleaned = speakableOf(text).slice(0, MAX_CHARS);
-  if (!cleaned) throw new Error('Nothing speakable in that line.');
+  if (!cleaned) throw new Error("Nothing speakable in that line.");
   const sentences = splitSentences(cleaned);
 
   // In-memory only for this request: freshly synthesised sentences are
   // reused if the same sentence recurs in the line, and dropped with the
   // call. Nothing here ever reaches the database.
-  const fresh = new Map<string, { audio: Buffer; contentType: string; words: SpokenWord[]; duration: number }>();
+  const fresh = new Map<
+    string,
+    {
+      audio: Buffer;
+      contentType: string;
+      words: SpokenWord[];
+      duration: number;
+    }
+  >();
 
   const chunks: SpokenChunk[] = [];
   let clock = 0;
   let cursor = 0;
   for (let i = 0; i < sentences.length; i++) {
+    // The line budget stops dispatch between sentences: a line whose early
+    // sentences consumed the budget fails here instead of starting another
+    // billable synthesis that cannot finish before the host deadline. No
+    // reservation is open between sentences, so nothing needs settling.
+    if (lineSignal.aborted)
+      throw new budget.BudgetDispatchError("Voice synthesis timed out.", false);
     const sentence = sentences[i];
     const remembered = fresh.get(sentence);
     const piece = remembered
       ? { ...remembered, cached: false }
-      : await synthesiseSentence(config, sentence, {
-        previousText: i > 0 ? sentences[i - 1] : context.previousText,
-        nextText: i < sentences.length - 1 ? sentences[i + 1] : context.nextText,
-      }, budgetUserId, canWrite);
+      : await synthesiseSentence(
+          config,
+          sentence,
+          {
+            previousText: i > 0 ? sentences[i - 1] : context.previousText,
+            nextText:
+              i < sentences.length - 1 ? sentences[i + 1] : context.nextText,
+          },
+          budgetUserId,
+          canWrite,
+          { signal: lineSignal, timeoutMs: sentenceTimeoutMs },
+        );
     if (!remembered && !piece.cached) {
-      fresh.set(sentence, { audio: piece.audio, contentType: piece.contentType, words: piece.words, duration: piece.duration });
+      fresh.set(sentence, {
+        audio: piece.audio,
+        contentType: piece.contentType,
+        words: piece.words,
+        duration: piece.duration,
+      });
     }
     // Sentences are verbatim slices of the cleaned text, so indexOf finds
     // each one; the cursor keeps a repeated sentence from matching twice.
@@ -603,7 +732,7 @@ export async function speakLine(
 
   return {
     audio: Buffer.concat(chunks.map((c) => c.audio)),
-    contentType: chunks[0]?.contentType ?? 'audio/mpeg',
+    contentType: chunks[0]?.contentType ?? "audio/mpeg",
     words,
     duration: clock,
     cached: chunks.every((c) => c.cached),
@@ -612,7 +741,9 @@ export async function speakLine(
 }
 
 /** Kept for callers that only want bytes. */
-export async function synthesise(text: string): Promise<{ audio: Buffer; contentType: string }> {
+export async function synthesise(
+  text: string,
+): Promise<{ audio: Buffer; contentType: string }> {
   const line = await speakLine(text);
   return { audio: line.audio, contentType: line.contentType };
 }
