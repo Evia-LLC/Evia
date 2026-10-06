@@ -37,6 +37,11 @@ import {
   type ElohimTurn,
   type SkinAnalysis,
 } from '@shared/types.ts';
+import {
+  isDeletionCompleted,
+  isDeletionPending,
+  type DeleteResult,
+} from '@shared/delete-result.ts';
 
 let director: SessionDirector | null = null;
 
@@ -1181,13 +1186,50 @@ export async function downloadDataExport(): Promise<void> {
   }
 }
 
-export async function deleteAccount(): Promise<{ blobsShredded: number; blobsFailed: number }> {
-  const { blobsShredded, blobsFailed } = await api.deleteAccount();
-  // Authentication is retained throughout the request. Only a confirmed
-  // server response clears the in-memory token and local session.
-  setToken(null);
-  session.reset();
-  return { blobsShredded, blobsFailed };
+/**
+ * P1-T10 — the last account-deletion receipt, whatever the session outcome.
+ *
+ * `session.reset()` wipes the store on completion, so the receipt lives here
+ * in module scope: the signed-out success facts (what was deleted) stay
+ * inspectable after the session is gone, and a pending receipt stays
+ * available while the session is preserved.
+ */
+let lastAccountDeletion: DeleteResult | null = null;
+
+/** The most recent account-deletion receipt, or null when none was attempted. */
+export function lastAccountDeletionReceipt(): DeleteResult | null {
+  return lastAccountDeletion;
+}
+
+/**
+ * Deletes the account and reflects the durable outcome in the session.
+ *
+ * - `completed`: every row and blob is gone — clears the token and session.
+ * - `pending`: Phase 4 work is outstanding — preserves token and session so
+ *   the receipt screen can offer export and status.
+ * - `failed`: throws without touching token or session; the account is
+ *   intact, the export stays available, and the caller may retry.
+ */
+export async function deleteAccount(): Promise<DeleteResult> {
+  const receipt = await api.deleteAccount();
+  lastAccountDeletion = receipt;
+  if (isDeletionCompleted(receipt)) {
+    // Authentication is retained throughout the request. Only a confirmed
+    // server response clears the in-memory token and local session.
+    setToken(null);
+    session.reset();
+    return receipt;
+  }
+  if (isDeletionPending(receipt)) {
+    // Durable work is still outstanding: the session and the export stay
+    // intact, and the UI shows the receipt/status screen — never a success
+    // screen, and never a claim of complete erasure.
+    return receipt;
+  }
+  // A 2xx `failed` shape is still a failure, never a success: surface it as
+  // an error without touching the session. HTTP 5xx failures already arrive
+  // here as an ApiError thrown by the request itself.
+  throw new ApiError(500, receipt.error);
 }
 
 /** Saves only after the result-screen button is pressed. Safe to retry per scan. */

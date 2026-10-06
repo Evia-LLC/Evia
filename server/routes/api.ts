@@ -50,6 +50,12 @@ import { log } from '../lib/log.ts';
 import { assembleDataExport } from '../privacy/export.ts';
 import { deleteAccount } from '../privacy/delete-account.ts';
 import {
+  completedAccountDeletion,
+  completedItemDeletion,
+  failedDeletion,
+  pendingDeletion,
+} from '../../shared/delete-result.ts';
+import {
   BODY_METRIC_KEYS,
   PROFILE_METRIC_KEYS,
   SKIN_METRIC_KEYS,
@@ -183,9 +189,34 @@ apiRouter.get('/me/data-export', async (req, res) => {
   res.type('application/json').send(JSON.stringify(document, null, 2));
 });
 
+/**
+ * P1-T10 — the response reflects durable completion. The transactional store
+ * completes or rolls back atomically: a commit answers `completed`, a throw
+ * answers `failed` with the account preserved. `pending` is reserved for
+ * Phase 4 durable jobs and is answered below only when work is genuinely
+ * outstanding — never for the current store.
+ */
+function outstandingDurableDeletions(): string[] {
+  // Phase 4 (P4-T04) fills this in from the durable deletion-job ledger
+  // (object storage, managed identity, backup rotation). Today every blob and
+  // row shares one Postgres transaction, so nothing can be outstanding.
+  return [];
+}
+
 /** Hard delete orchestration lives in privacy/delete-account.ts. */
 apiRouter.delete('/me/data', async (req, res) => {
-  res.json(await deleteAccount(req.userId!));
+  const outstanding = outstandingDurableDeletions();
+  if (outstanding.length > 0) {
+    res.status(202).json(pendingDeletion('account', outstanding));
+    return;
+  }
+  try {
+    const result = await deleteAccount(req.userId!);
+    res.json(completedAccountDeletion(result.blobsShredded));
+  } catch (err) {
+    const receipt = failedDeletion('account', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
+  }
 });
 
 // --- chat -------------------------------------------------------------------
@@ -297,13 +328,22 @@ apiRouter.get('/progress-photos/:id/image', async (req, res) => {
 });
 
 apiRouter.delete('/progress-photos/:id', async (req, res) => {
-  const ref = await progressPhotos.deleteProgressPhoto(req.userId!, req.params.id);
-  if (!ref) {
-    res.status(404).json({ error: 'No such progress photo.' });
-    return;
+  // P1-T10 — item deletes answer the same durable contract: `completed` only
+  // after the row and its blob are gone, `failed` (with the same 404/500
+  // semantics as before) when nothing was touched.
+  try {
+    const ref = await progressPhotos.deleteProgressPhoto(req.userId!, req.params.id);
+    if (!ref) {
+      const receipt = failedDeletion('photo', 'No such progress photo.');
+      res.status(404).json({ ...receipt, error: receipt.error });
+      return;
+    }
+    await shredBlob(ref);
+    res.json(completedItemDeletion('photo', req.params.id));
+  } catch (err) {
+    const receipt = failedDeletion('photo', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
   }
-  await shredBlob(ref);
-  res.json({ ok: true });
 });
 
 /** An explicit per-capture action. Consent merely makes this route available. */
@@ -384,9 +424,19 @@ apiRouter.get('/body-scans', async (req, res) => {
 });
 
 apiRouter.delete('/body-scans/:id', async (req, res) => {
-  const refs = await bodyRepo.deleteBodyScan(req.userId!, req.params.id);
-  for (const ref of refs) await shredBlob(ref);
-  res.json({ ok: true });
+  // P1-T10 — same durable contract as the other item deletes. A row without
+  // stored blobs deletes zero refs, so existence is read first: a missing or
+  // foreign row stays an owner-scoped no-op 200, reported honestly with
+  // `deleted: false` instead of a bare `ok: true`.
+  try {
+    const existing = (await bodyRepo.exportBodyScans(req.userId!)).some((scan) => scan.id === req.params.id);
+    const refs = await bodyRepo.deleteBodyScan(req.userId!, req.params.id);
+    for (const ref of refs) await shredBlob(ref);
+    res.json(completedItemDeletion('scan', req.params.id, { deleted: existing, blobsShredded: refs.length }));
+  } catch (err) {
+    const receipt = failedDeletion('scan', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
+  }
 });
 
 apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
@@ -593,9 +643,19 @@ apiRouter.get('/scans/:id', async (req, res) => {
 });
 
 apiRouter.delete('/scans/:id', async (req, res) => {
-  const refs = await scansRepo.deleteScan(req.userId!, req.params.id);
-  for (const ref of refs) await shredBlob(ref);
-  res.json({ ok: true });
+  // P1-T10 — same durable contract as the other item deletes. A row without
+  // stored blobs deletes zero refs, so existence is read first: a missing or
+  // foreign row stays an owner-scoped no-op 200, reported honestly with
+  // `deleted: false` instead of a bare `ok: true`.
+  try {
+    const existing = await scansRepo.getScan(req.userId!, req.params.id);
+    const refs = await scansRepo.deleteScan(req.userId!, req.params.id);
+    for (const ref of refs) await shredBlob(ref);
+    res.json(completedItemDeletion('scan', req.params.id, { deleted: existing !== null, blobsShredded: refs.length }));
+  } catch (err) {
+    const receipt = failedDeletion('scan', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
+  }
 });
 
 /**
