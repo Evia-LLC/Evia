@@ -24,6 +24,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
     "@mediapipe/tasks-vision": "^1.0.1",
+    "@supabase/supabase-js": "^2.117.2",
     "@types/pg": "^8.23.1",
     "express": "^4.22.3",
     "pg": "^8.23.0",
