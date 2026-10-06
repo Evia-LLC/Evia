@@ -32,6 +32,7 @@ import type {
   ConsentSummaries,
   ConsentSummary,
 } from '@shared/types.ts';
+import type { DeleteResult } from '@shared/delete-result.ts';
 
 let token: string | null = null;
 
@@ -139,8 +140,13 @@ export const api = {
     };
   },
 
+  /**
+   * P1-T10 — answers the durable deletion contract: `completed` (all rows and
+   * blobs gone), `pending` (Phase 4 jobs outstanding, session preserved) or an
+   * HTTP error carrying a `failed` receipt (rolled back, account preserved).
+   */
   deleteAccount: () =>
-    request<{ ok: true; blobsShredded: number; blobsFailed: number }>('/me/data', { method: 'DELETE' }),
+    request<DeleteResult>('/me/data', { method: 'DELETE' }),
 
   chatHistory: () => request<{ messages: ChatMessage[] }>('/chat/history'),
 
@@ -169,7 +175,7 @@ export const api = {
       body: JSON.stringify({ analysis, imageBase64: cloudImageBase64 }),
     }),
 
-  deleteScan: (id: string) => request<{ ok: true }>(`/scans/${id}`, { method: 'DELETE' }),
+  deleteScan: (id: string) => request<DeleteResult>(`/scans/${id}`, { method: 'DELETE' }),
 
   /*
    * Body readings live on their own endpoint against their own table.
@@ -182,7 +188,7 @@ export const api = {
   bodyScans: () => request<{ scans: BodyAnalysisRecord[] }>('/body-scans'),
 
   deleteBodyScan: (id: string) =>
-    request<{ ok: true }>(`/body-scans/${id}`, { method: 'DELETE' }),
+    request<DeleteResult>(`/body-scans/${id}`, { method: 'DELETE' }),
 
   saveBodyScan: (
     analysis: BodyAnalysisRecord,
@@ -210,7 +216,7 @@ export const api = {
     }),
 
   deleteProgressPhoto: (id: string) =>
-    request<{ ok: true }>(`/progress-photos/${id}`, { method: 'DELETE' }),
+    request<DeleteResult>(`/progress-photos/${id}`, { method: 'DELETE' }),
 
   async progressPhotoImage(id: string): Promise<string | null> {
     const headers = new Headers();

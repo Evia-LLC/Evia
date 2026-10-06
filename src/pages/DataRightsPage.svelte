@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { DeleteResult } from '@shared/delete-result.ts';
   import { ACCOUNT_COPY } from '@shared/legal-screen-copy.ts';
   import { recordLegalReview } from '@/lib/legal-review.ts';
   import Page from '@/components/Page.svelte';
@@ -13,6 +14,19 @@
   let secondConfirmation = $state(false);
   let deleting = $state(false);
   let deletionError = $state<string | null>(null);
+  /**
+   * P1-T10 — the durable outcome of the last deletion attempt. `completed`
+   * renders the signed-out success receipt, `pending` the status screen with
+   * the session and export intact, and a failure lands in `deletionError`
+   * with the account untouched.
+   */
+  let deletionOutcome = $state<DeleteResult | null>(null);
+  const completedReceipt = $derived(
+    deletionOutcome !== null && deletionOutcome.status === 'completed' ? deletionOutcome : null,
+  );
+  const pendingReceipt = $derived(
+    deletionOutcome !== null && deletionOutcome.status === 'pending' ? deletionOutcome : null,
+  );
   const phrase = 'DELETE';
   const typedCorrectly = $derived(typed.trim() === phrase);
 
@@ -34,12 +48,17 @@
     try {
       // Audit availability must not prevent the existing account deletion right.
       try { await recordLegalReview('account-controls', 'attempted', session.user?.id, { action: 'delete_account' }); } catch { /* Account deletion still proceeds; retention gap is disclosed below. */ }
-      await deleteAccount();
+      deletionOutcome = await deleteAccount();
+      // `completed`: the controller cleared the token and session; the
+      // receipt branch below states what was deleted. `pending`: the session
+      // is preserved and the status branch below keeps the export available.
     } catch (err) {
       deletionError = err instanceof Error ? err.message : 'Your account could not be deleted.';
       deleting = false;
       secondConfirmation = false;
+      return;
     }
+    deleting = false;
   }
 </script>
 
@@ -79,26 +98,48 @@
         <p class="placeholder">Placeholder legal text · {ACCOUNT_DELETION_NOTICE_PLACEHOLDER.id}</p>
       {/if}
 
-      <label class="confirm-field">
-        <span>Type <strong>{phrase}</strong> to continue</span>
-        <input bind:value={typed} autocomplete="off" disabled={deleting || secondConfirmation} aria-label="Type DELETE to confirm account deletion" />
-      </label>
-
-      {#if secondConfirmation}
-        <div class="second-confirm" role="alert">
-          <strong>Final confirmation</strong>
-          <p>This cannot be undone. Delete the account and all attached data now?</p>
-          <div class="actions">
-            <button class="btn btn--danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly}>
-              {deleting ? 'Deleting account…' : 'Permanently delete my account'}
-            </button>
-            <button class="btn" type="button" onclick={() => (secondConfirmation = false)} disabled={deleting}>Go back</button>
-          </div>
+      {#if completedReceipt}
+        <div class="receipt" role="status">
+          <strong>Your account is deleted.</strong>
+          <p>{completedReceipt.message}</p>
+          <p>Permanently removed: your profile, preferences, {completedReceipt.blobsShredded} stored photo file{completedReceipt.blobsShredded === 1 ? '' : 's'}, scans, progress photos, routine, memories, consent history and sessions. You are signed out.</p>
+        </div>
+      {:else if pendingReceipt}
+        <div class="receipt receipt--pending" role="status">
+          <strong>Deletion is pending.</strong>
+          <p>{pendingReceipt.message}</p>
+          <ul>
+            {#each pendingReceipt.outstanding as job (job)}
+              <li>{job}</li>
+            {/each}
+          </ul>
+          <p>Your data is not yet fully erased. You stay signed in, and your export above remains available.</p>
         </div>
       {:else}
-        <button class="btn btn--danger" type="button" onclick={continueDeletion} disabled={!typedCorrectly || deleting || session.guest}>Continue</button>
+        <label class="confirm-field">
+          <span>Type <strong>{phrase}</strong> to continue</span>
+          <input bind:value={typed} autocomplete="off" disabled={deleting || secondConfirmation} aria-label="Type DELETE to confirm account deletion" />
+        </label>
+
+        {#if secondConfirmation}
+          <div class="second-confirm" role="alert">
+            <strong>Final confirmation</strong>
+            <p>This cannot be undone. Delete the account and all attached data now?</p>
+            <div class="actions">
+              <button class="btn btn--danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly}>
+                {deleting ? 'Deleting account…' : 'Permanently delete my account'}
+              </button>
+              <button class="btn" type="button" onclick={() => (secondConfirmation = false)} disabled={deleting}>Go back</button>
+            </div>
+          </div>
+        {:else}
+          <button class="btn btn--danger" type="button" onclick={continueDeletion} disabled={!typedCorrectly || deleting || session.guest}>Continue</button>
+        {/if}
+        {#if deletionError}
+          <p class="error" aria-live="assertive">{deletionError}</p>
+          <p class="intact">Your account and data are intact — nothing was deleted. Your export above is still available, and you can retry once the problem passes.</p>
+        {/if}
       {/if}
-      {#if deletionError}<p class="error" aria-live="assertive">{deletionError}</p>{/if}
     </div>
   </section>
 </Page>
@@ -111,4 +152,9 @@
   .second-confirm { margin-top: var(--s-4); }
   .second-confirm p { margin: var(--s-2) 0 0; }
   .error { color: var(--danger, #a43b32); }
+  .receipt { margin-top: var(--s-4); padding: var(--s-4); border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+  .receipt strong { display: block; margin-bottom: var(--s-2); }
+  .receipt ul { margin: var(--s-2) 0; padding-left: var(--s-5); }
+  .receipt--pending { border-style: dashed; }
+  .intact { color: var(--quiet); }
 </style>
