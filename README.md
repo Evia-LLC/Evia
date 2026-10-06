@@ -1,8 +1,8 @@
-# Elohim
+# Evia
 
 An AI beauty and skincare consultant who happens to have a physical digital presence.
 
-Elohim is conversation-first. You talk to her; she asks about your skin, and when it would
+Evia is conversation-first. You talk to her; she asks about your skin, and when it would
 actually help, the room changes and she takes a proper look. She is not a selfie scanner
 with a chat box attached.
 
@@ -72,7 +72,7 @@ Per §33 of the brief, nothing fakes. Specifically:
   pixels in CIELAB, and the pipeline is deterministic — the same image always produces the
   same numbers. Formulas and their calibration are in `src/skin-analysis/metrics.ts`.
 - **The progress bar tracks the actual pipeline**, not a timer.
-- **Every number Elohim says comes out of SQLite.** If she says your hydration improved, it
+- **Every number Evia says comes out of SQLite.** If she says your hydration improved, it
   improved.
 - **A change smaller than the metric's noise floor is reported as "holding steady"**, not
   as progress.
@@ -90,7 +90,7 @@ on every message, and it reads the same real data the model would.
 ### Talking to her
 
 Tap the microphone and speak; the composer fills in live with what she is hearing. Turn on
-*Let Elohim speak* in Profile and she reads her replies aloud, with her mouth locked to the
+*Let Evia speak* in Profile and she reads her replies aloud, with her mouth locked to the
 audio. You can pick her voice there too — the default is the best feminine voice your
 system has installed.
 
@@ -191,7 +191,7 @@ the real thing.
 
 ## Positioning
 
-Elohim is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
+Evia is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
 device. Observational phrasing is required and diagnostic phrasing is forbidden at the
 prompt level; a deterministic escalation check — which does not depend on the model being
 reachable — routes anything that sounds medical to a dermatologist instead of to a score.

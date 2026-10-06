@@ -16,8 +16,8 @@ An investor can, on a fresh clone or live URL, without reading docs:
 
 1. `npm ci && npm run dev` -> open `http://127.0.0.1:5195` -> see lounge, no setup.
 2. Click Sign up -> use sample email/password, DOB and the separate Terms review choice. Under-16 is blocked without storage; 16/17 opens a temporary guardian review rather than an ordinary account. Adult sample registration requires `EVIA_SAMPLE_DEMO=1`; real age verification and payments remain unavailable.
-3. Chat with Elohim (real Claude if key, otherwise labelled `Demo Elohim` `server/ai/fallback.ts:11` — badge stays).
-4. Trigger scan -> grant camera -> see quality gate, canonical framing `ARCHITECTURE.md:134`, 9 metric holograms, explanation from Elohim.
+3. Chat with Evia (real Claude if key, otherwise labelled `Demo Elohim` `server/ai/fallback.ts:11` — badge stays).
+4. Trigger scan -> grant camera -> see quality gate, canonical framing `ARCHITECTURE.md:134`, 9 metric holograms, explanation from Evia.
 5. See history / progress deltas (`LongitudinalEngine`) holding-steady vs movement with noise floors.
 6. Scan a product label (Tesseract default, photo never uploaded) or type product -> see routine review with family stacking `src/products/inci.ts`.
 7. Toggle voice, hear reply (ElevenLabs if key, else browser voice `src/lib/sound.ts`).

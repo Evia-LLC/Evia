@@ -49,9 +49,9 @@
   };
 </script>
 
-<nav class="nav" aria-label="Elohim">
-  <a class="nav__brand" href="/" use:link aria-label="Elohim, home">
-    <span class="nav__mark">Elohim</span>
+<nav class="nav" aria-label="Evia">
+  <a class="nav__brand" href="/" use:link aria-label="Evia, home">
+    <span class="nav__mark">Evia</span>
     {#if session.guest}
       <span class="nav__note">Nothing saved</span>
     {:else if session.demoMode || !session.modelAvailable}

@@ -278,7 +278,7 @@
     id="elohim-transcript"
     bind:this={transcript}
     role="log"
-    aria-label="Conversation with Elohim"
+    aria-label="Conversation with Evia"
     style:height={dragHeight === null ? null : `${dragHeight}px`}
     onscroll={onTranscriptScroll}
   >
@@ -298,12 +298,12 @@
     {/each}
 
     {#if session.thinking}
-      <div class="typing" role="status" aria-label="Elohim is thinking"></div>
+      <div class="typing" role="status" aria-label="Evia is thinking"></div>
     {/if}
   </div>
 
   {#if unseen}
-    <button class="new-pill" type="button" onclick={jumpToNew}>New from Elohim</button>
+    <button class="new-pill" type="button" onclick={jumpToNew}>New from Evia</button>
   {/if}
 
   {#if session.pendingOffer?.type === 'offer_scan'}
@@ -326,8 +326,8 @@
       onfocus={onComposerFocus}
       rows="1"
       readonly={session.listening}
-      placeholder={session.listening ? 'Listening…' : 'Talk to Elohim…'}
-      aria-label="Message Elohim"
+      placeholder={session.listening ? 'Listening…' : 'Talk to Evia…'}
+      aria-label="Message Evia"
     ></textarea>
 
     {#if session.canListen}
@@ -335,7 +335,7 @@
         class="mic"
         class:mic--on={session.listening}
         onclick={() => toggleListening()}
-        aria-label={session.listening ? 'Stop listening' : 'Speak to Elohim'}
+        aria-label={session.listening ? 'Stop listening' : 'Speak to Evia'}
         aria-pressed={session.listening}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">

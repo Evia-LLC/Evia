@@ -199,7 +199,7 @@
       {/if}
       <div class="reading__words" aria-live="polite">
         {#if session.thinking}
-          <span class="thinking" aria-label="Elohim is thinking">Thinking</span>
+          <span class="thinking" aria-label="Evia is thinking">Thinking</span>
         {:else if lastWord}
           {shownWords}{#if stillTyping}<span class="caret" aria-hidden="true"></span>{/if}
         {:else}
