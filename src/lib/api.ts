@@ -67,22 +67,79 @@ function attachmentFilename(value: string | null): string {
   return match?.[1] ?? 'elohim-data.json';
 }
 
+/**
+ * P1-T13 — the public capability contract.
+ *
+ * Anonymous-safe by construction: booleans and flags the entry screen and
+ * the voice fallback need (model/voice/image-storage/demo flags, plus whether
+ * anything is behind the API). Budget totals, database configuration, error
+ * details and provider payloads are NOT here — they live on the admin-only
+ * `AdminDiagnostics` below, behind `x-admin-token` auth.
+ */
+export interface HealthCapabilities {
+  ok: boolean;
+  /** Absent on an old server; `false` when nothing is attached to store into. */
+  database?: boolean;
+  modelAvailable: boolean;
+  model: string | null;
+  imageStorage: boolean;
+  demoMode: boolean;
+  /** Whether the licensed voice is configured, and whether guests may use it. */
+  clonedVoice?: boolean;
+  guestVoice?: boolean;
+}
+
+/**
+ * P1-T13 — the operator diagnostics contract (GET /api/admin/diagnostics).
+ * Counts and booleans only: spend totals for today, database configured /
+ * reachable / pool / migration counts, provider availability, boot status.
+ * Never connection strings, hosts, credentials, keys, or payloads.
+ */
+export interface AdminDiagnostics {
+  ok: boolean;
+  day: string;
+  budget: {
+    turns: number;
+    tokens: number;
+    limits: { userTurns: number; turns: number; tokens: number };
+  };
+  database: {
+    configured: boolean;
+    reachable: boolean;
+    poolMax: number | null;
+    migrationsApplied: number | null;
+  };
+  providers: {
+    model: { available: boolean; name: string | null };
+    voice: { configured: boolean; guestsAllowed: boolean };
+    imageStorage: boolean;
+    analysis: { provider: 'perfectcorp' | 'local'; available: boolean; sampleDemo: boolean };
+  };
+  boot: { ready: boolean; migrationsApplied: number | null };
+}
+
+/**
+ * Whether the capability flags grant the cloned voice to this visitor.
+ *
+ * Pure, so it is unit-testable without network: guests are gated on the
+ * guest flag alone (a configured voice the operator closed to guests must
+ * not leak through the account flag), signed-in users on the account flag.
+ */
+export function voiceCapabilityGranted(
+  caps: Pick<HealthCapabilities, 'clonedVoice' | 'guestVoice'>,
+  guest: boolean,
+): boolean {
+  return guest ? caps.guestVoice === true : caps.clonedVoice === true;
+}
+
 export const api = {
-  health: () =>
-    request<{
-      ok: boolean;
-      modelAvailable: boolean;
-      model: string | null;
-      imageStorage: boolean;
-      demoMode: boolean;
-      /** Whether the licensed voice is configured, and whether guests may use it. */
-      clonedVoice?: boolean;
-      guestVoice?: boolean;
-      /** Absent on a healthy server; `false` when nothing is attached to store into. */
-      database?: boolean;
-    }>(
-      '/health',
-    ),
+  health: () => request<HealthCapabilities>('/health'),
+
+  /** Operator diagnostics. Admin only: pass the `ELOHIM_ADMIN_TOKEN` value. */
+  adminDiagnostics: (adminToken: string) =>
+    request<AdminDiagnostics>('/admin/diagnostics', {
+      headers: { 'x-admin-token': adminToken },
+    }),
 
   register: (email: string, password: string, displayName: string, dateOfBirth: string, termsAccepted: boolean) =>
     request<{ token: string; user: UserSummary }>('/auth/register', {

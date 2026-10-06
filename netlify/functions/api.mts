@@ -40,7 +40,7 @@ function sanitizeForwardingHeaders(request: Request): Request {
 export default async (request: Request, context: unknown) => {
   try {
     await ready();
-  } catch (err) {
+  } catch {
     /*
      * No database attached.
      *
@@ -53,20 +53,21 @@ export default async (request: Request, context: unknown) => {
      * are configured by environment, not by the database, so a missing
      * database must not make them look missing too.
      */
+    // P1-T13 — cold start with no usable database: the same anonymous-safe
+    // capability shape as the warm /api/health, and the same generic 503 as
+    // the Vercel function. No raw exception text, no database configuration
+    // or error detail, no provider payloads — operator detail lives on
+    // GET /api/admin/diagnostics, behind admin auth.
+    //
     // A database that is configured but unreachable is a different failure
-    // from one that was never configured; the health answer says which, with
-    // the reason and any connection string in it redacted.
+    // from one that was never configured; the 503 below says which, without
+    // the reason and without any connection string in it.
     const configured = Boolean(process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL);
-    const reason = (err instanceof Error ? `${err.name}: ${err.message}` : String(err))
-      .replace(/postgres(ql)?:\/\/\S+/g, '<url>')
-      .slice(0, 200);
     const url = new URL(request.url);
     if (url.pathname === '/api/health') {
       return Response.json({
         ok: false,
         database: false,
-        databaseConfigured: configured,
-        databaseError: reason,
         modelAvailable: modelAvailable(),
         model: null,
         imageStorage: blobStorageAvailable(),
