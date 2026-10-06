@@ -41,15 +41,15 @@ export default async function handler(
   if (trustedIp !== null) stampVerifiedClientIp(req, trustedIp);
   try {
     await ready();
-  } catch (err) {
+  } catch {
+    // P1-T13 — cold start with no usable database: the same anonymous-safe
+    // capability shape as the warm /api/health, and the same generic 503 as
+    // the Netlify function. No raw exception text, no database configuration
+    // or error detail, no provider payloads — operator detail lives on
+    // GET /api/admin/diagnostics, behind admin auth.
     const configured = Boolean(
       process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
     );
-    const reason = (
-      err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-    )
-      .replace(/postgres(ql)?:\/\/\S+/g, "<url>")
-      .slice(0, 200);
     const path = (req.url ?? "/").split("?")[0];
     res.setHeader("content-type", "application/json; charset=utf-8");
     if (path === "/api/health") {
@@ -58,8 +58,6 @@ export default async function handler(
         JSON.stringify({
           ok: false,
           database: false,
-          databaseConfigured: configured,
-          databaseError: reason,
           modelAvailable: modelAvailable(),
           model: null,
           imageStorage: blobStorageAvailable(),

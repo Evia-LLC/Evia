@@ -23,7 +23,7 @@ import { modelAvailable, MODEL } from './ai/claude.ts';
 import { clonedVoiceAvailable, guestVoiceAllowed, speakLine, VoiceUnavailable } from './voice/tts.ts';
 import { guestVoiceLimiter } from './lib/rate-limit.ts';
 import { blobStorageAvailable } from './lib/crypto.ts';
-import { todaySummary } from './ai/budget.ts';
+import { row } from './db/index.ts';
 import { seedDemoUser } from './demo/seed.ts';
 import { sweepExpiredSessions } from './db/users.ts';
 import { log } from './lib/log.ts';
@@ -44,18 +44,36 @@ app.use((req, res, next) =>
     ? largeBody : smallBody)(req, res, next),
 );
 
+/**
+ * P1-T13 — the public capability check. Anonymous-safe by construction.
+ *
+ * Booleans and flags only: what the entry screen and the voice fallback need
+ * to decide (model on/off, voice configured, image storage, demo mode, and
+ * whether anything is behind the API at all). No budget totals, no database
+ * configuration, no error details, no provider payloads — those live on
+ * GET /api/admin/diagnostics, behind admin auth.
+ *
+ * Cost: exactly one cheap bounded query (`SELECT 1`) reporting database
+ * reachability. Nothing else here touches the database; spend totals are
+ * computed on demand on the admin endpoint, not on every poll.
+ */
 app.get('/api/health', async (_req, res) => {
+  let database = false;
+  try {
+    await row('SELECT 1 AS ok');
+    database = true;
+  } catch {
+    database = false;
+  }
   res.json({
-    ok: true,
+    ok: database,
+    database,
     modelAvailable: modelAvailable(),
     model: modelAvailable() ? MODEL : null,
     imageStorage: blobStorageAvailable(),
     clonedVoice: clonedVoiceAvailable(),
     guestVoice: guestVoiceAllowed(),
     demoMode: process.env.DEMO_MODE === '1',
-    // Today's spend against the caps, so "is the model on" and "has it been
-    // switched off by the budget" are both answerable from one request.
-    budget: modelAvailable() ? await todaySummary() : null,
   });
 });
 
@@ -131,10 +149,45 @@ app.use('/api/public', publicRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api', apiRouter);
 
+/**
+ * P1-T13 — the stable public error vocabulary.
+ *
+ * The frontend depends on the *distinctions* (400/401/403/409/413/429/503),
+ * never on the detail: every status carries one fixed generic message, and
+ * raw exception text, stacks, URLs, tokens and personal text never reach the
+ * response. Anything unlisted — including provider failures and boot errors
+ * forwarded here — is a 500 with the same generic message.
+ */
+const PUBLIC_ERROR_MESSAGES = new Map<number, string>([
+  [400, 'That request could not be read.'],
+  [401, 'You need to sign in to continue.'],
+  [403, 'That is not available for this account.'],
+  [409, 'That conflicts with what is already saved.'],
+  [413, 'That upload is too large.'],
+  [429, 'Too many requests. Try again shortly.'],
+  [503, 'The service is temporarily unavailable. Try again later.'],
+]);
+
+/**
+ * Maps a thrown status to its public shape. Exported so the contract is
+ * unit-testable without booting the server. Unknown, missing or non-numeric
+ * statuses collapse to the generic 500 — never to the input.
+ */
+export function publicErrorFor(status: unknown): {
+  status: number;
+  error: string;
+} {
+  const message =
+    typeof status === 'number' ? PUBLIC_ERROR_MESSAGES.get(status) : undefined;
+  if (message === undefined) return { status: 500, error: 'Something went wrong.' };
+  return { status: status as number, error: message };
+}
+
 app.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   // Body-limit routing answers with the right status instead of a generic
   // 500: 413 when a payload dies at the transport ceiling above, 400 when the
-  // JSON itself cannot be parsed. Anything else stays a 500.
+  // JSON itself cannot be parsed. Messages are byte-identical to the
+  // pre-P1-T13 contract (P1-T05 mapping — preserved).
   if (err?.type === 'entity.too.large' || err?.status === 413) {
     res.status(413).json({ error: 'That upload is too large.' });
     return;
@@ -143,7 +196,16 @@ app.use((err: Error & { status?: number; type?: string }, _req: express.Request,
     res.status(400).json({ error: 'That request could not be read.' });
     return;
   }
-  log.error('http', 'unhandled error', { error: err.message });
+  const mapped = publicErrorFor(err?.status);
+  if (mapped.status !== 500) {
+    // Status code only — the detail rides in neither the response nor the
+    // log line, because an error message can quote personal text no
+    // pattern scrubber could recognise.
+    log.error('http', 'request failed', { status: mapped.status });
+    res.status(mapped.status).json({ error: mapped.error });
+    return;
+  }
+  log.error('http', 'unhandled error');
   res.status(500).json({ error: 'Something went wrong.' });
 });
 

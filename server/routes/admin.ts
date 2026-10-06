@@ -11,6 +11,12 @@ import type { NextFunction, Request, Response } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { asyncRouter } from '../lib/async-router.ts';
 import { catalogueStatus, importCatalogue, listCatalogue, syncStore } from '../catalogue/store.ts';
+import { dayString, todaySummary } from '../ai/budget.ts';
+import { MODEL, modelAvailable } from '../ai/claude.ts';
+import { analysisProvider, perfectCorpAvailable, sampleDemoEnabled } from '../ai/perfectcorp.ts';
+import { blobStorageAvailable } from '../lib/crypto.ts';
+import { connectionString, resolvePoolMax, row, rows } from '../db/index.ts';
+import { clonedVoiceAvailable, guestVoiceAllowed } from '../voice/tts.ts';
 import { log } from '../lib/log.ts';
 
 export const adminRouter = asyncRouter();
@@ -32,6 +38,61 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
 }
 
 adminRouter.use(requireAdmin);
+
+/**
+ * P1-T13 — operator diagnostics. The other half of the public capability
+ * check: everything the anonymous /api/health deliberately withholds.
+ *
+ * Spend totals are computed on demand here, never on health polls. Database
+ * state is counts and booleans only — never connection strings, hosts, or
+ * credentials. Provider detail is availability booleans plus public names,
+ * never keys, endpoints, or payloads. Reaching this handler at all means
+ * boot (`ready()`) succeeded, which is what `boot.ready` reports.
+ */
+adminRouter.get('/diagnostics', async (_req, res) => {
+  const summary = await todaySummary();
+  const configured = connectionString() !== '';
+  let reachable = false;
+  try {
+    await row('SELECT 1 AS ok');
+    reachable = true;
+  } catch {
+    reachable = false;
+  }
+  let migrationsApplied: number | null = null;
+  try {
+    migrationsApplied = (await rows<{ name: string }>('SELECT name FROM _migrations')).length;
+  } catch {
+    migrationsApplied = null;
+  }
+  let poolMax: number | null = null;
+  try {
+    poolMax = resolvePoolMax();
+  } catch {
+    poolMax = null;
+  }
+  res.json({
+    ok: true,
+    day: dayString(),
+    budget: {
+      turns: summary.turns,
+      tokens: summary.tokens,
+      limits: summary.limits,
+    },
+    database: { configured, reachable, poolMax, migrationsApplied },
+    providers: {
+      model: { available: modelAvailable(), name: modelAvailable() ? MODEL : null },
+      voice: { configured: clonedVoiceAvailable(), guestsAllowed: guestVoiceAllowed() },
+      imageStorage: blobStorageAvailable(),
+      analysis: {
+        provider: analysisProvider(),
+        available: perfectCorpAvailable(),
+        sampleDemo: sampleDemoEnabled(),
+      },
+    },
+    boot: { ready: true, migrationsApplied },
+  });
+});
 
 adminRouter.get('/catalogue', async (_req, res) => {
   res.json({ status: await catalogueStatus(), products: await listCatalogue(1000) });
