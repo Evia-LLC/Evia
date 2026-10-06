@@ -19,6 +19,7 @@ import { authRouter } from './routes/auth.ts';
 import { apiRouter } from './routes/api.ts';
 import { publicRouter } from './routes/public.ts';
 import { adminRouter } from './routes/admin.ts';
+import { avatarLabRouter } from './routes/avatar-lab.ts';
 import { modelAvailable, MODEL } from './ai/claude.ts';
 import { clonedVoiceAvailable, guestVoiceAllowed, speakLine, VoiceUnavailable } from './voice/tts.ts';
 import { guestVoiceLimiter } from './lib/rate-limit.ts';
@@ -129,6 +130,7 @@ app.post('/api/public/voice/speak', guestVoiceLimiter, async (req, res) => {
 
 app.use('/api/public', publicRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/avatar-lab', avatarLabRouter);
 app.use('/api', apiRouter);
 
 app.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
