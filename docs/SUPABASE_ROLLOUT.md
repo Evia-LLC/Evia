@@ -44,7 +44,7 @@ and not a production sender; a custom SMTP sender is the expected production sha
 
 | Requirement                                                           | Status                                                                                                                                                                                                                                                 |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Per-environment sender (SMTP host, from-address, domain verification) | **DECIDED 2026-10-06: Supabase built-in mail** (owner: operator); dashboard configuration pending. Local lane uses a mail sink (P2-T05), never real delivery. Staging and production each need their own verified sender. No SMTP host is recorded here because none has been chosen                            |
+| Per-environment sender (SMTP host, from-address, domain verification) | **STAGING ONLY:** Supabase built-in mail may be used with project-team addresses during initial setup. **PRODUCTION BLOCKER B2:** choose and configure custom SMTP; Supabase's built-in sender is best-effort, restricted to authorized team addresses and is not a production mail service. Local lane uses a mail sink (P2-T05), never real delivery. |
 | Redirect URL allowlist, local                                         | `http://localhost:5195/**` (matches default `ELOHIM_WEB_PORT`; adjust if the port changes). Signup/recovery/magic-link callbacks outside the allowlist must fail closed                                                                                |
 | Redirect URL allowlist, staging                                       | **CUTOVER BLOCKER B3** (owner: operator) — register the staging host origin once B8 lands                                                                                                                                                              |
 | Redirect URL allowlist, production                                    | **CUTOVER BLOCKER B3** (owner: operator) — register the Netlify origin and the Vercel origin as two explicit entries; a single "production" entry covering only one host will break callbacks on the other                                             |
@@ -253,7 +253,7 @@ A fresh isolated environment is provisioned from this file plus `RUNBOOK.md`,
 | ID  | Blocker                                                                                                                                                 | Owner                 | Gates                                                           |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
 | B1  | Region DECIDED 2026-10-06: AWS EU West (Ireland) — operator chose EU presence over Neon colocation; projects still to be created (staging + production) | operator              | P2-T02 and everything after                                     |
-| B2  | Sender DECIDED 2026-10-06: Supabase built-in mail (low-volume auth mail); dashboard configuration pending — mail MUST precede recovery flows            | operator              | P3-T03 rehearsal, P3-T06, P3-T07                                |
+| B2  | Staging may initially use built-in mail for team accounts. Production custom SMTP provider/domain/from-address and credentials remain undecided; mail MUST precede recovery flows | operator              | P3-T03 rehearsal, P3-T06, P3-T07                                |
 | B3  | Per-environment Auth redirect URL allowlists unregistered (local known; staging + both production hosts TBD)                                            | operator              | P3-T03, P3-T06, P3-T07                                          |
 | B4  | Supabase direct/session vs pooler connection paths unrecorded                                                                                           | operator              | P2-T05 lane, any migration against a Supabase-hosted DB surface |
 | B5  | Storage bucket name, private policies, plan quota, per-user ceilings undecided                                                                          | operator              | P4-T02, P4-T05, P4-T07                                          |
@@ -262,7 +262,124 @@ A fresh isolated environment is provisioned from this file plus `RUNBOOK.md`,
 | B8  | No staging environment exists (host, URLs, project)                                                                                                     | operator              | P3-T06, P4-T06 rehearsals                                       |
 | B9  | App-DB consolidation (Neon → Supabase?) explicitly deferred to P6-T02; NOT an Auth/Storage prerequisite                                                 | operator (at Phase 6) | Nothing in Phases 2–5                                           |
 
-## 12. P2-T01 self-check (evidence review, 2026-10-06)
+## 12. Operator handoff — exact external actions
+
+Do these in order. Do not paste keys, database passwords, SMTP passwords or
+`ELOHIM_BLOB_KEY` into source control, issues, pull requests, or chat. Put secrets directly
+into the host's encrypted environment-variable UI and the company password manager. The
+project URL, project ref, region, bucket name and public site origins are safe to report
+back for verification.
+
+### A. Create the two hosted projects (B1)
+
+1. In one Supabase organization, create `evia-staging` and `evia-production` as separate
+   projects in **AWS EU West (Ireland)**. Use different generated database passwords and
+   store both passwords in the company password manager.
+2. Keep the current application `DATABASE_URL` on Neon. Creating these projects does not
+   authorize a Neon-to-Supabase database move (B9 remains deferred).
+3. Production must use a plan/backup configuration capable of the confirmed recovery
+   target (daily-or-better recovery plus PITR where required). Record the selected plan and
+   backup/PITR state. A free project that may pause is not a production recovery strategy.
+
+For **each** project, copy from the Dashboard's Connect and Settings → API Keys screens:
+
+| Dashboard value | Repository/host name | Handling |
+| --- | --- | --- |
+| Project URL (`https://<ref>.supabase.co`) | `SUPABASE_URL` | Server environment; URL itself is reportable |
+| Publishable key (`sb_publishable_...`) | `SUPABASE_ANON_KEY` | Server environment in this architecture; never add a `VITE_` alias |
+| Secret key (`sb_secret_...`) | `SUPABASE_SERVICE_ROLE_KEY` | Server secret; bypasses RLS; never send it back in chat |
+| Direct database string (`db.<ref>.supabase.co:5432`) | `SUPABASE_DB_DIRECT_URL` | Migration/recovery secret; record even while unused |
+| Session pooler string (pooler host, port `5432`) | password-manager runbook entry | IPv4/session fallback; copy it, do not derive the hostname |
+| Project ref and region | rollout record | Non-secret; report these back for cross-project validation |
+
+Set the three SDK variables separately in the staging and production host environments.
+Do not set them for local development yet; P2-T05 owns the disposable local stack. Do not
+replace `DATABASE_URL` or `NETLIFY_DATABASE_URL` with either Supabase database string.
+
+### B. Establish stable hosts and redirects (B3, B8)
+
+1. Create a stable staging deployment from `main` (a fixed hostname, not an expiring PR
+   preview). Record its exact HTTPS origin.
+2. Record the exact current Netlify and Vercel production origins. Do not infer them from
+   repository names; the old Netlify hostname may remain valid after the Evia copy rename.
+3. In Supabase Authentication → URL Configuration:
+   - staging project Site URL: the stable staging origin;
+   - production project Site URL: the primary production origin;
+   - staging Redirect URLs: the stable staging origin plus the local
+     `http://localhost:5195/**` development pattern when the managed local lane lands;
+   - production Redirect URLs: both exact production origins.
+4. Keep hosted public signups disabled until P3-T02 has wired eligibility and consent
+   gates. Do not add a callback path that does not exist yet; P3-T03 will add and test the
+   exact callback route before recovery is enabled.
+
+Report back only the three public origins (staging, production Netlify, production
+Vercel). They are needed to finalize and test the allowlist.
+
+### C. Configure mail (B2)
+
+1. Staging may use Supabase built-in mail only for initial team-account tests. Add the test
+   recipients as organization/project team members and expect strict rate limits.
+2. Before production recovery or signup email is enabled, choose a transactional SMTP
+   provider, verify the sending domain, and create a dedicated sender such as
+   `auth@<verified-domain>`.
+3. Enter SMTP host, port, username, password, sender address and sender name directly in
+   the production Supabase Auth SMTP settings. Store the credentials in the password
+   manager. Send one confirmation and one recovery message to dedicated test accounts and
+   retain the delivery evidence.
+
+The operator must report the provider name, verified domain and sender address. Do not
+report the SMTP password.
+
+### D. Fix the Storage decisions (B5)
+
+Use these defaults unless product requirements override them before P4-T02:
+
+- bucket: `evia-private-photos`;
+- visibility: private;
+- object MIME type: `application/octet-stream` (objects remain application-encrypted);
+- maximum object size: 1 MiB (above the current 768,032-byte worst case);
+- application ceiling: 100 progress photos per account (about 73.3 MiB worst case);
+- retention: no time-based deletion while an account/photo is live; explicit photo and
+  account deletion remove the object;
+- browser access: none initially; all reads/writes go through the authenticated backend.
+
+Create the bucket in staging first. P2-T04 must prove anonymous and ordinary user tokens
+cannot list or read it before production creation. Record the plan's total Storage quota;
+the safe account count at the 100-photo ceiling is `quota_bytes / 76,803,200` before
+operational headroom.
+
+### E. Record connection paths without switching the app database (B4)
+
+Copy both the direct and session-mode strings from each project's Connect dialog. Use the
+direct connection for migrations, dump/restore and advisory-lock work. Use session mode
+when an IPv4-only environment needs session semantics. Do not use transaction mode
+(`6543`) for the current migration runner because it uses a session advisory lock.
+
+No runtime cutover is required now: Auth and Storage use the HTTPS SDK boundary, while the
+application tables remain on Neon.
+
+### F. Protect and prove the image encryption key (B7)
+
+1. Copy the current production `ELOHIM_BLOB_KEY` directly from its authoritative secret
+   store into a dedicated password-manager entry. Never generate a replacement during
+   this step and never paste the value into this document.
+2. Record owner, creation date, affected environments and a non-secret fingerprint. A
+   fingerprint may be generated locally with
+   `printf %s "$ELOHIM_BLOB_KEY" | sha256sum` without printing the key itself.
+3. In an isolated recovery environment, restore one encrypted sample and prove it decrypts
+   with the recovered key. Record only the sample identifier, fingerprint and pass/fail.
+
+After A–F, send back the non-secret inventory: staging/production project refs and region,
+the three site origins, SMTP provider/domain/sender, Storage plan quota, bucket name and key
+fingerprint. The repository checks can then validate project separation and close B1–B8
+without ever receiving a credential value.
+
+Official dashboard references: [API keys](https://supabase.com/docs/guides/getting-started/api-keys),
+[database connection modes](https://supabase.com/docs/guides/database/connecting-to-postgres),
+[Auth redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls), and
+[production SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
+
+## 13. P2-T01 self-check (evidence review, 2026-10-06)
 
 - [x] Every `.env.example` variable appears in the §7 classification table (including
       commented-out optionals; `NETLIFY_DATABASE_URL` covered via the `DATABASE_URL`
