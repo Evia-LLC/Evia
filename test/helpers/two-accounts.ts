@@ -3,7 +3,7 @@
  *
  * Isolated A/B users with sessions plus seeded scans, memories, products,
  * usage and progress photos. Uses the real repositories against whatever
- * `npm run test:local` provides (disposable PGlite); never touches prod DB
+ * `npm run test:data-api` provides (disposable Supabase); never touches prod DB
  * URLs. Provider calls are stubbed by the *test file* with request counters
  * (see ownership-boundaries.test.ts) — this helper only seeds data.
  */

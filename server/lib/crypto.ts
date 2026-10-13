@@ -19,7 +19,7 @@ import {
   createDecipheriv,
 } from 'node:crypto';
 import { promisify } from 'node:util';
-import { row, run } from '../db/index.ts';
+import { storeEncryptedBlob, readEncryptedBlob, deleteEncryptedBlob } from '../db/blobs.ts';
 import { log } from './log.ts';
 
 // --- passwords --------------------------------------------------------------
@@ -130,23 +130,15 @@ export async function putBlob(data: Buffer, ref: string): Promise<string> {
 
   // [12-byte IV][16-byte tag][ciphertext]
   const sealed = Buffer.concat([iv, tag, body]);
-  await run(
-    'INSERT INTO blobs (ref, data, bytes, created_at) VALUES (?, ?, ?, ?)',
-    safeRef(ref),
-    sealed,
-    sealed.length,
-    new Date().toISOString(),
-  );
+  await storeEncryptedBlob(safeRef(ref), sealed, new Date().toISOString());
   return ref;
 }
 
 export async function getBlob(ref: string): Promise<Buffer | null> {
   const key = blobKey();
   if (!key) return null;
-  const found = await row<{ data: Buffer }>('SELECT data FROM blobs WHERE ref = ?', safeRef(ref));
-  if (!found) return null;
-
-  const raw = Buffer.isBuffer(found.data) ? found.data : Buffer.from(found.data);
+  const raw = await readEncryptedBlob(safeRef(ref));
+  if (!raw) return null;
   const iv = raw.subarray(0, 12);
   const tag = raw.subarray(12, 28);
   const body = raw.subarray(28);
@@ -169,7 +161,7 @@ export async function getBlob(ref: string): Promise<Buffer | null> {
  * has not yet been vacuumed holds nothing readable.
  */
 export async function shredBlob(ref: string): Promise<void> {
-  await run('DELETE FROM blobs WHERE ref = ?', safeRef(ref));
+  await deleteEncryptedBlob(safeRef(ref));
 }
 
 /** Refs are generated ids; reject anything that is not one. */

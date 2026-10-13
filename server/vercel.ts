@@ -1,3 +1,4 @@
+import { dataApiConfigured } from './lib/supabase.ts';
 /**
  * The whole API, as one Vercel function.
  *
@@ -7,7 +8,7 @@
  * app can take the request directly - no event translation, unlike Netlify.
  *
  * `ready()` is awaited per invocation: memoised, so a warm instance pays
- * nothing; on a cold one it applies migrations before the first request is
+ * nothing; on a cold one it verifies the Data API before the first request is
  * served. Without a reachable database that throws, and the answer is the
  * same honest one the Netlify function gives - health says what is and is
  * not configured, everything else says the database is missing.
@@ -47,9 +48,7 @@ export default async function handler(
     // the Netlify function. No raw exception text, no database configuration
     // or error detail, no provider payloads — operator detail lives on
     // GET /api/admin/diagnostics, behind admin auth.
-    const configured = Boolean(
-      process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-    );
+    const configured = dataApiConfigured();
     const path = (req.url ?? "/").split("?")[0];
     res.setHeader("content-type", "application/json; charset=utf-8");
     if (path === "/api/health") {

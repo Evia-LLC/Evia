@@ -1,0 +1,36 @@
+project_id = "evia-local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.seed]
+enabled = false
+
+[studio]
+enabled = false
+
+[local_smtp]
+enabled = false
+
+[storage]
+enabled = false
+
+[auth]
+# CLI status exposes Data API credentials only while this local service runs.
+# Evia still uses its own users and sessions, never managed Auth.
+enabled = true
+
+[realtime]
+enabled = false
+
+[analytics]
+enabled = false

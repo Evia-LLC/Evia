@@ -4,7 +4,7 @@
  * The limiter used to count in a per-process Map with an email key that was
  * only lowercased, while authentication trims AND lowercases — so one address
  * had several quotas, and every serverless instance had its own. Everything
- * here runs against the real disposable Postgres from `npm run test:local`
+ * here runs against the real disposable Postgres from `npm run test:data-api`
  * (same convention as body-store.test.ts: its own schema, migrated, dropped
  * afterwards), with synthetic identities only.
  *
@@ -22,53 +22,28 @@
  *  - a short window expires and resets;
  *  - a dead store denies paid and login paths (fail closed, never fail open).
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 
-const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? "";
-const configured = BASE_URL.length > 0;
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 
 if (!configured) {
   console.warn(
-    "[rate-limit] NETLIFY_DATABASE_URL is not set — database tests did not run (use `npm run test:local`).",
+    "[rate-limit] ELOHIM_DATA_API_LANE is not set — database tests did not run (use `npm run test:data-api`).",
   );
 }
 
-/** Its own schema, named for this run. */
-const SCHEMA = `elohim_test_rl_${process.pid}_${Date.now()}`;
 
-/** A short-lived connection for the schema itself, outside the app's pool. */
-async function admin(sql: string) {
-  const { default: pg } = await import("pg");
-  const client = new pg.Client({ connectionString: BASE_URL });
-  await client.connect();
-  try {
-    await client.query(sql);
-  } finally {
-    await client.end();
-  }
-}
 
 type RateLimit = typeof import("../server/lib/rate-limit.ts");
 let rl: RateLimit;
 
 beforeAll(async () => {
   if (!configured) return;
-  await admin(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
-  // search_path in the connection string, not a SET: a pool opens
-  // connections whenever it likes and a SET binds to one of them.
-  process.env.NETLIFY_DATABASE_URL = `${BASE_URL}${BASE_URL.includes("?") ? "&" : "?"}options=-csearch_path%3D${SCHEMA}`;
-  const { migrate } = await import("../server/db/index.ts");
-  await migrate();
   rl = await import("../server/lib/rate-limit.ts");
 });
 
-afterAll(async () => {
-  if (!configured) return;
-  process.env.NETLIFY_DATABASE_URL = BASE_URL;
-  await admin(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
-});
 
 /** Serves one Express app on a loopback port; caller closes the server. */
 async function listen(

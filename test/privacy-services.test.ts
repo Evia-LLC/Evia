@@ -68,15 +68,13 @@ describe('structured data export', () => {
 });
 
 describe('account deletion service', () => {
-  it('continues cascade deletion after a blob-shred failure and reports it accurately', async () => {
-    const removeUser = vi.fn(async () => undefined);
-    const result = await deleteAccount('owner', {
-      skinBlobRefs: async () => ['good', 'bad'], bodyBlobRefs: async () => [],
-      progressPhotoRefs: async () => ['progress-photo'],
-      shred: async (ref) => { if (ref === 'bad') throw new Error('storage unavailable'); },
-      deleteUser: removeUser,
-    });
-    expect(result).toEqual({ ok: true, blobsShredded: 2, blobsFailed: 1 });
-    expect(removeUser).toHaveBeenCalledWith('owner');
+  it('delegates once to the same atomic erasure operation', async () => {
+    const erase = vi.fn(async () => ({ ok: true as const, blobsShredded: 3, blobsFailed: 0 }));
+    expect(await deleteAccount('owner', { erase })).toEqual({ ok: true, blobsShredded: 3, blobsFailed: 0 });
+    expect(erase).toHaveBeenCalledExactlyOnceWith('owner');
+  });
+  it('propagates erasure failure instead of claiming partial success', async () => {
+    const erase = vi.fn(async () => { throw new Error('database unavailable'); });
+    await expect(deleteAccount('owner', { erase })).rejects.toThrow('database unavailable');
   });
 });

@@ -1,6 +1,7 @@
 import { REGISTRATION_TERMS_VERSION, REGISTRATION_DOCUMENT_VERSIONS } from '../../shared/age-flow.ts';
-import { row, run, transaction } from './index.ts';
+import { database, result, affected } from '../lib/data-api.ts';
 import { currentConsents } from './consents.ts';
+import { findCredentials } from './credentials.ts';
 import { newId, newToken, nowIso } from '../lib/ids.ts';
 import { hashPassword, verifyPassword } from '../lib/crypto.ts';
 import {
@@ -22,8 +23,6 @@ interface UserRow {
   id: string;
   email: string;
   display_name: string;
-  password_hash: string;
-  password_salt: string;
   created_at: string;
   date_of_birth?: string | null;
 }
@@ -35,59 +34,27 @@ export async function createUser(
   registration?: { dateOfBirth: string; ip?: string },
 ): Promise<string> {
   const normalised = email.trim().toLowerCase();
-  const existing = await row('SELECT id FROM users WHERE email = ?', normalised);
+  const existing = await result<{ id: string } | null>(database().from('users').select('id').eq('email', normalised).maybeSingle());
   if (existing) throw new Error('An account with that email already exists.');
 
   const { hash, salt } = await hashPassword(password);
   const id = newId();
   const now = nowIso();
 
-  // Every statement goes through `tx`, not the pool. An account is a user plus
-  // a profile plus preferences, and a half-made one
-  // is worse than none — it would sign in and then behave as though the user
-  // had agreed to nothing and preferred nothing.
-  await transaction(async (tx) => {
-    await tx.run(
-      `INSERT INTO users (id, email, display_name, password_hash, password_salt, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      id,
-      normalised,
-      displayName.trim() || 'friend',
-      hash,
-      salt,
-      now,
-    );
-
-    if (registration) {
-      await tx.run('UPDATE users SET date_of_birth = ? WHERE id = ?', registration.dateOfBirth, id);
-      await tx.run(
-        `INSERT INTO consent_events (id, user_id, consent_type, wording_version_id, state, recorded_at,
-          actor_type, actor_id, metadata_json, idempotency_key)
-         VALUES (?, ?, 'registration_terms', ?, 'granted', ?, 'account', ?, ?::JSONB, ?)`,
-        newId(), id, REGISTRATION_TERMS_VERSION, now, id,
-        JSON.stringify({ choice: 'accepted', source: 'registration', demoOnly: true, wordingStatus: 'placeholder',
-          documentVersions: REGISTRATION_DOCUMENT_VERSIONS, ip: registration.ip ?? null }),
-        `registration:${id}`,
-      );
-    }
-
-    await tx.run(
-      `INSERT INTO skin_profiles (user_id, skin_type, updated_at) VALUES (?, 'unknown', ?)`,
-      id,
-      now,
-    );
-
-    await tx.run(
-      `INSERT INTO preferences (user_id, explanation_style, voice_enabled, reduced_motion,
-                                quality_tier, locale, updated_at)
-       VALUES (?, ?, 0, 0, ?, ?, ?)`,
-      id,
-      DEFAULT_PREFERENCES.explanationStyle,
-      DEFAULT_PREFERENCES.qualityTier,
-      DEFAULT_PREFERENCES.locale,
-      now,
-    );
-  });
+  await result(database().rpc('evia_create_user', {
+    p_user: { id, email: normalised, display_name: displayName.trim() || 'friend',
+      password_hash: hash, password_salt: salt, created_at: now, date_of_birth: registration?.dateOfBirth ?? null },
+    p_profile: { user_id: id, skin_type: 'unknown', fitzpatrick: null, concerns_json: '[]',
+      sensitivities_json: '[]', pregnancy_status: 'unknown', updated_at: now },
+    p_preferences: { user_id: id, explanation_style: DEFAULT_PREFERENCES.explanationStyle,
+      voice_enabled: 0, reduced_motion: 0, quality_tier: DEFAULT_PREFERENCES.qualityTier,
+      locale: DEFAULT_PREFERENCES.locale, voice_uri: null, updated_at: now },
+    p_consent: registration ? { id: newId(), user_id: id, consent_type: 'registration_terms',
+      wording_version_id: REGISTRATION_TERMS_VERSION, state: 'granted', recorded_at: now,
+      actor_type: 'account', actor_id: id, idempotency_key: `registration:${id}`,
+      metadata_json: { choice: 'accepted', source: 'registration', demoOnly: true, wordingStatus: 'placeholder',
+        documentVersions: REGISTRATION_DOCUMENT_VERSIONS, ip: registration.ip ?? null } } : null,
+  }));
 
   return id;
 }
@@ -97,10 +64,7 @@ const DUMMY_SALT = '0'.repeat(32);
 const DUMMY_HASH = '0'.repeat(128);
 
 export async function authenticate(email: string, password: string): Promise<string | null> {
-  const found = await row<UserRow>(
-    'SELECT * FROM users WHERE email = ?',
-    email.trim().toLowerCase(),
-  );
+  const found = await findCredentials(email.trim().toLowerCase());
   if (!found) {
     await verifyPassword(password, DUMMY_HASH, DUMMY_SALT);
     return null;
@@ -113,24 +77,15 @@ export async function createSession(userId: string): Promise<string> {
   const token = newToken();
   const now = new Date();
   const expires = new Date(now.getTime() + SESSION_DAYS * 86400_000);
-  await run(
-    'INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
-    token,
-    userId,
-    now.toISOString(),
-    expires.toISOString(),
-  );
+  await result(database().from('sessions').insert({ token, user_id: userId, created_at: now.toISOString(), expires_at: expires.toISOString() }));
   return token;
 }
 
 export async function userIdForSession(token: string): Promise<string | null> {
-  const found = await row<{ user_id: string; expires_at: string }>(
-    'SELECT user_id, expires_at FROM sessions WHERE token = ?',
-    token,
-  );
+  const found = await result<{ user_id: string; expires_at: string } | null>(database().from('sessions').select('user_id,expires_at').eq('token', token).maybeSingle());
   if (!found) return null;
   if (new Date(found.expires_at) < new Date()) {
-    await run('DELETE FROM sessions WHERE token = ?', token);
+    await result(database().from('sessions').delete().eq('token', token));
     return null;
   }
   return found.user_id;
@@ -138,22 +93,22 @@ export async function userIdForSession(token: string): Promise<string | null> {
 
 /** Drops every session past its expiry. Called on boot and periodically. */
 export async function sweepExpiredSessions(): Promise<number> {
-  return run('DELETE FROM sessions WHERE expires_at <= ?', new Date().toISOString());
+  return affected(database().from('sessions').delete({ count: 'exact' }).lte('expires_at', new Date().toISOString()));
 }
 
 export async function destroySession(token: string): Promise<void> {
-  await run('DELETE FROM sessions WHERE token = ?', token);
+  await result(database().from('sessions').delete().eq('token', token));
 }
 
 export async function getProfile(userId: string): Promise<SkinProfile> {
-  const found = await row<{
+  const found = await result<{
     skin_type: string;
     fitzpatrick: number | null;
     concerns_json: string;
     sensitivities_json: string;
     pregnancy_status: string | null;
     updated_at: string;
-  }>('SELECT * FROM skin_profiles WHERE user_id = ?', userId);
+  } | null>(database().from('skin_profiles').select('skin_type,fitzpatrick,concerns_json,sensitivities_json,pregnancy_status,updated_at').eq('user_id', userId).maybeSingle());
   if (!found) {
     return {
       skinType: 'unknown',
@@ -186,31 +141,23 @@ export async function updateProfile(
   const clean = validateProfilePatch(patch) as Partial<SkinProfile>;
   const current = await getProfile(userId);
   const next: SkinProfile = { ...current, ...clean, updatedAt: nowIso() };
-  await run(
-    `UPDATE skin_profiles
-        SET skin_type = ?, fitzpatrick = ?, concerns_json = ?, sensitivities_json = ?,
-            pregnancy_status = ?, updated_at = ?
-      WHERE user_id = ?`,
-    next.skinType,
-    next.fitzpatrick,
-    JSON.stringify(next.concerns),
-    JSON.stringify(next.sensitivities),
-    next.pregnancyStatus,
-    next.updatedAt,
-    userId,
-  );
+  await result(database().from('skin_profiles').update({
+    skin_type: next.skinType, fitzpatrick: next.fitzpatrick, concerns_json: JSON.stringify(next.concerns),
+    sensitivities_json: JSON.stringify(next.sensitivities), pregnancy_status: next.pregnancyStatus,
+    updated_at: next.updatedAt,
+  }).eq('user_id', userId));
   return next;
 }
 
 export async function getPreferences(userId: string): Promise<Preferences> {
-  const found = await row<{
+  const found = await result<{
     explanation_style: string;
     voice_enabled: number;
     reduced_motion: number;
     quality_tier: string;
     locale: string;
     voice_uri: string | null;
-  }>('SELECT * FROM preferences WHERE user_id = ?', userId);
+  } | null>(database().from('preferences').select('explanation_style,voice_enabled,reduced_motion,quality_tier,locale,voice_uri').eq('user_id', userId).maybeSingle());
   if (!found) return { ...DEFAULT_PREFERENCES };
   return {
     explanationStyle: found.explanation_style as Preferences['explanationStyle'],
@@ -231,38 +178,18 @@ export async function updatePreferences(
   // P1-T06: same repository-boundary allowlist as updateProfile.
   const clean = validatePreferencesPatch(patch) as Partial<Preferences>;
   const next = { ...(await getPreferences(userId)), ...clean };
-  await run(
-    `UPDATE preferences
-        SET explanation_style = ?, voice_enabled = ?, voice_uri = ?, reduced_motion = ?,
-            quality_tier = ?, locale = ?, updated_at = ?
-      WHERE user_id = ?`,
-    next.explanationStyle,
-    next.voiceEnabled ? 1 : 0,
-    next.voiceURI,
-    next.reducedMotion ? 1 : 0,
-    next.qualityTier,
-    next.locale,
-    nowIso(),
-    userId,
-  );
+  await result(database().from('preferences').update({
+    explanation_style: next.explanationStyle, voice_enabled: next.voiceEnabled ? 1 : 0,
+    voice_uri: next.voiceURI ?? null, reduced_motion: next.reducedMotion ? 1 : 0,
+    quality_tier: next.qualityTier, locale: next.locale, updated_at: nowIso(),
+  }).eq('user_id', userId));
   return next;
 }
 
 export async function getUserSummary(userId: string): Promise<UserSummary | null> {
-  const found = await row<UserRow>('SELECT * FROM users WHERE id = ?', userId);
+  const found = await result<UserRow | null>(database().from('users').select('id,email,display_name,created_at,date_of_birth').eq('id', userId).maybeSingle());
   if (!found) return null;
-  /*
-   * Number(), because COUNT(*) is a bigint.
-   *
-   * Postgres bigints arrive as strings — they do not fit a JS number in the
-   * general case, so the driver refuses to guess on your behalf. Left alone,
-   * scanCount becomes "6", and every comparison against it downstream is a
-   * string comparison that looks right until somebody reaches ten scans.
-   */
-  const counted = await row<{ n: string | number }>(
-    'SELECT COUNT(*) AS n FROM skin_scans WHERE user_id = ?',
-    userId,
-  );
+  const scanCount = await affected(database().from('skin_scans').select('id', { count: 'exact', head: true }).eq('user_id', userId));
   const [profile, preferences, consents] = await Promise.all([
     getProfile(userId),
     getPreferences(userId),
@@ -277,7 +204,7 @@ export async function getUserSummary(userId: string): Promise<UserSummary | null
     profile,
     preferences,
     consents,
-    scanCount: Number(counted?.n ?? 0),
+    scanCount,
   };
 }
 
@@ -286,5 +213,5 @@ export async function getUserSummary(userId: string): Promise<UserSummary | null
  * which owns the list of refs (see routes/me.ts).
  */
 export async function deleteUser(userId: string): Promise<void> {
-  await run('DELETE FROM users WHERE id = ?', userId);
+  await result(database().from('users').delete().eq('id', userId));
 }

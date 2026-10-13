@@ -8,10 +8,10 @@
  * request and is never written. This file pins that contract with synthetic
  * data only: a stubbed provider TTS endpoint with a call counter (same shape
  * as `test/ownership-boundaries.test.ts`), and the real disposable database
- * from `npm run test:local`.
+ * from `npm run test:data-api`.
  *
  * Like the ownership-boundaries suite, this file only runs under
- * `npm run test:local` (which injects a disposable PGlite URL). A bare
+ * `npm run test:data-api` (which injects a disposable Supabase URL). A bare
  * `vitest run` skips loudly instead of failing opaquely.
  */
 import {
@@ -26,10 +26,10 @@ import {
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const configured = (process.env.NETLIFY_DATABASE_URL ?? "").length > 0;
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 if (!configured) {
   console.warn(
-    "[voice-cache-privacy] NETLIFY_DATABASE_URL is not set — database tests did not run (use `npm run test:local`).",
+    "[voice-cache-privacy] ELOHIM_DATA_API_LANE is not set — database tests did not run (use `npm run test:data-api`).",
   );
 }
 
@@ -91,7 +91,9 @@ function alignmentFor(text: string) {
   };
 }
 
+const transportFetch = globalThis.fetch;
 vi.stubGlobal("fetch", (async (_url: unknown, init?: { body?: unknown }) => {
+  if (String(_url).startsWith(process.env.SUPABASE_URL!)) return transportFetch(_url as string, init as RequestInit);
   providerCalls.count += 1;
   const body = JSON.parse(
     String((init as { body?: unknown } | undefined)?.body ?? "{}"),
@@ -120,8 +122,8 @@ vi.stubGlobal("fetch", (async (_url: unknown, init?: { body?: unknown }) => {
   };
 }) as unknown as typeof fetch);
 
-const { migrate, rows, row, run, closePool } =
-  await import("../server/db/index.ts");
+const { database, result, affected, allPages, decodeBytea } = await import('../server/lib/data-api.ts');
+const { storeVoiceLine } = await import('../server/db/voice-cache.ts');
 const {
   speakLine,
   speakableOf,
@@ -149,16 +151,13 @@ interface VoiceRow {
 }
 
 async function rowCount(): Promise<number> {
-  const found = await row<{ n: string }>(
-    "SELECT COUNT(*)::text AS n FROM voice_lines",
-  );
-  return Number(found?.n ?? 0);
+  return affected(database().from('voice_lines').select('key', { count: 'exact', head: true }));
 }
 
 async function allVoiceRows(): Promise<VoiceRow[]> {
-  return rows<VoiceRow>(
-    "SELECT key, text, words_json, audio, created_at FROM voice_lines ORDER BY created_at",
-  );
+  const stored = await allPages<Omit<VoiceRow, 'audio'> & { audio: string }>((from, to) => database().from('voice_lines')
+    .select('key,text,words_json,audio,created_at').order('created_at').order('key').range(from, to));
+  return stored.map((r) => ({ ...r, audio: decodeBytea(r.audio) }));
 }
 
 async function seedLegacyRow(
@@ -166,33 +165,21 @@ async function seedLegacyRow(
   text: string,
   createdAt: string,
 ): Promise<void> {
-  await run(
-    `INSERT INTO voice_lines (key, voice_id, model_id, text, audio, content_type, words_json, duration, hits, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-    key,
-    "legacy-voice",
-    "legacy-model",
-    text,
-    Buffer.from("legacy-audio-bytes"),
-    "audio/mpeg",
-    JSON.stringify([
-      { word: "legacy", charIndex: 0, charLength: 6, start: 0, end: 0.3 },
-    ]),
-    0.3,
-    createdAt,
-  );
+  await storeVoiceLine({ key, voiceId: 'legacy-voice', modelId: 'legacy-model', text,
+    audio: Buffer.from('legacy-audio-bytes'), contentType: 'audio/mpeg',
+    wordsJson: JSON.stringify([{ word: 'legacy', charIndex: 0, charLength: 6, start: 0, end: 0.3 }]),
+    duration: 0.3, createdAt });
 }
 
 beforeAll(async () => {
   if (!configured) return;
   vi.stubEnv("ELOHIM_VOICE_API_KEY", "test-key");
   vi.stubEnv("ELOHIM_VOICE_ID", "test-voice");
-  await migrate();
 });
 
 beforeEach(async () => {
   if (!configured) return;
-  await run("DELETE FROM voice_lines");
+  await result(database().from('voice_lines').delete().neq('key', ''));
   providerCalls.count = 0;
   fetchMode.mode = "ok";
   seenLogs.error.length = 0;
@@ -202,7 +189,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
   vi.unstubAllGlobals();
-  if (configured) await closePool();
 });
 
 describe("non-stock synthesis persists nothing", () => {
@@ -216,9 +202,7 @@ describe("non-stock synthesis persists nothing", () => {
 
     // Belt and braces across every column that could carry content: no row
     // may hold any fragment of the personal text, its timings or its audio.
-    const leaked = await rows<{ key: string }>(
-      "SELECT key FROM voice_lines WHERE text LIKE '%Ada%' OR text LIKE '%flare-up%' OR words_json LIKE '%Ada%' OR words_json LIKE '%flare-up%'",
-    );
+    const leaked = (await allVoiceRows()).filter((r) => /Ada|flare-up/.test(r.text + r.words_json));
     expect(leaked).toEqual([]);
   });
 
@@ -346,10 +330,8 @@ describe("stock lines use the persistent cache", () => {
     await speakLine(fresh, {}, "user:aaa");
 
     expect(await rowCount()).toBe(STOCK_CACHE_MAX_ROWS);
-    const oldest = await row<{ key: string }>(
-      "SELECT key FROM voice_lines WHERE key = 'evict-0'",
-    );
-    expect(oldest).toBeUndefined();
+    const oldest = await result(database().from('voice_lines').select('key').eq('key', 'evict-0').maybeSingle());
+    expect(oldest).toBeNull();
   });
 });
 
@@ -420,7 +402,6 @@ describe("purge script preserves only allowlisted entries", () => {
 
     // The script opens its own connection; release the pool first so the
     // single-connection test database is never contended.
-    await closePool();
     const dry = JSON.parse(
       execFileSync(process.execPath, [script, "--dry-run"], {
         encoding: "utf8",
@@ -439,7 +420,6 @@ describe("purge script preserves only allowlisted entries", () => {
     expect(JSON.stringify(dry)).not.toContain("Ada");
     expect(await rowCount()).toBe(total);
 
-    await closePool();
     const applied = JSON.parse(
       execFileSync(process.execPath, [script, "--apply"], {
         encoding: "utf8",
@@ -455,12 +435,11 @@ describe("purge script preserves only allowlisted entries", () => {
     expect(applied.deleted).toBe(personal.length + 2);
     expect(applied.preserved).toBe(sentences.length);
     const remaining = (
-      await rows<{ text: string }>("SELECT text FROM voice_lines")
+      await result<{ text: string }[]>(database().from('voice_lines').select('text'))
     ).map((r) => r.text);
     expect([...remaining].sort()).toEqual([...sentences].sort());
 
     // Idempotent: a second run deletes nothing.
-    await closePool();
     const again = JSON.parse(
       execFileSync(process.execPath, [script, "--apply"], {
         encoding: "utf8",

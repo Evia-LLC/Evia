@@ -83,17 +83,12 @@ vi.mock("../server/ai/budget.ts", () => ({
   })),
 }));
 
-vi.mock("../server/db/index.ts", () => ({
-  row: vi.fn(async () => undefined),
-  rows: vi.fn(async () => []),
-  run: vi.fn(async () => 0),
-  transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-    fn({
-      rows: async () => [],
-      row: async () => undefined,
-      run: async () => 0,
-    }),
-  ),
+vi.mock('../server/db/voice-cache.ts', () => ({
+  readVoiceLine: vi.fn(async () => undefined),
+  storeVoiceLine: vi.fn(async () => undefined),
+  touchVoiceLine: vi.fn(async () => undefined),
+  deleteVoiceLine: vi.fn(async () => undefined),
+  pruneVoiceLines: vi.fn(async () => undefined),
 }));
 
 vi.mock("@anthropic-ai/sdk", () => {

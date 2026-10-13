@@ -2,31 +2,24 @@
  * P1-T07 — atomic provider budget reservations.
  *
  * Proves the reserve → commit → call → settle contract against real
- * concurrency: N independent connections racing for one remaining allowance
+ * concurrency: N independent HTTP requests racing for one remaining allowance
  * admit exactly one; settle/refund/fail are idempotent on the operation ID;
  * midnight binds each reservation to the day that admitted it; a failed
  * dispatch settles once without charging quota; and a pending row survives
- * a pool restart so crash recovery can resume it by operation ID. Pending
+ * a process restart so crash recovery can resume it by operation ID. Pending
  * age alone never proves that a provider was not dispatched.
  *
- * Lane-only like its neighbours: skips loudly outside `npm run test:pg`.
- * This file is intentionally a real-Postgres lane; CI's `test:pg` is the
- * gate. The in-memory PGlite lane does not prove independent-connection
- * locking semantics and is never accepted as evidence here.
+ * Lane-only like its neighbours: skips loudly outside `npm run test:data-api`.
+ * This file is intentionally a real-Postgres lane; CI's `test:data-api` is the
+ * gate. Contention is proven through real HTTP requests and real Postgres locks.
  *
  * Synthetic data only: every user and operation ID in this file is
  * prefixed `p1t07-` and is cleaned up in afterAll.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import pg from "pg";
-import {
-  connectionString,
-  migrate,
-  row,
-  run,
-  toPg,
-  type Param,
-} from "../../server/db/index.ts";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { execFileSync } from 'node:child_process';
+import { database, result, requireDataApi } from '../helpers/data-api.ts';
+import { readBudgetUsage } from '../../server/db/budget.ts';
 import {
   allowance,
   BudgetDispatchError,
@@ -36,53 +29,20 @@ import {
   listPendingReservations,
   refundReservation,
   reserve,
-  reserveInTransaction,
   settleReservation,
   withReservation,
-  type BudgetTx,
 } from "../../server/ai/budget.ts";
 
-const lane = process.env.ELOHIM_PG_LANE === "1";
-if (!lane) {
-  console.warn(
-    "[budget-reservations] Not in the test:pg lane — skipping (use `npm run test:pg` with ELOHIM_TEST_PG_URL).",
-  );
-}
+const lane = process.env.ELOHIM_DATA_API_LANE === '1';
 
 const tag = `p1t07-${process.pid}`;
-
-async function client() {
-  const c = new pg.Client({ connectionString: connectionString() });
-  await c.connect();
-  return c;
-}
-
-/** Wraps one raw connection as a BudgetTx with its own BEGIN/COMMIT. */
-function txOver(c: pg.Client): BudgetTx {
-  const query = (sql: string, params: Param[]) =>
-    c.query(toPg(sql), params as unknown[]);
-  return {
-    rows: async <R>(sql: string, ...params: Param[]) =>
-      (await query(sql, params)).rows as R[],
-    row: async <R>(sql: string, ...params: Param[]) =>
-      (await query(sql, params)).rows[0] as R | undefined,
-    run: async (sql: string, ...params: Param[]) =>
-      (await query(sql, params)).rowCount ?? 0,
-  };
-}
 
 async function ledgerFor(
   day: string,
   userId: string,
 ): Promise<{ turns: number; input: number; output: number } | undefined> {
-  const found = await row<{
-    turns: string | number;
-    input_tokens: string | number;
-    output_tokens: string | number;
-  }>(
-    "SELECT turns, input_tokens, output_tokens FROM usage_ledger WHERE day = ? AND user_id = ?",
-    day,
-    userId,
+  const found = await result<{ turns: number; input_tokens: number; output_tokens: number } | null>(
+    database().from('usage_ledger').select('turns,input_tokens,output_tokens').eq('day', day).eq('user_id', userId).maybeSingle(),
   );
   if (!found) return undefined;
   return {
@@ -106,7 +66,7 @@ function setCaps(userTurns: string, dailyTurns: string, dailyTokens: string) {
 
 beforeAll(async () => {
   if (!lane) return;
-  await migrate();
+  await requireDataApi();
 }, 60_000);
 
 afterAll(async () => {
@@ -120,12 +80,54 @@ afterAll(async () => {
   else process.env.ELOHIM_DAILY_TOKENS = savedEnv.dailyTokens;
   if (!lane) return;
   // Synthetic rows only: nothing outside the p1t07- prefix is touched.
-  await run("DELETE FROM budget_reservations WHERE user_id LIKE 'p1t07-%'");
-  await run("DELETE FROM usage_ledger WHERE user_id LIKE 'p1t07-%'");
+  await result(database().from('budget_reservations').delete().like('user_id', 'p1t07-%'));
+  await result(database().from('usage_ledger').delete().like('user_id', 'p1t07-%'));
 });
 
 describe.skipIf(!lane)("budget reservations", () => {
-  it("admits exactly one of N independent connections racing for one allowance", async () => {
+  it('does not dispatch when admission committed but its HTTP acknowledgement was lost', async () => {
+    setCaps('100', '100', '100000000');
+    const input = { operationId: `${tag}-lost-ack`, userId: `${tag}-lost-ack-user`,
+      provider: 'fixture', unit: 'chat-tokens', estimatedUnits: 10, day: '2031-06-01' };
+    const dispatch = vi.fn(async () => ({ result: 'should not dispatch', actual: { inputTokens: 1 } }));
+    const nativeFetch = globalThis.fetch;
+    let lose = true;
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const response = await nativeFetch(url, init);
+      if (lose && String(url).includes('/rpc/evia_budget_reserve')) {
+        lose = false;
+        await response.arrayBuffer();
+        throw new TypeError('simulated lost acknowledgement');
+      }
+      return response;
+    });
+    try {
+      await expect(withReservation(input, dispatch)).rejects.toThrow('over budget: global_tokens');
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally { spy.mockRestore(); }
+    expect(await getReservation(input.operationId)).toMatchObject({ status: 'pending' });
+    const replay = await reserve(input);
+    expect(replay.ok && replay.duplicate).toBe(true);
+    await refundReservation(input.operationId);
+  });
+
+  it('allows only one concurrent terminal transition and accounts actual overrun once', async () => {
+    setCaps('100', '100', '100000000');
+    const operationId = `${tag}-terminal-race`;
+    const userId = `${tag}-terminal-user`;
+    expect((await reserve({ operationId, userId, provider: 'fixture', unit: 'chat-tokens', estimatedUnits: 1, day: '2031-06-02' })).ok).toBe(true);
+    const outcomes = await Promise.all(Array.from({ length: 8 }, (_, i) => i % 2 === 0
+      ? settleReservation(operationId, { inputTokens: 60, outputTokens: 40 }) : refundReservation(operationId)));
+    expect(outcomes.filter((r) => r.ok && !r.duplicate)).toHaveLength(1);
+    expect(outcomes.filter((r) => r.ok && r.duplicate)).toHaveLength(7);
+    const final = await getReservation(operationId);
+    const ledger = await ledgerFor('2031-06-02', userId);
+    expect(ledger).toMatchObject(final?.status === 'settled'
+      ? { turns: 1, input: 60, output: 40 } : { turns: 0, input: 0, output: 0 });
+    if (final?.status === 'settled') expect(final.actualUnits).toBe(100);
+  });
+
+  it("admits exactly one of N independent HTTP requests racing for one allowance", async () => {
     // One global turn left for the whole day; every contender is a different
     // user with ample personal quota, so the ONLY gate is the shared one.
     const day = "2031-05-01";
@@ -136,32 +138,9 @@ describe.skipIf(!lane)("budget reservations", () => {
       operationId: `${tag}-race-op-${i}`,
     }));
 
-    const contender = async (parts: {
-      userId: string;
-      operationId: string;
-    }) => {
-      const c = await client();
-      try {
-        await c.query("BEGIN");
-        try {
-          const outcome = await reserveInTransaction(txOver(c), {
-            operationId: parts.operationId,
-            userId: parts.userId,
-            provider: "anthropic",
-            unit: "chat-tokens",
-            estimatedUnits: 10,
-            day,
-          });
-          await c.query("COMMIT");
-          return outcome;
-        } catch (err) {
-          await c.query("ROLLBACK").catch(() => {});
-          throw err;
-        }
-      } finally {
-        await c.end().catch(() => {});
-      }
-    };
+    const contender = (parts: { userId: string; operationId: string }) => reserve({
+      ...parts, provider: 'anthropic', unit: 'chat-tokens', estimatedUnits: 10, day,
+    });
 
     // All N transactions open and race; transport failures are hard failures.
     // This proof is intentionally real-Postgres-only and must never be made
@@ -176,14 +155,8 @@ describe.skipIf(!lane)("budget reservations", () => {
     }
 
     // Ledger plus pending counts the winner exactly once: no double-spend.
-    const totals = await row<{ turns: string | number }>(
-      `SELECT coalesce(sum(turns), 0)
-         + (SELECT count(*) FROM budget_reservations WHERE day = ? AND status = 'pending') AS turns
-       FROM usage_ledger WHERE day = ?`,
-      day,
-      day,
-    );
-    expect(Number(totals?.turns ?? 0)).toBe(1);
+    const totals = await readBudgetUsage(day, '');
+    expect(totals.globalLedgerTurns + totals.globalPendingTurns).toBe(1);
 
     // Hygiene: settle the winner so later tests see no stray pending rows.
     const winner = winners[0];
@@ -478,12 +451,10 @@ describe.skipIf(!lane)("budget reservations", () => {
     });
     expect(admitted.ok).toBe(true);
 
-    // Simulate process death: drop the pool. Nothing in memory may matter —
-    // the pending row is the whole recovery story. (No sweeper forgives it.)
-    const { closePool } = await import("../../server/db/index.ts");
-    await closePool();
-
-    const recovered = await getReservation(opId);
+    // A fresh Node process has no shared client/session/JS state from the writer.
+    const recovered = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+      'import { getReservation } from "./server/ai/budget.ts"; console.log(JSON.stringify(await getReservation(process.argv[1])));', opId],
+      { encoding: 'utf8', timeout: 15_000 }));
     expect(recovered).toMatchObject({
       operationId: opId,
       userId,
