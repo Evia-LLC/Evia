@@ -38,8 +38,6 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  // pg's optional native binding is looked up at runtime and never installed.
-  external: ['pg-native'],
   // CommonJS dependencies bundled into an ES module still call `require`
   // for a few things at runtime; give them one.
   banner: {

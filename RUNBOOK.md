@@ -1,5 +1,10 @@
 # Evia — operator runbook
 
+Current data access and release instructions are in [DATA_API_ADR.md](docs/DATA_API_ADR.md).
+Runtime persistence now uses the Supabase Data API exclusively; migrations run out of band.
+The Neon/pg/PGlite setup and boot-migration incident notes below are historical and are not
+instructions for configuring the replacement. Supabase Auth and Storage remain separate.
+
 What to set where, and what each thing switches on. Nothing here is needed
 to run the app on a laptop: `node scripts/dev.mjs` starts a local Postgres,
 the API and the web app with no keys at all. These are for the live site.

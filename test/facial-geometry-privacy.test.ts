@@ -1,7 +1,5 @@
 import {
-  afterAll,
   afterEach,
-  beforeAll,
   describe,
   expect,
   it,
@@ -9,7 +7,6 @@ import {
 } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PGlite } from "@electric-sql/pglite";
 import { api } from "../src/lib/api.ts";
 import { session } from "../src/state/session.svelte.ts";
 import type { SkinAnalysis } from "../shared/types.ts";
@@ -17,19 +14,6 @@ import type { SkinAnalysis } from "../shared/types.ts";
 const root = join(import.meta.dirname, "..");
 const source = (path: string) => readFileSync(join(root, path), "utf8");
 
-// P0-T01a: share one PGlite WASM instance per file instead of `new PGlite()`
-// inside the test. Only the landmark-migration test needs a database; the
-// other tests here are pure source/stateless assertions. afterAll guarantees
-// close on every path (the old code closed only on the success path).
-let db: PGlite;
-
-beforeAll(async () => {
-  db = await PGlite.create();
-}, 30_000);
-
-afterAll(async () => {
-  await db.close();
-});
 
 const analysis: SkinAnalysis = {
   capturedAt: "2026-09-23T12:00:00.000Z",
@@ -80,18 +64,11 @@ describe("facial geometry privacy boundary", () => {
     expect(repository).not.toMatch(/\blandmarks\b/);
   });
 
-  it("drops the facial landmark column in the migration", async () => {
-    await db.exec("DROP TABLE IF EXISTS skin_scans;");
-    await db.exec(
-      "CREATE TABLE skin_scans (id TEXT PRIMARY KEY, landmarks_json TEXT)",
-    );
-    await db.exec("INSERT INTO skin_scans VALUES ('scan-1', '[0.1,0.2]')");
-    await db.exec(source("server/db/migrations/011_drop_face_landmarks.sql"));
-    const result = await db.query<{ column_name: string }>(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'skin_scans'",
-    );
-    expect(result.rows.map((row) => row.column_name)).toEqual(["id"]);
-  }, 30_000);
+  it('defines the fresh skin schema without persisted facial landmarks', () => {
+    const schema = source('supabase/migrations/20261013000000_application.sql');
+    const table = schema.slice(schema.indexOf('CREATE TABLE skin_scans'), schema.indexOf('CREATE INDEX idx_scans'));
+    expect(table).not.toContain('landmarks');
+  });
 
   it("clears the in-memory mesh on reset", () => {
     session.lastMesh = {

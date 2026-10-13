@@ -18,19 +18,6 @@ jobs:
   checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: evia_pgtest
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,15 +30,17 @@ jobs:
           package-manager-cache: false
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+        with:
+          version: 2.120.0
       - name: TypeScript checks
         run: npm run typecheck
       - name: Svelte checks
         run: npm run check
-      - name: Tests with disposable database
-        run: npm run test:local
-      - name: Integration tests on real Postgres
-        run: npm run test:pg
-        env:
-          ELOHIM_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/evia_pgtest
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Integration tests on the real Data API
+        run: npm run test:data-api
       - name: Production build
         run: npm run build

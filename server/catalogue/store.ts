@@ -13,7 +13,7 @@
  * "Ingredients:" panel, and left empty when it does not. The picker copes
  * with empty: a product is also matched on what its name says it is.
  */
-import { row, rows, run } from '../db/index.ts';
+import { database, result, affected, allPages } from '../lib/data-api.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import { log } from '../lib/log.ts';
 import type { CatalogueProduct, CatalogueStatus } from '../../shared/types.ts';
@@ -87,83 +87,46 @@ export interface CatalogueInput {
 
 export async function upsertCatalogueProduct(input: CatalogueInput): Promise<string> {
   const existing = input.externalId
-    ? await row<{ id: string }>(
-        'SELECT id FROM catalogue_products WHERE source = ? AND external_id = ?',
-        input.source,
-        input.externalId,
-      )
-    : await row<{ id: string }>(
-        'SELECT id FROM catalogue_products WHERE source = ? AND lower(name) = lower(?) AND coalesce(brand, \'\') = coalesce(?, \'\')',
-        input.source,
-        input.name,
-        input.brand ?? null,
-      );
-
-  const values = [
-    input.sku ?? null,
-    input.name.trim(),
-    input.brand?.trim() || null,
-    input.category?.trim() || null,
-    (input.description ?? '').slice(0, 4000),
-    JSON.stringify((input.ingredients ?? []).slice(0, 120)),
-    JSON.stringify((input.tags ?? []).slice(0, 40)),
-    input.priceCents ?? null,
-    (input.currency ?? process.env.ELOHIM_STORE_CURRENCY ?? 'USD').toUpperCase().slice(0, 3),
-    input.url,
-    input.imageUrl ?? null,
-    input.inStock === false ? 0 : 1,
-    nowIso(),
-  ] as const;
-
+    ? await result<{ id: string } | null>(database().from('catalogue_products').select('id').eq('source', input.source).eq('external_id', input.externalId).maybeSingle())
+    : (await result<{ id: string }[]>(database().rpc('evia_find_catalogue_match', {
+        p_source: input.source, p_name: input.name, p_brand: input.brand ?? null,
+      })))[0];
+  const values = {
+    sku: input.sku ?? null, name: input.name.trim(), brand: input.brand?.trim() || null,
+    category: input.category?.trim() || null, description: (input.description ?? '').slice(0, 4000),
+    ingredients_json: JSON.stringify((input.ingredients ?? []).slice(0, 120)),
+    tags_json: JSON.stringify((input.tags ?? []).slice(0, 40)), price_cents: input.priceCents ?? null,
+    currency: (input.currency ?? process.env.ELOHIM_STORE_CURRENCY ?? 'USD').toUpperCase().slice(0, 3),
+    url: input.url, image_url: input.imageUrl ?? null, in_stock: input.inStock === false ? 0 : 1,
+    updated_at: nowIso(),
+  };
   if (existing) {
-    await run(
-      `UPDATE catalogue_products
-          SET sku = ?, name = ?, brand = ?, category = ?, description = ?, ingredients_json = ?,
-              tags_json = ?, price_cents = ?, currency = ?, url = ?, image_url = ?, in_stock = ?,
-              updated_at = ?
-        WHERE id = ?`,
-      ...values,
-      existing.id,
-    );
+    await result(database().from('catalogue_products').update(values).eq('id', existing.id));
     return existing.id;
   }
-
   const id = newId();
-  await run(
-    `INSERT INTO catalogue_products
-       (id, source, external_id, sku, name, brand, category, description, ingredients_json,
-        tags_json, price_cents, currency, url, image_url, in_stock, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id,
-    input.source,
-    input.externalId ?? null,
-    ...values,
-  );
+  await result(database().from('catalogue_products').insert({
+    id, source: input.source, external_id: input.externalId ?? null, ...values,
+  }));
   return id;
 }
 
 export async function listCatalogue(limit = 500): Promise<CatalogueProduct[]> {
-  return (await rows<CatalogueRow>(
-    'SELECT * FROM catalogue_products ORDER BY in_stock DESC, name LIMIT ?',
-    limit,
-  )).map(hydrate);
+  return (await allPages<CatalogueRow>((from, to) => database().from('catalogue_products').select('id,source,external_id,sku,name,brand,category,description,ingredients_json,tags_json,price_cents,currency,url,image_url,in_stock,updated_at').order('in_stock', { ascending: false }).order('name').order('id').range(from, to), limit)).map(hydrate);
 }
 
 export async function getCatalogueProduct(id: string): Promise<CatalogueProduct | null> {
-  const found = await row<CatalogueRow>('SELECT * FROM catalogue_products WHERE id = ?', id);
+  const found = await result<CatalogueRow | null>(database().from('catalogue_products').select('id,source,external_id,sku,name,brand,category,description,ingredients_json,tags_json,price_cents,currency,url,image_url,in_stock,updated_at').eq('id', id).maybeSingle());
   return found ? hydrate(found) : null;
 }
 
 /** Removes rows of one source that a sync did not see again. */
 async function pruneMissing(source: CatalogueSource, seen: Set<string>): Promise<number> {
-  const all = await rows<{ id: string; external_id: string | null }>(
-    'SELECT id, external_id FROM catalogue_products WHERE source = ?',
-    source,
-  );
+  const all = await allPages<{ id: string; external_id: string | null }>((from, to) => database().from('catalogue_products').select('id,external_id').eq('source', source).order('id').range(from, to));
   let removed = 0;
   for (const r of all) {
     if (r.external_id && !seen.has(r.external_id)) {
-      await run('DELETE FROM catalogue_products WHERE id = ?', r.id);
+      await result(database().from('catalogue_products').delete().eq('id', r.id));
       removed++;
     }
   }
@@ -171,14 +134,12 @@ async function pruneMissing(source: CatalogueSource, seen: Set<string>): Promise
 }
 
 export async function catalogueStatus(): Promise<CatalogueStatus> {
-  const count = await row<{ n: string | number }>('SELECT count(*) AS n FROM catalogue_products');
-  const last = await row<{ finished_at: string | null; source: string; imported: number; error: string | null }>(
-    'SELECT finished_at, source, imported, error FROM catalogue_syncs ORDER BY started_at DESC LIMIT 1',
-  );
+  const count = await affected(database().from('catalogue_products').select('id', { count: 'exact', head: true }));
+  const last = await result<{ finished_at: string | null; source: string; imported: number; error: string | null } | null>(database().from('catalogue_syncs').select('finished_at,source,imported,error').order('started_at', { ascending: false }).limit(1).maybeSingle());
   return {
     storeName: storeName(),
     storeUrl: storeUrl(),
-    products: Number(count?.n ?? 0),
+    products: count,
     lastSync: last?.finished_at ?? null,
     lastSource: (last?.source as CatalogueStatus['lastSource']) ?? null,
     lastError: last?.error ?? null,
@@ -362,13 +323,7 @@ export async function syncStore(): Promise<{ imported: number; removed: number; 
   const base = storeUrl();
   if (!base) throw new Error('ELOHIM_STORE_URL is not set.');
   const syncId = newId();
-  await run(
-    'INSERT INTO catalogue_syncs (id, source, store_url, started_at) VALUES (?, ?, ?, ?)',
-    syncId,
-    'unknown',
-    base,
-    nowIso(),
-  );
+  await result(database().from('catalogue_syncs').insert({ id: syncId, source: 'unknown', store_url: base, started_at: nowIso() }));
   try {
     const source = await detectStore(base);
     if (!source) {
@@ -383,23 +338,11 @@ export async function syncStore(): Promise<{ imported: number; removed: number; 
       if (item.externalId) seen.add(item.externalId);
     }
     const removed = await pruneMissing(source, seen);
-    await run(
-      'UPDATE catalogue_syncs SET source = ?, imported = ?, removed = ?, finished_at = ? WHERE id = ?',
-      source,
-      items.length,
-      removed,
-      nowIso(),
-      syncId,
-    );
+    await result(database().from('catalogue_syncs').update({ source, imported: items.length, removed, finished_at: nowIso() }).eq('id', syncId));
     log.info('catalogue', 'store synced', { source, imported: items.length, removed });
     return { imported: items.length, removed, source };
   } catch (err) {
-    await run(
-      'UPDATE catalogue_syncs SET error = ?, finished_at = ? WHERE id = ?',
-      (err as Error).message.slice(0, 500),
-      nowIso(),
-      syncId,
-    );
+    await result(database().from('catalogue_syncs').update({ error: (err as Error).message.slice(0, 500), finished_at: nowIso() }).eq('id', syncId));
     throw err;
   }
 }
@@ -409,12 +352,7 @@ export async function importCatalogue(items: unknown[]): Promise<{ imported: num
   let imported = 0;
   let skipped = 0;
   const syncId = newId();
-  await run(
-    'INSERT INTO catalogue_syncs (id, source, started_at) VALUES (?, ?, ?)',
-    syncId,
-    'import',
-    nowIso(),
-  );
+  await result(database().from('catalogue_syncs').insert({ id: syncId, source: 'import', started_at: nowIso() }));
   for (const raw of items.slice(0, 2000)) {
     const p = (raw ?? {}) as Record<string, unknown>;
     const name = typeof p.name === 'string' ? p.name.trim() : '';
@@ -451,11 +389,6 @@ export async function importCatalogue(items: unknown[]): Promise<{ imported: num
     });
     imported++;
   }
-  await run(
-    'UPDATE catalogue_syncs SET imported = ?, finished_at = ? WHERE id = ?',
-    imported,
-    nowIso(),
-    syncId,
-  );
+  await result(database().from('catalogue_syncs').update({ imported, finished_at: nowIso() }).eq('id', syncId));
   return { imported, skipped };
 }

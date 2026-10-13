@@ -8,7 +8,7 @@
  * These numbers are development fixtures and are labelled as such on every scan
  * (`notes`) and in the UI. Nothing here ever runs for a real account.
  */
-import { row } from '../db/index.ts';
+import { database, result } from '../lib/data-api.ts';
 import * as users from '../db/users.ts';
 import * as scansRepo from '../db/scans.ts';
 import * as productsRepo from '../db/products.ts';
@@ -34,10 +34,7 @@ const TRACK: Array<{ daysAgo: number; m: Record<string, number>; quality: number
 ];
 
 export async function seedDemoUser(): Promise<{ email: string; password: string } | null> {
-  const existing = await row<{ id: string }>(
-    'SELECT id FROM users WHERE email = ?',
-    DEMO_EMAIL,
-  );
+  const existing = await result<{ id: string } | null>(database().from('users').select('id').eq('email', DEMO_EMAIL).maybeSingle());
 
   if (existing) return { email: DEMO_EMAIL, password: DEMO_PASSWORD };
 

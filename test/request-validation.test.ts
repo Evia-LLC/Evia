@@ -3,7 +3,7 @@
  * server-owned.
  *
  * Real HTTP boundary (real requireAuth + real routers + real disposable DB
- * from `npm run test:local`) with only rate limiters and provider egress
+ * from `npm run test:data-api`) with only rate limiters and provider egress
  * stubbed — and every stub counts its calls. Each malformed class answers 400
  * with zero writes (per-user row counts unchanged); forged consent metadata
  * is attributed to the caller with spoofed values absent; valid payloads keep
@@ -16,10 +16,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { FixtureAccount } from "./helpers/two-accounts.ts";
 
-const configured = (process.env.NETLIFY_DATABASE_URL ?? "").length > 0;
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 if (!configured) {
   console.warn(
-    "[request-validation] NETLIFY_DATABASE_URL is not set — database tests did not run (use `npm run test:local`).",
+    "[request-validation] ELOHIM_DATA_API_LANE is not set — database tests did not run (use `npm run test:data-api`).",
   );
 }
 
@@ -55,7 +55,6 @@ vi.mock("../server/ai/claude.ts", async (importOriginal) => {
   return { ...actual, readProductLabel };
 });
 
-const { migrate } = await import("../server/db/index.ts");
 const { app } = await import("../server/app.ts");
 const users = await import("../server/db/users.ts");
 const scansRepo = await import("../server/db/scans.ts");
@@ -123,7 +122,6 @@ beforeAll(async () => {
     providerCalls.labels += 1;
     return { ingredients: ["aqua"] };
   });
-  await migrate();
   a = await createAccount("reqval-a");
   b = await createAccount("reqval-b");
   const listener = createServer(app);

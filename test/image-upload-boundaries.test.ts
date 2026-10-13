@@ -2,7 +2,7 @@
  * P1-T05 — HTTP regressions for image input boundaries.
  *
  * The real Express app (real body-limit routing, real requireAuth, real
- * routers, real disposable DB from `npm run test:local`) with only egress
+ * routers, real disposable DB from `npm run test:data-api`) with only egress
  * stubbed and counted: provider analyse, label reader, encrypted-blob store.
  * Every denial below asserts its spy stayed untouched — validation happens
  * BEFORE putBlob / provider calls — plus anonymous-401 and consent-403
@@ -19,11 +19,11 @@ import {
 import type { FixtureAccount } from "./helpers/two-accounts.ts";
 
 // Same convention as ownership-boundaries.test.ts: routes need a real
-// database, so this file only runs under `npm run test:local`.
-const configured = (process.env.NETLIFY_DATABASE_URL ?? "").length > 0;
+// database, so this file only runs under `npm run test:data-api`.
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 if (!configured) {
   console.warn(
-    "[image-upload-boundaries] NETLIFY_DATABASE_URL is not set — database tests did not run (use `npm run test:local`).",
+    "[image-upload-boundaries] ELOHIM_DATA_API_LANE is not set — database tests did not run (use `npm run test:data-api`).",
   );
 }
 
@@ -59,7 +59,6 @@ vi.mock("../server/ai/claude.ts", async (importOriginal) => {
   return { ...actual, readProductLabel };
 });
 
-const { migrate } = await import("../server/db/index.ts");
 const { recordConsentDecision } = await import("../server/db/consents.ts");
 const { app } = await import("../server/app.ts");
 const { createAccount, seedScan, sampleAnalysis, authHeaders } =
@@ -141,7 +140,6 @@ beforeAll(async () => {
     confidence: 0.9,
   });
 
-  await migrate();
   faceUser = await createAccount("p1t05-face");
   bareUser = await createAccount("p1t05-bare");
   photoUser = await createAccount("p1t05-photo");

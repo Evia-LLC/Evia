@@ -7,7 +7,7 @@
  * comes back out unchanged, an absent abdominal reading stays absent rather
  * than becoming a zero, and the previous scan is findable.
  *
- * Runs against whatever NETLIFY_DATABASE_URL names, inside a schema it creates
+ * Runs against whatever ELOHIM_DATA_API_LANE names, inside a schema it creates
  * and drops, so a test run can never touch real rows.
  *
  * Skipped — loudly — when nothing is configured. A database test that quietly
@@ -15,27 +15,24 @@
  * only thing standing between a schema change and a silently broken account,
  * so it has to be obvious when it checked nothing.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import type { BodyAnalysisRecord } from "../shared/types.ts";
 
 type Repo = typeof import("../server/db/body-scans.ts");
 type Users = typeof import("../server/db/users.ts");
 
-const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? "";
-// Under `npm run test:local` this is always true (the runner injects a disposable PGlite URL), so 0 skipped is the deterministic expectation; bare `vitest run` with no env skips the 8 tests below with a warn.
-const configured = BASE_URL.length > 0;
+// Under `npm run test:data-api` this is always true (the runner injects a disposable Supabase URL), so 0 skipped is the deterministic expectation; bare `vitest run` with no env skips the 8 tests below with a warn.
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 
 // Module level (not in beforeAll): when every suite below skips, vitest never
 // runs file-level hooks, so a warn inside beforeAll would stay silent.
 if (!configured) {
   console.warn(
-    "[body-store] NETLIFY_DATABASE_URL is not set — database tests did not run.",
+    "[body-store] ELOHIM_DATA_API_LANE is not set — database tests did not run.",
   );
 }
 
-/** Its own schema, named for this run. */
-const SCHEMA = `elohim_test_${process.pid}_${Date.now()}`;
 
 let repo: Repo;
 let userId: string;
@@ -72,40 +69,15 @@ function reading(over: Partial<BodyAnalysisRecord> = {}): BodyAnalysisRecord {
   };
 }
 
-/** A short-lived connection for the schema itself, outside the app's pool. */
-async function admin(sql: string) {
-  const { default: pg } = await import("pg");
-  const client = new pg.Client({ connectionString: BASE_URL });
-  await client.connect();
-  try {
-    await client.query(sql);
-  } finally {
-    await client.end();
-  }
-}
 
 beforeAll(async () => {
   if (!configured) {
     console.warn(
-      "[body-store] NETLIFY_DATABASE_URL is not set — database tests did not run.",
+      "[body-store] ELOHIM_DATA_API_LANE is not set — database tests did not run.",
     );
     return;
   }
 
-  await admin(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
-
-  /*
-   * Point the app's pool at that schema before anything imports it.
-   *
-   * `search_path` travels in the connection string rather than being issued as
-   * a statement, because a pool opens connections whenever it likes and a `SET`
-   * only applies to the one it was sent on — the second connection would find
-   * itself back in `public`, creating half the tables in the wrong place.
-   */
-  process.env.NETLIFY_DATABASE_URL = `${BASE_URL}${BASE_URL.includes("?") ? "&" : "?"}options=-csearch_path%3D${SCHEMA}`;
-
-  const { migrate } = await import("../server/db/index.ts");
-  await migrate();
   repo = await import("../server/db/body-scans.ts");
   const users: Users = await import("../server/db/users.ts");
   userId = await users.createUser(
@@ -115,11 +87,6 @@ beforeAll(async () => {
   );
 });
 
-afterAll(async () => {
-  if (!configured) return;
-  process.env.NETLIFY_DATABASE_URL = BASE_URL;
-  await admin(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
-});
 
 describe.skipIf(!configured)("a body reading survives the round trip", () => {
   it("comes back exactly as it went in", async () => {

@@ -7,7 +7,7 @@
  *   state drives the correct UI/session behavior in the client.
  * - HTTP durability tests (style of test/ownership-boundaries.test.ts): real
  *   Express routers plus the real disposable database from `npm run
- *   test:local`, with only rate limiters stubbed. Synthetic data only.
+ *   test:data-api`, with only rate limiters stubbed. Synthetic data only.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
@@ -22,13 +22,13 @@ import {
 } from '../shared/delete-result.ts';
 
 // Same convention as ownership-boundaries.test.ts: database-backed sections
-// only run under `npm run test:local` (which injects a disposable PGlite
+// only run under `npm run test:data-api` (which injects a disposable Supabase
 // URL). A bare `vitest run` runs the contract/source sections and skips the
 // HTTP section loudly instead of failing opaquely.
-const configured = (process.env.NETLIFY_DATABASE_URL ?? '').length > 0;
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 if (!configured) {
   console.warn(
-    '[deletion-states] NETLIFY_DATABASE_URL is not set — HTTP durability tests did not run (use `npm run test:local`).',
+    '[deletion-states] ELOHIM_DATA_API_LANE is not set — HTTP durability tests did not run (use `npm run test:data-api`).',
   );
 }
 
@@ -173,7 +173,6 @@ describe('deletion UI/session source contract', () => {
   });
 });
 
-const { migrate } = await import('../server/db/index.ts');
 const { apiRouter } = await import('../server/routes/api.ts');
 const {
   createAccount,
@@ -193,7 +192,6 @@ let survivorScanId = '';
 
 beforeAll(async () => {
   if (!configured) return;
-  await migrate();
   const survivor = await createAccount('deletion-survivor');
   survivorToken = survivor.token;
   survivorScanId = (await seedScan(survivor.userId)).id!;

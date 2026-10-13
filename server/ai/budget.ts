@@ -29,7 +29,7 @@
  * connections can both read "one allowance left" and both dispatch. Every
  * billable dispatch must instead follow reserve → commit → call → settle:
  *
- *   1. `reserve()` opens a SHORT transaction that admits or denies ONE
+ *   1. `reserve()` calls a SHORT database transaction that admits or denies ONE
  *      operation. The transaction never spans provider I/O — it commits
  *      before the provider is called, so a slow or hung provider cannot hold
  *      a database transaction (and its locks) open.
@@ -92,7 +92,11 @@
  * for. Per-provider unit caps, if ever wanted, belong to P1-T08's
  * dispatch inventory, not to this mechanism.
  */
-import { row, rows, run, transaction, type Param } from "../db/index.ts";
+import {
+  reserveBudget, transitionBudget, readBudgetUsage, readBudgetAllowance,
+  getBudgetReservation, pendingBudgetReservations, type ReservationRow,
+} from '../db/budget.ts';
+import { DataApiError } from '../lib/data-api.ts';
 import { log } from "../lib/log.ts";
 
 function limit(name: string, fallback: number): number {
@@ -122,10 +126,13 @@ function checkDay(day: string): string {
   return day;
 }
 
-const nowIso = (): string => new Date().toISOString();
-
-/** Units whose estimates draw on the global token cap. All units consume turn capacity. */
-const TOKEN_UNITS: ReadonlySet<string> = new Set(["chat-tokens"]);
+function caps() {
+  return {
+    p_user_cap: limit('ELOHIM_USER_DAILY_TURNS', 80),
+    p_turn_cap: limit('ELOHIM_DAILY_TURNS', 2000),
+    p_token_cap: limit('ELOHIM_DAILY_TOKENS', 4_000_000),
+  };
+}
 
 export type ReservationStatus = "pending" | "settled" | "refunded" | "failed";
 
@@ -244,20 +251,6 @@ function checkActualValue(name: string, value: number | undefined): number {
   return amount;
 }
 
-interface ReservationRow {
-  operation_id: string;
-  user_id: string;
-  day: string;
-  provider: string;
-  unit: string;
-  estimated_units: string | number;
-  status: ReservationStatus;
-  actual_units: string | number | null;
-  fail_reason: string | null;
-  created_at: string;
-  settled_at: string | null;
-}
-
 function toReservation(found: ReservationRow): Reservation {
   return {
     operationId: found.operation_id,
@@ -275,367 +268,24 @@ function toReservation(found: ReservationRow): Reservation {
   };
 }
 
-/**
- * The transaction-scoped query surface from server/db/index.ts.
- *
- * Exported so the contention test can run the SAME admission logic over N
- * raw, independent pg.Client connections (each wrapped in this shape with
- * its own BEGIN/COMMIT) instead of sharing the pool — that is the only way
- * to prove one-remaining-allowance admits exactly one contender.
- */
-export interface BudgetTx {
-  rows<R>(sql: string, ...params: Param[]): Promise<R[]>;
-  row<R>(sql: string, ...params: Param[]): Promise<R | undefined>;
-  run(sql: string, ...params: Param[]): Promise<number>;
-}
-
-/** Advisory-lock key namespace for the per-day global serializer. */
-function dayLockKey(day: string): string {
-  return `budget-reservation:${day}`;
-}
-
-interface DayUsage {
-  userLedgerTurns: number;
-  userPendingTurns: number;
-  globalLedgerTurns: number;
-  globalPendingTurns: number;
-  globalLedgerTokens: number;
-  globalPendingTokenEstimates: number;
-}
-
-/**
- * Sums settled (usage_ledger) and pending (budget_reservations) usage for a
- * day. Call inside the reserve transaction AFTER taking the locks; the
- * read-only `allowance()` below uses the same sums without locks and is
- * therefore advisory — `reserve()` is the authoritative gate.
- */
-async function dayUsage(
-  tx: BudgetTx,
-  day: string,
-  userId: string,
-): Promise<DayUsage> {
-  const ledger = await tx.row<{
-    turns: string | number;
-    tokens: string | number;
-  }>(
-    `SELECT coalesce(sum(turns), 0) AS turns,
-            coalesce(sum(input_tokens + output_tokens), 0) AS tokens
-       FROM usage_ledger WHERE day = ?`,
-    day,
-  );
-  const mine = await tx.row<{ turns: string | number }>(
-    "SELECT turns FROM usage_ledger WHERE day = ? AND user_id = ?",
-    day,
-    userId,
-  );
-  const pendingAll = await tx.row<{
-    n: string | number;
-    token_est: string | number;
-  }>(
-    `SELECT count(*) AS n,
-            coalesce(sum(CASE WHEN unit = 'chat-tokens' THEN estimated_units ELSE 0 END), 0) AS token_est
-       FROM budget_reservations WHERE day = ? AND status = 'pending'`,
-    day,
-  );
-  const pendingMine = await tx.row<{ n: string | number }>(
-    `SELECT count(*) AS n FROM budget_reservations
-      WHERE day = ? AND user_id = ? AND status = 'pending'`,
-    day,
-    userId,
-  );
-  return {
-    userLedgerTurns: Number(mine?.turns ?? 0),
-    userPendingTurns: Number(pendingMine?.n ?? 0),
-    globalLedgerTurns: Number(ledger?.turns ?? 0),
-    globalPendingTurns: Number(pendingAll?.n ?? 0),
-    globalLedgerTokens: Number(ledger?.tokens ?? 0),
-    globalPendingTokenEstimates: Number(pendingAll?.token_est ?? 0),
-  };
-}
-
-function admissionVerdict(
-  usage: DayUsage,
-  estimatedUnits: number,
-  unit: string,
-): BudgetVerdict {
-  if (
-    usage.userLedgerTurns + usage.userPendingTurns >=
-    limit("ELOHIM_USER_DAILY_TURNS", 80)
-  ) {
-    return { ok: false, reason: "user_turns" };
-  }
-  if (
-    usage.globalLedgerTurns + usage.globalPendingTurns >=
-    limit("ELOHIM_DAILY_TURNS", 2000)
-  ) {
-    return { ok: false, reason: "global_turns" };
-  }
-  const tokenDemand =
-    usage.globalLedgerTokens +
-    usage.globalPendingTokenEstimates +
-    (TOKEN_UNITS.has(unit) ? estimatedUnits : 0);
-  if (tokenDemand > limit("ELOHIM_DAILY_TOKENS", 4_000_000)) {
-    return { ok: false, reason: "global_tokens" };
-  }
-  return { ok: true, reason: "" };
-}
-
-/**
- * The admission core: runs INSIDE a caller-owned short transaction.
- *
- * Lock order — user row FIRST, global serializer SECOND, everywhere:
- * the user's usage_ledger row is ensured and locked, then the per-day
- * advisory lock serializes the re-check + insert against every other
- * contender for that day. No provider I/O may happen between this call
- * and the caller's COMMIT; `reserve()` (pool) and the contention test
- * (raw clients) both commit immediately.
- *
- * A denial inserts nothing, so retrying the same operation ID after the
- * cap frees (or after midnight, on another day) works. A repeated reserve
- * of an EXISTING operation ID returns that reservation unchanged.
- */
-export async function reserveInTransaction(
-  tx: BudgetTx,
-  input: ReservationInput,
-): Promise<ReserveResult> {
-  const { operationId, userId, provider, unit, estimatedUnits, day } =
-    checkReservationInput(input);
-
-  // Idempotent replay: the operation ID is the primary key. If this call is
-  // a retry after a commit the caller never saw, hand back the original row
-  // without counting anything twice.
-  const existing = await tx.row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ?",
-    operationId,
-  );
-  if (existing) {
-    if (
-      existing.user_id !== userId ||
-      existing.day !== day ||
-      existing.provider !== provider ||
-      existing.unit !== unit ||
-      Number(existing.estimated_units) !== estimatedUnits
-    ) {
-      throw new BudgetOperationConflict();
-    }
-    return { ok: true, reservation: toReservation(existing), duplicate: true };
-  }
-
-  // 1. USER FIRST: the ledger row exists before it is locked, so the very
-  //    first reservation for a (day, user) still serializes contenders.
-  await tx.run(
-    `INSERT INTO usage_ledger (day, user_id, turns, input_tokens, output_tokens, updated_at)
-     VALUES (?, ?, 0, 0, 0, ?)
-     ON CONFLICT (day, user_id) DO NOTHING`,
-    day,
-    userId,
-    nowIso(),
-  );
-  await tx.row<{ turns: number }>(
-    "SELECT turns FROM usage_ledger WHERE day = ? AND user_id = ? FOR UPDATE",
-    day,
-    userId,
-  );
-
-  // 2. GLOBAL SECOND: one serializer per day. Transaction-scoped, so it can
-  //    never outlive this short transaction, however the caller dies.
-  await tx.run("SELECT pg_advisory_xact_lock(hashtext(?))", dayLockKey(day));
-
-  // A concurrent retry may have committed while this transaction waited on
-  // the user row. Re-check under both locks so it is an idempotent duplicate,
-  // rather than an unrelated cap denial.
-  const afterLocks = await tx.row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ?",
-    operationId,
-  );
-  if (afterLocks) {
-    if (
-      afterLocks.user_id !== userId ||
-      afterLocks.day !== day ||
-      afterLocks.provider !== provider ||
-      afterLocks.unit !== unit ||
-      Number(afterLocks.estimated_units) !== estimatedUnits
-    ) {
-      throw new BudgetOperationConflict();
-    }
-    return { ok: true, reservation: toReservation(afterLocks), duplicate: true };
-  }
-
-  // Re-check under both locks: settled + pending. Anything admitted between
-  // the caller's first glance and now is visible here.
-  const verdict = admissionVerdict(
-    await dayUsage(tx, day, userId),
-    estimatedUnits,
-    unit,
-  );
-  if (!verdict.ok) {
-    // admissionVerdict only reports ok:false with a named reason; the empty
-    // reason belongs to ok:true. Fail closed if that ever drifts.
-    return {
-      ok: false,
-      reason: verdict.reason === "" ? "global_tokens" : verdict.reason,
-    };
-  }
-
-  const createdAt = nowIso();
-  await tx.run(
-    `INSERT INTO budget_reservations
-       (operation_id, user_id, day, provider, unit, estimated_units, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
-     ON CONFLICT (operation_id) DO NOTHING`,
-    operationId,
-    userId,
-    day,
-    provider,
-    unit,
-    estimatedUnits,
-    createdAt,
-  );
-  // A contender that won the advisory race first owns this ID now; treat it
-  // as a replay rather than a second admission.
-  const stored = await tx.row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ?",
-    operationId,
-  );
-  if (
-    !stored ||
-    stored.user_id !== userId ||
-    stored.day !== day ||
-    stored.provider !== provider ||
-    stored.unit !== unit ||
-    Number(stored.estimated_units) !== estimatedUnits
-  ) {
-    // Same ID, different metadata: never merge two operations into one row.
-    throw new BudgetOperationConflict();
-  }
-  return {
-    ok: true,
-    reservation: toReservation(stored),
-    duplicate: stored.created_at !== createdAt,
-  };
-}
-
-/**
- * Admits one billable operation, or denies it. SHORT transaction: it
- * commits before the provider is ever called. On denial nothing is stored.
- */
+/** One RPC commits the reservation before any provider is dispatched. */
 export async function reserve(input: ReservationInput): Promise<ReserveResult> {
   try {
-    return await transaction((tx) => reserveInTransaction(tx, input));
+    const clean = checkReservationInput(input);
+    const stored = await reserveBudget(clean, caps());
+    return stored.ok ? { ...stored, reservation: toReservation(stored.reservation) } : stored;
   } catch (err) {
+    if (err instanceof DataApiError && err.code === 'EV001') throw new BudgetOperationConflict();
     if (err instanceof BudgetOperationConflict) throw err;
-    // An unreadable ledger must not become an open tab. Deny.
-    log.error("budget", "reservation failed; denying the provider call", {
-      error: (err as Error).message,
-    });
-    return { ok: false, reason: "global_tokens" };
+    log.error('budget', 'reservation failed; denying the provider call', { error: (err as Error).message });
+    return { ok: false, reason: 'global_tokens' };
   }
 }
 
-/**
- * Moves a pending reservation to a terminal state exactly once.
- *
- * Lock order matches reserve: user ledger row first, reservation row
- * second. The terminal UPDATE is conditional on `status = 'pending'`, so a
- * duplicate (retry, double callback, crash replay) finds a terminal row and
- * changes nothing. Returns whether this call performed the transition.
- */
-async function transitionReservation(
-  tx: BudgetTx,
-  operationId: string,
-  status: Exclude<ReservationStatus, "pending">,
-  actualUnits: number | null,
-  failReason: string | null,
-  ledgerBump: {
-    turns: number;
-    inputTokens: number;
-    outputTokens: number;
-  } | null,
-): Promise<SettleResult> {
-  const current = await tx.row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ?",
-    operationId,
-  );
-  if (!current) {
-    return { ok: false, reason: "unknown_operation" };
-  }
-  if (current.status !== "pending") {
-    return { ok: true, reservation: toReservation(current), duplicate: true };
-  }
-
-  // USER FIRST, then the reservation row — the same relative order as
-  // reserve, so a settle racing a reserve on one user cannot deadlock it.
-  await tx.run(
-    `INSERT INTO usage_ledger (day, user_id, turns, input_tokens, output_tokens, updated_at)
-     VALUES (?, ?, 0, 0, 0, ?)
-     ON CONFLICT (day, user_id) DO NOTHING`,
-    current.day,
-    current.user_id,
-    nowIso(),
-  );
-  await tx.row<{ turns: number }>(
-    "SELECT turns FROM usage_ledger WHERE day = ? AND user_id = ? FOR UPDATE",
-    current.day,
-    current.user_id,
-  );
-  // Settlement changes the same counters admission reads. Take the same
-  // per-day serializer after the user row so a reserve cannot observe a
-  // mixture of pre- and post-settlement totals.
-  await tx.run("SELECT pg_advisory_xact_lock(hashtext(?))", dayLockKey(current.day));
-  const locked = await tx.row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ? FOR UPDATE",
-    operationId,
-  );
-  if (!locked || locked.status !== "pending") {
-    const reloaded =
-      locked ??
-      (await tx.row<ReservationRow>(
-        "SELECT * FROM budget_reservations WHERE operation_id = ?",
-        operationId,
-      ))!;
-    return { ok: true, reservation: toReservation(reloaded), duplicate: true };
-  }
-
-  const settledAt = nowIso();
-  const moved = await tx.run(
-    `UPDATE budget_reservations
-        SET status = ?, actual_units = ?, fail_reason = ?, settled_at = ?
-      WHERE operation_id = ? AND status = 'pending'`,
-    status,
-    actualUnits,
-    failReason,
-    settledAt,
-    operationId,
-  );
-  if (moved === 0) {
-    // Lost a race with a concurrent transition: re-read, count nothing.
-    const reloaded = (await tx.row<ReservationRow>(
-      "SELECT * FROM budget_reservations WHERE operation_id = ?",
-      operationId,
-    ))!;
-    return { ok: true, reservation: toReservation(reloaded), duplicate: true };
-  }
-  if (ledgerBump) {
-    await tx.run(
-      `UPDATE usage_ledger
-          SET turns = turns + ?,
-              input_tokens = input_tokens + ?,
-              output_tokens = output_tokens + ?,
-              updated_at = ?
-        WHERE day = ? AND user_id = ?`,
-      ledgerBump.turns,
-      ledgerBump.inputTokens,
-      ledgerBump.outputTokens,
-      settledAt,
-      current.day,
-      current.user_id,
-    );
-  }
-  const done = (await tx.row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ?",
-    operationId,
-  ))!;
-  return { ok: true, reservation: toReservation(done), duplicate: false };
+async function terminal(operationId: string, status: 'settled' | 'refunded' | 'failed',
+  actualUnits: number | null, failReason: string | null, inputTokens = 0, outputTokens = 0): Promise<SettleResult> {
+  const stored = await transitionBudget(operationId, status, actualUnits, failReason, inputTokens, outputTokens);
+  return stored.ok ? { ...stored, reservation: toReservation(stored.reservation) } : stored;
 }
 
 export interface SettleActuals {
@@ -669,13 +319,7 @@ export async function settleReservation(
     actual.units ?? inputTokens + outputTokens,
   );
   try {
-    return await transaction((tx) =>
-      transitionReservation(tx, operationId, "settled", units, null, {
-        turns: 1,
-        inputTokens,
-        outputTokens,
-      }),
-    );
+    return await terminal(operationId, 'settled', units, null, inputTokens, outputTokens);
   } catch (err) {
     log.error("budget", "could not settle reservation", {
       error: (err as Error).message,
@@ -692,9 +336,7 @@ export async function settleReservation(
 export async function refundReservation(
   operationId: string,
 ): Promise<SettleResult> {
-  return transaction((tx) =>
-    transitionReservation(tx, operationId, "refunded", null, null, null),
-  );
+  return terminal(operationId, 'refunded', null, null);
 }
 
 /**
@@ -712,9 +354,7 @@ export async function failReservation(
       "fail reason must be a non-empty string of at most 256 characters.",
     );
   }
-  return transaction((tx) =>
-    transitionReservation(tx, operationId, "failed", 0, reason, null),
-  );
+  return terminal(operationId, 'failed', 0, reason);
 }
 
 /**
@@ -763,10 +403,7 @@ export async function withReservation<T>(
 export async function getReservation(
   operationId: string,
 ): Promise<Reservation | undefined> {
-  const found = await row<ReservationRow>(
-    "SELECT * FROM budget_reservations WHERE operation_id = ?",
-    operationId,
-  );
+  const found = await getBudgetReservation(operationId);
   return found ? toReservation(found) : undefined;
 }
 
@@ -774,15 +411,7 @@ export async function getReservation(
 export async function listPendingReservations(
   day?: string,
 ): Promise<Reservation[]> {
-  const found =
-    day === undefined
-      ? await rows<ReservationRow>(
-          "SELECT * FROM budget_reservations WHERE status = 'pending' ORDER BY created_at",
-        )
-      : await rows<ReservationRow>(
-          "SELECT * FROM budget_reservations WHERE status = 'pending' AND day = ? ORDER BY created_at",
-          checkDay(day),
-        );
+  const found = await pendingBudgetReservations(day === undefined ? undefined : checkDay(day));
   return found.map(toReservation);
 }
 
@@ -793,60 +422,13 @@ export async function allowance(
 ): Promise<BudgetVerdict> {
   const dayKey = checkDay(day ?? today());
   try {
-    const tx: BudgetTx = {
-      rows: (sql, ...params) => rows(sql, ...params),
-      row: (sql, ...params) => row(sql, ...params),
-      run: (sql, ...params) => run(sql, ...params),
-    };
-    // Same sums as the reserve path, including pending: a call that has
-    // dispatched but not settled still holds its estimate. Advisory only —
-    // without the reserve transaction's locks two contenders can both read
-    // "one left"; reserve() is the authoritative gate (P1-T08 wires it in).
-    return admissionVerdict(
-      await dayUsage(tx, dayKey, userId),
-      0,
-      "chat-tokens",
-    );
+    return await readBudgetAllowance(dayKey, userId, caps());
   } catch (err) {
     // A ledger that cannot be read must not become an open tab. Deny.
     log.error("budget", "ledger unreadable; denying the model call", {
       error: (err as Error).message,
     });
     return { ok: false, reason: "global_tokens" };
-  }
-}
-
-/** Records what a call actually cost, from the usage the API reported. */
-export async function record(
-  userId: string,
-  usage: {
-    input: number;
-    output: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-  },
-  day?: string,
-): Promise<void> {
-  const input = usage.input + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-  try {
-    await run(
-      `INSERT INTO usage_ledger (day, user_id, turns, input_tokens, output_tokens, updated_at)
-       VALUES (?, ?, 1, ?, ?, ?)
-       ON CONFLICT (day, user_id) DO UPDATE SET
-         turns = usage_ledger.turns + 1,
-         input_tokens = usage_ledger.input_tokens + EXCLUDED.input_tokens,
-         output_tokens = usage_ledger.output_tokens + EXCLUDED.output_tokens,
-         updated_at = EXCLUDED.updated_at`,
-      checkDay(day ?? today()),
-      userId,
-      input,
-      usage.output,
-      nowIso(),
-    );
-  } catch (err) {
-    log.error("budget", "could not record usage", {
-      error: (err as Error).message,
-    });
   }
 }
 
@@ -858,12 +440,7 @@ export async function todaySummary(day?: string): Promise<{
 }> {
   const dayKey = checkDay(day ?? today());
   try {
-    const tx: BudgetTx = {
-      rows: (sql, ...params) => rows(sql, ...params),
-      row: (sql, ...params) => row(sql, ...params),
-      run: (sql, ...params) => run(sql, ...params),
-    };
-    const usage = await dayUsage(tx, dayKey, "");
+    const usage = await readBudgetUsage(dayKey, '');
     return {
       turns: usage.globalLedgerTurns + usage.globalPendingTurns,
       tokens: usage.globalLedgerTokens + usage.globalPendingTokenEstimates,

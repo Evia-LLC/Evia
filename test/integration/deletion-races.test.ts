@@ -1,72 +1,37 @@
-/** P1-T09 — account/asset deletion serialization and rollback invariants. */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { migrate, row, run } from '../../server/db/index.ts';
+/** Real RPC rollback and deletion/capture contention. */
+import { describe, expect, it } from 'vitest';
 import { deleteAccount } from '../../server/privacy/delete-account.ts';
 import { insertScan } from '../../server/db/scans.ts';
+import { createAccount, sampleAnalysis } from '../helpers/two-accounts.ts';
+import { adminSql, database, result } from '../helpers/data-api.ts';
+import { encodeBytea } from '../../server/lib/data-api.ts';
 
-const lane = process.env.ELOHIM_PG_LANE === '1';
-const tag = `p1t09-${process.pid}`;
-const userA = `${tag}-a`;
-const userB = `${tag}-b`;
-const userC = `${tag}-c`;
-const sample = {
-  capturedAt: new Date().toISOString(),
-  metrics: { hydration: 1, evenness: 1, oiliness: 1, redness: 1, texture: 1, pores: 1, darkSpots: 1, underEye: 1, acneIndicators: 1 },
-  regions: {}, quality: {}, confidence: 1, modelVersion: 'fixture', observations: [],
-};
-
-beforeAll(async () => {
-  if (!lane) return;
-  await migrate();
-  await run('INSERT INTO users (id, email, display_name, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?, ?, ?)', userA, `${userA}@test.local`, 'A', 'hash', 'salt', new Date().toISOString());
-  await run('INSERT INTO users (id, email, display_name, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?, ?, ?)', userB, `${userB}@test.local`, 'B', 'hash', 'salt', new Date().toISOString());
-  await run('INSERT INTO users (id, email, display_name, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?, ?, ?)', userC, `${userC}@test.local`, 'C', 'hash', 'salt', new Date().toISOString());
-  await run('INSERT INTO blobs (ref, data, bytes, created_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)', 'legacy-a', Buffer.from('a'), 1, new Date().toISOString(), 'b-photo', Buffer.from('b'), 1, new Date().toISOString());
-  await run(`INSERT INTO skin_scans (id, user_id, captured_at, image_ref, thumb_ref, metrics_json, model_version)
-    VALUES (?, ?, ?, ?, ?, '{}', 'fixture'), (?, ?, ?, ?, ?, '{}', 'fixture')`,
-    `${tag}-scan-a`, userA, new Date().toISOString(), 'legacy-a', null,
-    `${tag}-scan-b`, userB, new Date().toISOString(), 'b-photo', null);
-}, 60_000);
-
-afterAll(async () => {
-  if (!lane) return;
-  await run(`DROP TRIGGER IF EXISTS ${tag.replaceAll('-', '_')}_fail_delete ON users`);
-  await run(`DROP FUNCTION IF EXISTS ${tag.replaceAll('-', '_')}_fail_delete()`);
-  await run('DELETE FROM users WHERE id LIKE ?', `${tag}%`);
-  await run('DELETE FROM blobs WHERE ref IN (?, ?)', 'legacy-a', 'b-photo');
-});
-
-describe.skipIf(!lane)('atomic account deletion', () => {
-  it('rolls back the complete delete when a relational delete fails', async () => {
-    const fn = `${tag.replaceAll('-', '_')}_fail_delete`;
-    await run(`CREATE OR REPLACE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture delete failure'; END; $$`);
-    await run(`CREATE TRIGGER ${fn} BEFORE DELETE ON users FOR EACH ROW EXECUTE FUNCTION ${fn}()`);
-    await expect(deleteAccount(userA)).rejects.toThrow('fixture delete failure');
-    expect(await row('SELECT id FROM users WHERE id = ?', userA)).toBeTruthy();
-    expect(await row('SELECT ref FROM blobs WHERE ref = ?', 'legacy-a')).toBeTruthy();
-    await run(`DROP TRIGGER ${fn} ON users`);
+describe('atomic account deletion', () => {
+  it('rolls back blobs and owned products when a later relational delete fails', async () => {
+    const { userId } = await createAccount('rollback-delete');
+    await result(database().from('blobs').insert({ ref: 'rollback-blob', data: encodeBytea(Buffer.from([0, 255])), bytes: 2, created_at: '2026-01-01' }));
+    await result(database().from('skin_scans').insert({ id: 'rollback-scan', user_id: userId, captured_at: '2026-01-01', image_ref: 'rollback-blob', metrics_json: '{}', model_version: 'fixture' }));
+    await result(database().from('products').insert({ id: 'rollback-product', owner_id: userId, name: 'Owned', created_at: '2026-01-01' }));
+    adminSql(`CREATE FUNCTION evia_private.reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'fixture delete failure'; END; $$;
+      CREATE TRIGGER reject_delete BEFORE DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION evia_private.reject_delete();`);
+    try {
+      await expect(deleteAccount(userId)).rejects.toThrow('fixture delete failure');
+      expect(await result(database().from('users').select('id').eq('id', userId).maybeSingle())).toBeTruthy();
+      expect(await result(database().from('blobs').select('ref').eq('ref', 'rollback-blob').maybeSingle())).toBeTruthy();
+      expect(await result(database().from('products').select('id').eq('id', 'rollback-product').maybeSingle())).toBeTruthy();
+    } finally { adminSql('DROP TRIGGER reject_delete ON public.users; DROP FUNCTION evia_private.reject_delete();'); }
+    expect(await deleteAccount(userId)).toEqual({ ok: true, blobsShredded: 1, blobsFailed: 0 });
+    expect(await deleteAccount(userId)).toEqual({ ok: true, blobsShredded: 0, blobsFailed: 0 });
   });
-
-  it('deletes legacy refs atomically, is idempotent, and isolates account B', async () => {
-    const result = await deleteAccount(userA);
-    expect(result.ok).toBe(true);
-    expect(await row('SELECT id FROM users WHERE id = ?', userA)).toBeUndefined();
-    expect(await row('SELECT ref FROM blobs WHERE ref = ?', 'legacy-a')).toBeUndefined();
-    expect(await row('SELECT id FROM users WHERE id = ?', userB)).toBeTruthy();
-    expect(await row('SELECT ref FROM blobs WHERE ref = ?', 'b-photo')).toBeTruthy();
-    expect(await deleteAccount(userA)).toEqual({ ok: true, blobsShredded: 0, blobsFailed: 0 });
-  });
-
-  it('serializes capture creation with deletion so no row is stranded', async () => {
-    const [created, deleted] = await Promise.allSettled([
-      insertScan(userC, sample),
-      deleteAccount(userC),
-    ]);
+  it('serializes capture with account deletion and isolates a second account', async () => {
+    const a = await createAccount('delete-race-a');
+    const b = await createAccount('delete-race-b');
+    const [created, deleted] = await Promise.allSettled([insertScan(a.userId, sampleAnalysis()), deleteAccount(a.userId)]);
     expect(deleted.status).toBe('fulfilled');
-    expect(await row('SELECT id FROM users WHERE id = ?', userC)).toBeUndefined();
-    expect(await row('SELECT id FROM skin_scans WHERE user_id = ?', userC)).toBeUndefined();
-    // Either the capture acquired the fence first and was included in the
-    // delete, or deletion won and the capture was rejected. Both are safe.
-    expect(created.status === 'fulfilled' || created.status === 'rejected').toBe(true);
+    expect(await result(database().from('users').select('id').eq('id', a.userId))).toEqual([]);
+    expect(await result(database().from('skin_scans').select('id').eq('user_id', a.userId))).toEqual([]);
+    expect(await result(database().from('users').select('id').eq('id', b.userId).maybeSingle())).toBeTruthy();
+    if (created.status === 'rejected') expect(created.reason.message).toMatch(/Account no longer exists/);
   });
 });

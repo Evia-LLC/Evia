@@ -15,7 +15,8 @@ import { dayString, todaySummary } from '../ai/budget.ts';
 import { MODEL, modelAvailable } from '../ai/claude.ts';
 import { analysisProvider, perfectCorpAvailable, sampleDemoEnabled } from '../ai/perfectcorp.ts';
 import { blobStorageAvailable } from '../lib/crypto.ts';
-import { connectionString, resolvePoolMax, row, rows } from '../db/index.ts';
+import { verifyDataApi, DATA_API_CONTRACT } from '../lib/data-api.ts';
+import { dataApiConfigured } from '../lib/supabase.ts';
 import { clonedVoiceAvailable, guestVoiceAllowed } from '../voice/tts.ts';
 import { log } from '../lib/log.ts';
 
@@ -51,35 +52,18 @@ adminRouter.use(requireAdmin);
  */
 adminRouter.get('/diagnostics', async (_req, res) => {
   const summary = await todaySummary();
-  const configured = connectionString() !== '';
+  const configured = dataApiConfigured();
   let reachable = false;
-  try {
-    await row('SELECT 1 AS ok');
-    reachable = true;
-  } catch {
-    reachable = false;
-  }
-  let migrationsApplied: number | null = null;
-  try {
-    migrationsApplied = (await rows<{ name: string }>('SELECT name FROM _migrations')).length;
-  } catch {
-    migrationsApplied = null;
-  }
-  let poolMax: number | null = null;
-  try {
-    poolMax = resolvePoolMax();
-  } catch {
-    poolMax = null;
-  }
+  try { await verifyDataApi(); reachable = true; } catch { reachable = false; }
   res.json({
-    ok: true,
+    ok: reachable,
     day: dayString(),
     budget: {
       turns: summary.turns,
       tokens: summary.tokens,
       limits: summary.limits,
     },
-    database: { configured, reachable, poolMax, migrationsApplied },
+    database: { configured, reachable, transport: 'postgrest', schemaCompatible: reachable, expectedContract: DATA_API_CONTRACT },
     providers: {
       model: { available: modelAvailable(), name: modelAvailable() ? MODEL : null },
       voice: { configured: clonedVoiceAvailable(), guestsAllowed: guestVoiceAllowed() },
@@ -90,7 +74,7 @@ adminRouter.get('/diagnostics', async (_req, res) => {
         sampleDemo: sampleDemoEnabled(),
       },
     },
-    boot: { ready: true, migrationsApplied },
+    boot: { ready: true },
   });
 });
 

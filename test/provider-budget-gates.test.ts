@@ -1,11 +1,11 @@
 /** P1-T08: no paid provider request may run after budget admission fails. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { admit, anthropicCreate, dbRow, dbRun, vendorFetch } = vi.hoisted(() => ({
+const { admit, anthropicCreate, readCache, writeCache, vendorFetch } = vi.hoisted(() => ({
   admit: vi.fn(),
   anthropicCreate: vi.fn(),
-  dbRow: vi.fn(),
-  dbRun: vi.fn(),
+  readCache: vi.fn(),
+  writeCache: vi.fn(),
   vendorFetch: vi.fn(),
 }));
 
@@ -27,7 +27,10 @@ vi.mock('@anthropic-ai/sdk', () => ({
   AuthenticationError: class AuthenticationError extends Error {},
 }));
 
-vi.mock('../server/db/index.ts', () => ({ row: dbRow, run: dbRun }));
+vi.mock('../server/db/voice-cache.ts', () => ({
+  readVoiceLine: readCache, storeVoiceLine: writeCache, touchVoiceLine: writeCache,
+  deleteVoiceLine: writeCache, pruneVoiceLines: writeCache,
+}));
 
 const { structuredTurn, classifyTurn, readProductLabel } = await import('../server/ai/claude.ts');
 const { analyseWithPerfectCorp } = await import('../server/ai/perfectcorp.ts');
@@ -40,8 +43,8 @@ beforeEach(() => {
   vi.stubEnv('ELOHIM_VOICE_API_KEY', 'test-key');
   vi.stubEnv('ELOHIM_VOICE_ID', 'voice-id');
   admit.mockRejectedValue(new Error('over budget: global_turns'));
-  dbRow.mockResolvedValue(undefined);
-  dbRun.mockResolvedValue(undefined);
+  readCache.mockResolvedValue(undefined);
+  writeCache.mockResolvedValue(undefined);
 });
 
 describe('Anthropic dispatch gates', () => {
@@ -71,7 +74,7 @@ describe('vision and voice dispatch gates', () => {
   });
 
   it('serves a cached voice line without a reservation or provider request', async () => {
-    dbRow.mockResolvedValue({
+    readCache.mockResolvedValue({
       audio: Buffer.from('audio'), content_type: 'audio/mpeg', words_json: '[]', duration: 1,
       created_at: new Date().toISOString(),
     });

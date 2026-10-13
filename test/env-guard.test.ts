@@ -281,7 +281,7 @@ describe("wiring: server/lib/env.ts load invokes the guard", () => {
     else process.env["DEMO_MODE"] = savedDemo;
   });
 
-  it("mismatched lane refuses at env-load, before migrations/sessions", async () => {
+  it("mismatched lane refuses at env-load, before data initialization", async () => {
     vi.stubEnv("APP_ENV", "staging");
     vi.stubEnv("SUPABASE_URL", PROD_URL);
     vi.resetModules();
@@ -300,7 +300,7 @@ describe("wiring: server/lib/env.ts load invokes the guard", () => {
     expect(error?.message).toContain(PROD_REF);
   });
 
-  it("the app boot path (server/index.ts + both adapters) refuses before migrate()", async () => {
+  it("the app boot path (server/index.ts + both adapters) refuses before data initialization", async () => {
     vi.stubEnv("APP_ENV", "production");
     vi.stubEnv("SUPABASE_URL", STAGING_URL);
     vi.resetModules();
@@ -309,7 +309,7 @@ describe("wiring: server/lib/env.ts load invokes the guard", () => {
       (caught: unknown) => caught as Error,
     );
     // server/app.ts imports server/lib/env.ts first: the refusal fires during
-    // that import, so migrate()/sessions are never reached on any boot path.
+    // that import, so data initialization are never reached on any boot path.
     expect(error).not.toBeNull();
     expect(error?.name).toBe("EnvGuardError");
     expect(error?.message).toContain("production");

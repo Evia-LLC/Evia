@@ -19,33 +19,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 
-const BASE_URL = process.env.NETLIFY_DATABASE_URL ?? "";
-// Under `npm run test:local` this is always true (the runner injects a disposable PGlite URL), so 0 skipped is the deterministic expectation; bare `vitest run` with no env skips the tests below with a warn.
-const configured = BASE_URL.length > 0;
+// Under `npm run test:data-api` this is always true (the runner injects a disposable Supabase URL), so 0 skipped is the deterministic expectation; bare `vitest run` with no env skips the tests below with a warn.
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 
 if (!configured) {
   console.warn(
-    "[product-ownership] NETLIFY_DATABASE_URL is not set — database tests did not run (use `npm run test:local`).",
+    "[product-ownership] ELOHIM_DATA_API_LANE is not set — database tests did not run (use `npm run test:data-api`).",
   );
 }
 
-/** Its own schema, named for this run. */
-const SCHEMA = `elohim_test_pown_${process.pid}_${Date.now()}`;
 
 type Users = typeof import("../server/db/users.ts");
 type Products = typeof import("../server/db/products.ts");
 
-/** A short-lived connection for the schema itself, outside the app's pool. */
-async function admin(sql: string) {
-  const { default: pg } = await import("pg");
-  const client = new pg.Client({ connectionString: BASE_URL });
-  await client.connect();
-  try {
-    await client.query(sql);
-  } finally {
-    await client.end();
-  }
-}
 
 const stamp = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -98,19 +84,6 @@ const get = (path: string, token: string) =>
 beforeAll(async () => {
   if (!configured) return;
 
-  await admin(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
-
-  /*
-   * Point the app's pool at that schema before anything imports it.
-   *
-   * `search_path` travels in the connection string rather than being issued as
-   * a statement, because a pool opens connections whenever it likes and a `SET`
-   * only applies to the one it was sent on.
-   */
-  process.env.NETLIFY_DATABASE_URL = `${BASE_URL}${BASE_URL.includes("?") ? "&" : "?"}options=-csearch_path%3D${SCHEMA}`;
-
-  const { migrate } = await import("../server/db/index.ts");
-  await migrate();
   users = await import("../server/db/users.ts");
   productsRepo = await import("../server/db/products.ts");
   const { apiRouter } = await import("../server/routes/api.ts");
@@ -181,8 +154,6 @@ afterAll(async () => {
   if (server)
     await new Promise<void>((resolve) => server!.close(() => resolve()));
   if (!configured) return;
-  process.env.NETLIFY_DATABASE_URL = BASE_URL;
-  await admin(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
 });
 
 describe.skipIf(!configured)(
