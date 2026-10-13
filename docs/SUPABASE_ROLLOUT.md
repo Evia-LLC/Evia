@@ -431,3 +431,14 @@ grep ^SUPABASE_SERVICE_ROLE_KEY staging.txt | cut -d= -f2- | vercel env add SUPA
 Same three commands with `production.txt` and the `production` scope for the
 production values. Values never transit through chat, issues, or source
 control; the credential files are git-ignored and slated for rotation.
+
+**WIRED 2026-10-13:** all six variables confirmed in Vercel (`env ls` shows
+`SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` under both
+`Production` and `Preview (staging)` scopes, values `Hidden`; pre-existing
+`DATABASE_URL` (Neon) and all other vars untouched). Value secrecy is
+Vercel-enforced: even `env pull` returns `[SENSITIVE]` placeholders, so
+correctness rests on the byte-exact file→pipe→API path used at setup time;
+functional proof comes when P3 exercises Auth against staging. Staging-file
+keys are opaque non-JWT formats (anon/publishable 48ch, secret/service 43ch);
+`SUPABASE_URL` was derived as `https://<ref>.supabase.co` from each file's
+`DB_URL` host (`db.<ref>.supabase.co`).
