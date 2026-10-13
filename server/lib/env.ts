@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertEnvGuard } from './env-guard.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const envFile = path.join(root, '.env');
@@ -16,6 +17,23 @@ const envFile = path.join(root, '.env');
 if (fs.existsSync(envFile)) {
   process.loadEnvFile(envFile);
 }
+
+/*
+ * Cross-environment startup guard: refuse to boot when APP_ENV names a lane
+ * whose Supabase project ref does not match SUPABASE_URL (staging wired to
+ * production credentials or vice versa). APP_ENV unset (local/dev/CI/test) =
+ * inactive, zero behavior change.
+ *
+ * This module is the earliest single point every boot path evaluates:
+ * server/index.ts and server/app.ts both import it first, and both function
+ * adapters (netlify/functions/api.mts, server/vercel.ts) reach it through
+ * server/app.ts — so this one call covers the server and both functions
+ * BEFORE migrations/sessions, and ready() carries no second wiring. ready()
+ * was deliberately not chosen: both adapters catch ready() failures into a
+ * generic 503 "no database" response, which would mute a cross-env refusal;
+ * an import-time throw here fails the boot loudly on every path instead.
+ */
+assertEnvGuard();
 
 /*
  * Demo mode gives a fresh local checkout a working account and a real scan

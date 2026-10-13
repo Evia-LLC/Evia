@@ -432,6 +432,14 @@ Same three commands with `production.txt` and the `production` scope for the
 production values. Values never transit through chat, issues, or source
 control; the credential files are git-ignored and slated for rotation.
 
+**STAGING FIRST BUILD 2026-10-13:** the `staging` branch's first Preview
+deployment is expected at `https://evia-git-staging-personal-358f.vercel.app`
+(branch-URL pattern; exact per-deployment URLs differ). It carries the three
+staging-scoped Supabase variables, so `/api/health` there should report the
+same flags as production while the app database stays Neon in both. Once the
+URL resolves, record it here as the staging origin for B3/B8 and smoke-test
+health + login + one scan before any cutover rehearsal.
+
 **WIRED 2026-10-13:** all six variables confirmed in Vercel (`env ls` shows
 `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` under both
 `Production` and `Preview (staging)` scopes, values `Hidden`; pre-existing
