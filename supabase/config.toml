@@ -25,7 +25,9 @@ enabled = false
 enabled = false
 
 [auth]
-enabled = false
+# CLI status exposes Data API credentials only while this local service runs.
+# Evia still uses its own users and sessions, never managed Auth.
+enabled = true
 
 [realtime]
 enabled = false

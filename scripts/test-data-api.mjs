@@ -43,7 +43,7 @@ try {
   console.log('[test:data-api] Starting an isolated local Supabase stack.');
   started = true;
   command('supabase', ['start', '--workdir', directory,
-    '--exclude', 'studio,realtime,storage-api,imgproxy,gotrue,edge-runtime,logflare,vector,supavisor,postgres-meta'], { timeout: 300_000 });
+    '--exclude', 'studio,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,postgres-meta'], { timeout: 300_000 });
   const status = JSON.parse(command('supabase', ['status', '--workdir', directory, '--output', 'json']));
   const api = new URL(status.API_URL);
   if (!['localhost', '127.0.0.1', '[::1]'].includes(api.hostname) || Number(api.port) !== apiPort) {
