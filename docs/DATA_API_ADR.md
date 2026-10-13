@@ -67,6 +67,8 @@ sequence. RLS is defensive denial of direct access; application scoping remains 
 ## Local development and verification
 
 Use Supabase CLI 2.120.0 with a running Docker/Podman engine.
+The local Auth service runs because this CLI gates Data API credential output on it;
+the application does not use managed Auth or its user/session tables.
 
 ```
 npm ci --ignore-scripts
@@ -85,6 +87,11 @@ Files run serially and application data is reset between files; contenders insid
 tests run concurrently. SQL fixture/admin work uses psql inside that owned container;
 application calls and assertions use the real SDK and Data API. Test-only blockers and
 failure triggers are never installed in production migrations.
+
+Acceptance on 2026-10-13: [GitHub CI](https://github.com/Evia-LLC/Evia/actions/runs/38382266377)
+passed at runtime commit `285f2ca`: 40 unit files / 496 tests, 18 Data API files / 123 tests,
+TypeScript, Svelte checks, and the production build. This includes byte equality, permission
+denial, atomic rollback, lock contention, budget replay/lost acknowledgements, and pagination.
 
 `npm run db:stop` stops the persistent developer stack. To reset it deliberately, run
 `supabase db reset --local`; never use a linked/remote reset for a test run.

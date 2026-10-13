@@ -1,8 +1,11 @@
 # Data API migration — decision record
 
 **Item:** supersedes `docs/REMEDIATION_PLAN.md` "Agreed architecture and scope" and
-item P2-T04. **Status:** Implementation prepared 2026-10-13; real Data API acceptance pending. Owner: operator.
+item P2-T04. **Status:** Implemented and CI acceptance passed 2026-10-13. Owner: operator.
 Runtime/release conventions: [DATA_API_ADR.md](DATA_API_ADR.md).
+Acceptance: [GitHub CI run 38382266377](https://github.com/Evia-LLC/Evia/actions/runs/38382266377)
+verified runtime commit `285f2ca`: 496 unit tests and 123 real PostgREST integration tests,
+plus TypeScript, Svelte checks, and production build. No hosted schema or deployment was changed.
 **Inspected baseline:** `38a4544` ("APP_ENV cross-environment boot guard (#39)").
 
 ## 1. The problem being solved
@@ -59,7 +62,8 @@ what makes it affordable:
 Therefore: the schema may be dropped and recreated freely. There is no backfill,
 no dual-read window, no compatibility shim, no legacy column to carry forward,
 no data-migration script, and no data rollback plan to write. The only rollback
-that matters is code rollback, which a redeploy of the previous commit provides.
+that matters is redeploying the previous build with its original database configuration,
+not running that build against the replacement schema. See the ADR's fallback contract.
 
 This is the whole reason the migration is cheap, and it stops being true the
 moment Evia takes its first real account. Anything that would later make this
