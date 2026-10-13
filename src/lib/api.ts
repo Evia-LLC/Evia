@@ -52,7 +52,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set('Content-Type', 'application/json');
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  // Supabase Auth is conveyed by secure same-origin HttpOnly cookies.
 
   const res = await fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin' });
   const text = await res.text();
@@ -142,7 +142,7 @@ export const api = {
     }),
 
   register: (email: string, password: string, displayName: string, dateOfBirth: string, termsAccepted: boolean) =>
-    request<{ token: string; user: UserSummary }>('/auth/register', {
+    request<{ token: string; user: UserSummary | null; confirmationRequired?: boolean }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password, displayName, dateOfBirth, termsAccepted, termsVersion: REGISTRATION_TERMS_VERSION }),
     }),
@@ -185,7 +185,7 @@ export const api = {
 
   async exportMyData(): Promise<{ blob: Blob; filename: string }> {
     const headers = new Headers();
-    if (token) headers.set('Authorization', `Bearer ${token}`);
+    // Session cookies authenticate this same-origin request.
     const res = await fetch('/api/me/data-export', { headers, credentials: 'same-origin' });
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { error?: string };
