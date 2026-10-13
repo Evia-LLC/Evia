@@ -14,7 +14,7 @@ import { assertEnvGuard } from './env-guard.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const envFile = path.join(root, '.env');
 
-if (fs.existsSync(envFile)) {
+if (fs.existsSync(envFile) && process.env.NODE_ENV !== 'test') {
   process.loadEnvFile(envFile);
 }
 
@@ -61,8 +61,11 @@ const DEPLOYED = Boolean(
     process.env.AWS_LAMBDA_FUNCTION_NAME ||
     process.env.NODE_ENV === 'production',
 );
-const DATABASE = process.env.NETLIFY_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
-const LOCAL_DATABASE = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(DATABASE);
+const LOCAL_DATABASE = (() => {
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.SUPABASE_URL ?? '').hostname);
+  } catch { return false; }
+})();
 if (process.env.DEMO_MODE === undefined && !DEPLOYED && LOCAL_DATABASE) {
   process.env.DEMO_MODE = '1';
 }

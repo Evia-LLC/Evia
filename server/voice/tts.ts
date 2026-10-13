@@ -33,7 +33,7 @@
  * follow the recording rather than an estimate spread over its length.
  */
 import { createHash } from "node:crypto";
-import { row, run } from "../db/index.ts";
+import { readVoiceLine, deleteVoiceLine, touchVoiceLine, storeVoiceLine, pruneVoiceLines } from '../db/voice-cache.ts';
 import { log } from "../lib/log.ts";
 import * as budget from "../ai/budget.ts";
 import { newId } from "../lib/ids.ts";
@@ -413,14 +413,6 @@ export interface SpeakOptions {
   signal?: AbortSignal;
 }
 
-interface CachedRow {
-  audio: Buffer;
-  content_type: string;
-  words_json: string;
-  duration: number;
-  created_at: string;
-}
-
 /**
  * Synthesises one sentence — or serves it from the cache when it is stock.
  *
@@ -455,24 +447,16 @@ async function synthesiseSentence(
   const key = cacheKey(config, sentence);
 
   if (stock) {
-    const hit = await row<CachedRow>(
-      "SELECT audio, content_type, words_json, duration, created_at FROM voice_lines WHERE key = ?",
-      key,
-    ).catch(() => undefined);
+    const hit = await readVoiceLine(key).catch(() => undefined);
     if (hit) {
       if (isExpired(hit.created_at ?? "")) {
         // Bounded lifetime: an expired stock row is a miss. Delete it so the
         // table cannot accumulate stale entries nobody re-requests.
-        void run("DELETE FROM voice_lines WHERE key = ?", key).catch(() => {});
+        void deleteVoiceLine(key).catch(() => {});
       } else {
-        void run(
-          "UPDATE voice_lines SET hits = hits + 1 WHERE key = ?",
-          key,
-        ).catch(() => {});
+        void touchVoiceLine(key).catch(() => {});
         return {
-          audio: Buffer.isBuffer(hit.audio)
-            ? hit.audio
-            : Buffer.from(hit.audio),
+          audio: hit.audio,
           contentType: hit.content_type,
           words: JSON.parse(hit.words_json) as SpokenWord[],
           duration: hit.duration,
@@ -582,20 +566,10 @@ async function synthesiseSentence(
   // P1-T11: persist stock hits only, and never for guests. Non-stock
   // sentences return below with no table touch at all — no read, no write.
   if (stock && canWrite) {
-    await run(
-      `INSERT INTO voice_lines (key, voice_id, model_id, text, audio, content_type, words_json, duration, hits, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-       ON CONFLICT (key) DO NOTHING`,
-      key,
-      config.voiceId,
-      config.modelId,
-      sentence,
-      audio,
-      "audio/mpeg",
-      JSON.stringify(words),
-      duration,
-      new Date().toISOString(),
-    ).catch((err: Error) =>
+    await storeVoiceLine({
+      key, voiceId: config.voiceId, modelId: config.modelId, text: sentence, audio,
+      contentType: 'audio/mpeg', wordsJson: JSON.stringify(words), duration, createdAt: new Date().toISOString(),
+    }).catch((err: Error) =>
       // Codes only: a database error message is not a place for sentence
       // text, and the sentence is all this statement carries.
       log.warn("voice", "could not cache line", {
@@ -605,11 +579,7 @@ async function synthesiseSentence(
     // Bounded size: keep the newest STOCK_CACHE_MAX_ROWS rows by creation
     // time, evicting the oldest first. (The cap is a code constant, safe to
     // interpolate; values still travel as parameters.)
-    await run(
-      `DELETE FROM voice_lines WHERE key NOT IN (
-         SELECT key FROM voice_lines ORDER BY created_at DESC, key DESC LIMIT ${STOCK_CACHE_MAX_ROWS}
-       )`,
-    ).catch(() => {});
+    await pruneVoiceLines(STOCK_CACHE_MAX_ROWS).catch(() => {});
   }
 
   log.info("voice", "line synthesised", {

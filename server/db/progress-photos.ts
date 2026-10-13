@@ -1,4 +1,4 @@
-import { row, rows, transaction } from './index.ts';
+import { database, result, allPages } from '../lib/data-api.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { ProgressPhoto } from '../../shared/types.ts';
 
@@ -26,69 +26,31 @@ export async function createProgressPhoto(
 ): Promise<{ photo: ProgressPhoto; created: boolean }> {
   const id = newId();
   const createdAt = nowIso();
-  return transaction(async (tx) => {
-    const owner = await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
-    if (!owner) throw new Error('Account no longer exists.');
-    const existing = await tx.row<PhotoRow>(
-      'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ? FOR UPDATE', userId, input.skinScanId,
-    );
-    if (existing) return { photo: hydrate(existing), created: false };
-    const inserted = await tx.run(
-      `INSERT INTO progress_photos
-         (id, user_id, skin_scan_id, blob_ref, created_at, captured_at, consent_event_id, presentation_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (user_id, skin_scan_id) DO NOTHING`,
-      id, userId, input.skinScanId, input.blobRef, createdAt, input.capturedAt,
-      input.consentEventId, input.presentation ? JSON.stringify(input.presentation) : null,
-    );
-    if (!inserted) {
-      const winner = await tx.row<PhotoRow>(
-        'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ? FOR UPDATE', userId, input.skinScanId,
-      );
-      if (!winner) throw new Error('progress photo idempotency conflict could not be resolved');
-      return { photo: hydrate(winner), created: false };
-    }
-    return { photo: hydrate({ id, skin_scan_id: input.skinScanId, created_at: createdAt,
-      captured_at: input.capturedAt, consent_event_id: input.consentEventId,
-      presentation_json: input.presentation ? JSON.stringify(input.presentation) : null }), created: true };
-  });
+  const stored = await result<{ photo: PhotoRow; created: boolean }>(database().rpc('evia_create_progress_photo', {
+    p_row: { id, user_id: userId, skin_scan_id: input.skinScanId, blob_ref: input.blobRef,
+      created_at: createdAt, captured_at: input.capturedAt, consent_event_id: input.consentEventId,
+      presentation_json: input.presentation ? JSON.stringify(input.presentation) : null },
+  }));
+  return { photo: hydrate(stored.photo), created: stored.created };
 }
 
 export async function listProgressPhotos(userId: string): Promise<ProgressPhoto[]> {
-  return (await rows<PhotoRow>(
-    'SELECT id, skin_scan_id, created_at, captured_at, consent_event_id, presentation_json FROM progress_photos WHERE user_id = ? ORDER BY captured_at DESC',
-    userId,
-  )).map(hydrate);
+  return (await allPages<PhotoRow>((from, to) => database().from('progress_photos').select('id,skin_scan_id,created_at,captured_at,consent_event_id,presentation_json').eq('user_id', userId).order('captured_at', { ascending: false }).order('id').range(from, to))).map(hydrate);
 }
 
 export async function getProgressPhotoRef(userId: string, id: string): Promise<string | null> {
-  return (await row<{ blob_ref: string }>(
-    'SELECT blob_ref FROM progress_photos WHERE id = ? AND user_id = ?', id, userId,
-  ))?.blob_ref ?? null;
+  return (await result<{ blob_ref: string } | null>(database().from('progress_photos').select('blob_ref').eq('id', id).eq('user_id', userId).maybeSingle()))?.blob_ref ?? null;
 }
 
 export async function getProgressPhotoForScan(userId: string, scanId: string): Promise<ProgressPhoto | null> {
-  const found = await row<PhotoRow>(
-    'SELECT * FROM progress_photos WHERE user_id = ? AND skin_scan_id = ?', userId, scanId,
-  );
+  const found = await result<PhotoRow | null>(database().from('progress_photos').select('id,skin_scan_id,created_at,captured_at,consent_event_id,presentation_json').eq('user_id', userId).eq('skin_scan_id', scanId).maybeSingle());
   return found ? hydrate(found) : null;
 }
 
 export async function allProgressPhotoRefs(userId: string): Promise<string[]> {
-  return (await rows<{ blob_ref: string }>(
-    'SELECT blob_ref FROM progress_photos WHERE user_id = ?', userId,
-  )).map((r) => r.blob_ref);
+  return (await allPages<{ blob_ref: string }>((from, to) => database().from('progress_photos').select('blob_ref').eq('user_id', userId).order('id').range(from, to))).map((r) => r.blob_ref);
 }
 
 export async function deleteProgressPhoto(userId: string, id: string): Promise<string | null> {
-  return transaction(async (tx) => {
-    await tx.row<{ id: string }>('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
-    const found = await tx.row<{ blob_ref: string }>(
-      'SELECT blob_ref FROM progress_photos WHERE id = ? AND user_id = ? FOR UPDATE', id, userId,
-    );
-    if (!found) return null;
-    await tx.run('DELETE FROM progress_photos WHERE id = ? AND user_id = ?', id, userId);
-    await tx.run('DELETE FROM blobs WHERE ref = ?', found.blob_ref);
-    return found.blob_ref;
-  });
+  return result<string | null>(database().rpc('evia_delete_progress_photo', { p_user_id: userId, p_id: id }));
 }

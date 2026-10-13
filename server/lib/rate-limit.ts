@@ -31,13 +31,12 @@
  * can never escape as an unhandled rejection on a raw `app.use` host.
  *
  * Fail closed: when the store errors, the request is denied (503) rather
- * than let through. Pool exhaustion surfaces as a connection timeout
- * (10s `connectionTimeoutMillis` in server/db/index.ts), which lands in the
+ * than let through. Data API requests are bounded by the server transport timeout, landing in the
  * same deny path instead of hanging a request forever.
  */
 import type { NextFunction, Request, Response } from "express";
 import { createHash } from "node:crypto";
-import { row, run } from "../db/index.ts";
+import { database, result } from './data-api.ts';
 import { log } from "./log.ts";
 
 export interface RateLimitOptions {
@@ -173,26 +172,12 @@ export const rateLimitStore = {
     const now = new Date();
     const nowIso = now.toISOString();
     const expiresIso = new Date(now.getTime() + windowMs).toISOString();
-    const found = await row<{ count: number | string; reset_at: string }>(
-      `INSERT INTO rate_limit_buckets AS b (key_hash, count, reset_at)
-       VALUES (?, 1, ?)
-       ON CONFLICT (key_hash) DO UPDATE SET
-         count = CASE WHEN b.reset_at <= ? THEN 1 ELSE b.count + 1 END,
-         reset_at = CASE WHEN b.reset_at <= ? THEN ? ELSE b.reset_at END
-       RETURNING count, reset_at`,
-      keyHash,
-      expiresIso,
-      nowIso,
-      nowIso,
-      expiresIso,
-    );
-    if (!found) throw new Error("rate-limit store returned no bucket");
-    // Bounded expiry maintenance: at most 100 expired rows per hit, through
-    // the reset_at index. Never an unbounded sweep.
-    await run(
-      "DELETE FROM rate_limit_buckets WHERE key_hash IN (SELECT key_hash FROM rate_limit_buckets WHERE reset_at <= ? LIMIT 100)",
-      nowIso,
-    );
+    const found = (await result<{ count: number; reset_at: string }[]>(database().rpc('evia_consume_rate_bucket', {
+      p_key_hash: keyHash, p_now: nowIso, p_expires: expiresIso,
+    })))[0];
+    if (!found) throw new Error('rate-limit store returned no bucket');
+    // Cleanup remains a separate committed operation, as before the transport change.
+    await result(database().rpc('evia_sweep_rate_buckets', { p_now: nowIso }));
     return {
       count: Number(found.count),
       resetAtMs: new Date(found.reset_at).getTime(),

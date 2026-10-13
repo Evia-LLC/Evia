@@ -3,11 +3,11 @@
  *
  * Synthetic only: no network, no production credentials. Every secret below
  * is invented for this file (`hunter2-fake`, `sk-ant-fake-…`) and every
- * database is either absent or the disposable one `npm run test:local`
+ * database is either absent or the disposable one `npm run test:data-api`
  * provides — assertions therefore tolerate both `database: true` and
  * `database: false`, and prove the *shape* of the contract instead:
  *
- *   - failing boot (unparseable DB URL, so `ready()`/`migrate()` throw with
+ *   - failing boot (unparseable DB URL, so `ready()` throw with
  *     no network at all) and failing providers (availability flags stubbed
  *     off via env) keep every public response free of raw exception text,
  *     stacks, URLs, tokens and personal text — on both adapters;
@@ -176,23 +176,16 @@ describe("public HTTP surface", () => {
 });
 
 describe("cold-start adapters hide boot failures (no network)", () => {
-  // An unparseable URL makes `migrate()` throw synchronously — no DNS, no
-  // sockets — while still looking "configured" to the adapters. The pool is
-  // dropped first: `getPool()` memoises per process, so a pool opened by an
-  // earlier test (with the real test database) would otherwise mask the
-  // broken URL and `ready()` would succeed.
+  // Invalid Data API configuration rejects readiness before any network I/O.
   async function breakDatabase(): Promise<void> {
-    const { closePool } = await import("../server/db/index.ts");
-    await closePool();
-    vi.stubEnv("NETLIFY_DATABASE_URL", "not-a-valid-url");
-    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv('SUPABASE_URL', 'not-a-valid-url');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'synthetic-anon');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'synthetic-service');
   }
 
   afterEach(async () => {
-    const { closePool } = await import("../server/db/index.ts");
-    await closePool();
     vi.unstubAllEnvs();
-    vi.stubEnv("ELOHIM_ADMIN_TOKEN", ADMIN_TOKEN);
+    vi.stubEnv('ELOHIM_ADMIN_TOKEN', ADMIN_TOKEN);
   });
 
   it("Vercel: failing boot keeps /api/health safe and shaped like warm health", async () => {
@@ -339,7 +332,7 @@ describe("operator diagnostics require admin", () => {
     const res = await get({ "x-admin-token": ADMIN_TOKEN });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.ok).toBe(true);
+    expect(body.ok).toBe(body.database.reachable);
     expect(typeof body.day).toBe("string");
     expect(typeof body.budget.turns).toBe("number");
     expect(typeof body.budget.tokens).toBe("number");
@@ -348,14 +341,10 @@ describe("operator diagnostics require admin", () => {
     expect(typeof body.budget.limits.tokens).toBe("number");
     expect(typeof body.database.configured).toBe("boolean");
     expect(typeof body.database.reachable).toBe("boolean");
-    expect(
-      body.database.poolMax === null ||
-        typeof body.database.poolMax === "number",
-    ).toBe(true);
-    expect(
-      body.database.migrationsApplied === null ||
-        typeof body.database.migrationsApplied === "number",
-    ).toBe(true);
+    expect(body.database.transport).toBe('postgrest');
+    expect(body.database.schemaCompatible).toBe(body.database.reachable);
+    expect(body.database).not.toHaveProperty('poolMax');
+    expect(body.database).not.toHaveProperty('migrationsApplied');
     expect(typeof body.providers.model.available).toBe("boolean");
     expect(
       body.providers.model.name === null ||

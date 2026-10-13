@@ -1,5 +1,10 @@
 # Supabase rollout — environment and recovery contract (P2-T01)
 
+The application-data transport and local development sections are superseded by
+[DATA_API_ADR.md](DATA_API_ADR.md): application persistence now uses the Data API,
+with out-of-band schema installation and a local Supabase integration lane.
+Auth and Storage decisions in this record remain separate.
+
 **Item:** `docs/REMEDIATION_PLAN.md` P2-T01. **Phase 1 is DONE; this is the Phase 2 entry gate.**
 **Method:** repo evidence only. No live database was probed, no Supabase project was
 created, no credential was read. Every value below that is not yet decided is a

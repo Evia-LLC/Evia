@@ -1,4 +1,4 @@
-import { row, rows, run } from "./index.ts";
+import { database, result, affected, allPages } from '../lib/data-api.ts';
 import { newId, nowIso } from "../lib/ids.ts";
 import type { Product, ProductUsage } from "../../shared/types.ts";
 
@@ -58,99 +58,24 @@ export async function upsertProduct(
   },
   ownerId?: string | null,
 ): Promise<Product> {
-  if (ownerId) {
-    // coalesce(...) rather than `=` so a null brand matches a null brand — SQL
-    // equality never matches two nulls. owner_id uses `=` deliberately: it is
-    // NOT NULL here, so no null-matching subtlety, and a shared row (NULL)
-    // can never equal a user id.
-    const existing = await row<ProductRow>(
-      `SELECT * FROM products
-        WHERE lower(name) = lower(?)
-          AND coalesce(lower(brand), '') = coalesce(lower(?), '')
-          AND owner_id = ?`,
-      input.name,
-      input.brand ?? null,
-      ownerId,
-    );
-
-    if (existing) {
-      if (input.ingredients?.length) {
-        await run(
-          "UPDATE products SET ingredients_json = ? WHERE id = ?",
-          JSON.stringify(input.ingredients),
-          existing.id,
-        );
-        existing.ingredients_json = JSON.stringify(input.ingredients);
-      }
-      return hydrate(existing);
-    }
-
-    const id = newId();
-    await run(
-      `INSERT INTO products (id, name, brand, category, ingredients_json, source, owner_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      id,
-      input.name.trim(),
-      input.brand ?? null,
-      input.category ?? null,
-      JSON.stringify(input.ingredients ?? []),
-      input.source ?? "user",
-      ownerId,
-      nowIso(),
-    );
-    return {
-      id,
-      name: input.name.trim(),
-      brand: input.brand ?? null,
-      category: input.category ?? null,
-      ingredients: input.ingredients ?? [],
-      source: input.source ?? "user",
-    };
-  }
-
-  // Shared/operator path: matches and mutates only shared rows. Used for the
-  // operator catalogue and for every historical row, which all read as shared.
-  const existing = await row<ProductRow>(
-    `SELECT * FROM products
-        WHERE lower(name) = lower(?)
-          AND coalesce(lower(brand), '') = coalesce(lower(?), '')
-          AND owner_id IS NULL`,
-    input.name,
-    input.brand ?? null,
-  );
-
+  const existing = (await result<ProductRow[]>(database().rpc('evia_find_product_match', {
+    p_name: input.name, p_brand: input.brand ?? null, p_owner_id: ownerId || null,
+  })))[0];
   if (existing) {
     if (input.ingredients?.length) {
-      await run(
-        "UPDATE products SET ingredients_json = ? WHERE id = ?",
-        JSON.stringify(input.ingredients),
-        existing.id,
-      );
+      await result(database().from('products').update({ ingredients_json: JSON.stringify(input.ingredients) }).eq('id', existing.id));
       existing.ingredients_json = JSON.stringify(input.ingredients);
     }
     return hydrate(existing);
   }
-
   const id = newId();
-  await run(
-    `INSERT INTO products (id, name, brand, category, ingredients_json, source, owner_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
-    id,
-    input.name.trim(),
-    input.brand ?? null,
-    input.category ?? null,
-    JSON.stringify(input.ingredients ?? []),
-    input.source ?? "user",
-    nowIso(),
-  );
-  return {
-    id,
-    name: input.name.trim(),
-    brand: input.brand ?? null,
-    category: input.category ?? null,
-    ingredients: input.ingredients ?? [],
-    source: input.source ?? "user",
-  };
+  await result(database().from('products').insert({
+    id, name: input.name.trim(), brand: input.brand ?? null, category: input.category ?? null,
+    ingredients_json: JSON.stringify(input.ingredients ?? []), source: input.source ?? 'user',
+    owner_id: ownerId || null, created_at: nowIso(),
+  }));
+  return { id, name: input.name.trim(), brand: input.brand ?? null, category: input.category ?? null,
+    ingredients: input.ingredients ?? [], source: input.source ?? 'user' };
 }
 
 /**
@@ -187,38 +112,14 @@ export async function searchProducts(
 ): Promise<Product[]> {
   const userId = typeof userIdOrLimit === "string" ? userIdOrLimit : null;
   const max = typeof userIdOrLimit === "number" ? userIdOrLimit : limit;
-  const like = `%${query}%`;
-  const found = userId
-    ? await rows<ProductRow>(
-        // ILIKE, not LIKE: SQLite matched ASCII case-insensitively by default and
-        // Postgres does not, so after the migration "ordinary" stopped finding
-        // "The Ordinary" — a silently degraded search rather than an error.
-        `SELECT * FROM products
-          WHERE (name ILIKE ? OR brand ILIKE ?)
-            AND (owner_id IS NULL OR owner_id = ?)
-          ORDER BY name LIMIT ?`,
-        like,
-        like,
-        userId,
-        max,
-      )
-    : await rows<ProductRow>(
-        `SELECT * FROM products
-          WHERE (name ILIKE ? OR brand ILIKE ?)
-            AND owner_id IS NULL
-          ORDER BY name LIMIT ?`,
-        like,
-        like,
-        max,
-      );
+  const found = await result<ProductRow[]>(database().rpc('evia_search_products', {
+    p_query: query, p_user_id: userId, p_limit: max,
+  }));
   return found.map(hydrate);
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
-  const found = await row<ProductRow>(
-    "SELECT * FROM products WHERE id = ?",
-    id,
-  );
+  const found = await result<ProductRow | null>(database().from('products').select('id,name,brand,category,ingredients_json,source,owner_id').eq('id', id).maybeSingle());
   return found ? hydrate(found) : null;
 }
 
@@ -233,22 +134,13 @@ export async function getVisibleProduct(
   id: string,
   userId: string,
 ): Promise<Product | null> {
-  const found = await row<ProductRow>(
-    "SELECT * FROM products WHERE id = ? AND (owner_id IS NULL OR owner_id = ?)",
-    id,
-    userId,
-  );
+  const found = await result<ProductRow | null>(database().from('products').select('id,name,brand,category,ingredients_json,source,owner_id').eq('id', id).or(`owner_id.is.null,owner_id.eq.${JSON.stringify(userId)}`).maybeSingle());
   return found ? hydrate(found) : null;
 }
 
 /** Every product row a user owns. Used by data export. */
 export async function listOwnedProducts(userId: string): Promise<Product[]> {
-  return (
-    await rows<ProductRow>(
-      "SELECT * FROM products WHERE owner_id = ? ORDER BY name",
-      userId,
-    )
-  ).map(hydrate);
+  return (await allPages<ProductRow>((from, to) => database().from('products').select('id,name,brand,category,ingredients_json,source,owner_id').eq('owner_id', userId).order('name').order('id').range(from, to))).map(hydrate);
 }
 
 /**
@@ -259,7 +151,7 @@ export async function listOwnedProducts(userId: string): Promise<Product[]> {
  * deleted right after.
  */
 export async function deleteOwnedProducts(userId: string): Promise<number> {
-  return run("DELETE FROM products WHERE owner_id = ?", userId);
+  return affected(database().from('products').delete({ count: 'exact' }).eq('owner_id', userId));
 }
 
 export async function startUsage(
@@ -272,16 +164,10 @@ export async function startUsage(
   const visible = await getVisibleProduct(productId, userId);
   if (!visible) throw new ProductAccessDenied(productId);
   const id = newId();
-  await run(
-    `INSERT INTO product_usage (id, user_id, product_id, started_at, frequency, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    id,
-    userId,
-    productId,
-    opts.startedAt ?? nowIso(),
-    opts.frequency ?? null,
-    opts.notes ?? null,
-  );
+  await result(database().from('product_usage').insert({
+    id, user_id: userId, product_id: productId, started_at: opts.startedAt ?? nowIso(),
+    frequency: opts.frequency ?? null, notes: opts.notes ?? null,
+  }));
   return id;
 }
 
@@ -290,43 +176,16 @@ export async function endUsage(
   usageId: string,
   endedAt?: string,
 ): Promise<void> {
-  await run(
-    "UPDATE product_usage SET ended_at = ? WHERE id = ? AND user_id = ?",
-    endedAt ?? nowIso(),
-    usageId,
-    userId,
-  );
+  await result(database().from('product_usage').update({ ended_at: endedAt ?? nowIso() }).eq('id', usageId).eq('user_id', userId));
 }
 
 export async function listUsage(userId: string): Promise<ProductUsage[]> {
-  return (
-    await rows<
-      ProductRow & {
-        id: string;
-        pid: string;
-        started_at: string;
-        ended_at: string | null;
-        frequency: string | null;
-        notes: string | null;
-      }
-    >(
-      // Scoped to the caller's own usage rows, so the join can only ever expose
-      // products the caller already attached — and after P1-T04 those are only
-      // shared rows or the caller's own, because startUsage refuses the rest.
-      `SELECT u.id, u.started_at, u.ended_at, u.frequency, u.notes,
-            p.id AS pid, p.name, p.brand, p.category, p.ingredients_json, p.source
-       FROM product_usage u
-       JOIN products p ON p.id = u.product_id
-      WHERE u.user_id = ?
-      ORDER BY u.started_at DESC`,
-      userId,
-    )
-  ).map((r) => ({
-    id: r.id,
-    product: hydrate({ ...r, id: r.pid }),
-    startedAt: r.started_at,
-    endedAt: r.ended_at,
-    frequency: r.frequency,
-    notes: r.notes,
-  }));
+  const found = await allPages<{
+    id: string; started_at: string; ended_at: string | null; frequency: string | null; notes: string | null;
+    product: ProductRow;
+  }>((from, to) => database().from('product_usage')
+    .select('id,started_at,ended_at,frequency,notes,product:products!product_usage_product_id_fkey!inner(id,name,brand,category,ingredients_json,source,owner_id)')
+    .eq('user_id', userId).order('started_at', { ascending: false }).order('id').range(from, to));
+  return found.map((r) => ({ id: r.id, product: hydrate(r.product), startedAt: r.started_at,
+    endedAt: r.ended_at, frequency: r.frequency, notes: r.notes }));
 }

@@ -4,7 +4,7 @@
  * A cannot read/delete B's scan, image, memory or usage; anonymous requests
  * fail; consent denial causes zero provider calls. Exercises the real HTTP
  * boundary (real requireAuth + real routers + real disposable DB from
- * `npm run test:local`) with only rate limiters, provider egress and blob
+ * `npm run test:data-api`) with only rate limiters, provider egress and blob
  * bytes stubbed — and every stub counts its calls.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -14,12 +14,12 @@ import { LEGAL_CONTENT } from "../shared/legal-content.ts";
 import type { FixtureAccount } from "./helpers/two-accounts.ts";
 
 // Same convention as body-store.test.ts: this file needs a real database, so
-// it only runs under `npm run test:local` (which injects a disposable PGlite
+// it only runs under `npm run test:data-api` (which injects a disposable Supabase
 // URL). A bare `vitest run` skips loudly instead of failing opaquely.
-const configured = (process.env.NETLIFY_DATABASE_URL ?? "").length > 0;
+const configured = process.env.ELOHIM_DATA_API_LANE === '1';
 if (!configured) {
   console.warn(
-    "[ownership-boundaries] NETLIFY_DATABASE_URL is not set — database tests did not run (use `npm run test:local`).",
+    "[ownership-boundaries] ELOHIM_DATA_API_LANE is not set — database tests did not run (use `npm run test:data-api`).",
   );
 }
 
@@ -61,7 +61,6 @@ vi.mock("../server/lib/crypto.ts", async (importOriginal) => {
   };
 });
 
-const { migrate } = await import("../server/db/index.ts");
 const { analysisRouter } = await import("../server/routes/analysis.ts");
 const { apiRouter } = await import("../server/routes/api.ts");
 const {
@@ -95,7 +94,6 @@ beforeAll(async () => {
     return { hydration: 60 };
   });
 
-  await migrate();
   a = await createAccount("owner-a");
   b = await createAccount("owner-b");
   c = await createAccount("consent-c");

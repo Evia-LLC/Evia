@@ -1,3 +1,4 @@
+import { dataApiConfigured } from '../../server/lib/supabase.ts';
 /**
  * The whole API, as one function.
  *
@@ -8,7 +9,7 @@
  * every endpoint — several cold starts where there should be one.
  *
  * `ready()` is awaited per invocation. It is memoised, so on a warm instance it
- * costs nothing; on a cold one it applies migrations and seeds the demo account
+ * costs nothing; on a cold one it verifies the Data API and seeds the demo account
  * before the request is served, which is the only moment those can happen when
  * there is no boot sequence to hang them off.
  */
@@ -44,7 +45,7 @@ export default async (request: Request, context: unknown) => {
     /*
      * No database attached.
      *
-     * `ready()` migrates, and migrating needs a connection string. Without one
+     * `ready()` requires a configured, reachable Data API. Without one
      * every request — including the health check the entry screen relies on —
      * died with a stack trace, so the site reported itself as offline when the
      * truth was narrower: the static app and everything on-device is fine,
@@ -62,7 +63,7 @@ export default async (request: Request, context: unknown) => {
     // A database that is configured but unreachable is a different failure
     // from one that was never configured; the 503 below says which, without
     // the reason and without any connection string in it.
-    const configured = Boolean(process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL);
+    const configured = dataApiConfigured();
     const url = new URL(request.url);
     if (url.pathname === '/api/health') {
       return Response.json({

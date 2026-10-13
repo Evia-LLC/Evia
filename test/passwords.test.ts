@@ -12,7 +12,7 @@
  * 4. Oversized input is rejected before any derivation with a generic error.
  *
  * DB-free: crypto is exercised directly and `authenticate` runs against a
- * stubbed `server/db/index.ts` row lookup, so no database is needed.
+ * stubbed credential repository, so no database is needed.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { scrypt, scryptSync } from "node:crypto";
@@ -26,18 +26,8 @@ const dbState = vi.hoisted(() => ({
   rowsByEmail: new Map<string, Record<string, string>>(),
 }));
 
-vi.mock("../server/db/index.ts", () => ({
-  row: vi.fn(async (sql: string, ...args: unknown[]) => {
-    if (String(sql).includes("FROM users WHERE email")) {
-      return dbState.rowsByEmail.get(String(args[0])) ?? null;
-    }
-    return null;
-  }),
-  rows: vi.fn(async () => []),
-  run: vi.fn(async () => 0),
-  transaction: vi.fn(async (fn: (tx: unknown) => unknown) =>
-    fn({ run: vi.fn(async () => 0) }),
-  ),
+vi.mock('../server/db/credentials.ts', () => ({
+  findCredentials: vi.fn(async (email: string) => dbState.rowsByEmail.get(email) ?? null),
 }));
 
 const { hashPassword, verifyPassword, MAX_PASSWORD_BYTES } =

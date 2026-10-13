@@ -5,12 +5,8 @@
  * Invoked directly with node.exe (not npm) because npm.cmd exits silently when
  * spawned from tooling on this machine — see the machine notes in README.
  *
- * The API is restarted on server edits by this launcher rather than by
- * `node --watch`, and the database child is recycled with it. PGlite's socket
- * listener serves one connection, and on Windows a killed API leaves that
- * connection half-open long enough for the replacement to be reset on its
- * first query — every second edit came up "read ECONNRESET" and stayed down.
- * Restarting both is a second of work and it is always clean.
+ * Server edits restart the API. The local Supabase stack stays running so
+ * development data survives API restarts.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -77,52 +73,29 @@ function shutdown(code) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
-/**
- * The database first, because the API cannot boot without one.
- *
- * A configured connection string — Netlify DB, a container, anything — is
- * used as-is. Otherwise `dev-db.mjs` starts an in-process Postgres and prints
- * the URL to reach it on, and the API is started only once that line has
- * arrived: starting it earlier races the listener and loses.
- */
-const configured = process.env.NETLIFY_DATABASE_URL ?? process.env.DATABASE_URL;
-
-let db = null;
+/** Persistent local Supabase stack; never inherits a hosted application target. */
 let api = null;
-
-function startDb() {
-  return new Promise((resolve) => {
-    let started = false;
-    db = run('db', [path.join(root, 'scripts', 'dev-db.mjs')], '33', {
-      onLine: (line) => {
-        const match = /^ready (postgres:\/\/\S+)/.exec(line);
-        if (!match || started) return;
-        started = true;
-        resolve(match[1]);
-      },
-    });
-  });
-}
-
-function startApi(url) {
-  const env = { ...process.env };
-  if (url) {
-    env.DATABASE_URL = url;
-    // PGlite is a single-connection database. A pool of three against it
-    // means the second and third connections are reset mid-query; with one,
-    // `pg` queues the work instead and every query lands.
-    env.ELOHIM_DB_POOL ??= '1';
-  }
-  api = run('api', [path.join(root, 'server', 'index.ts')], '36', { env });
-}
+let localEnv;
 
 async function boot() {
-  if (configured) {
-    startApi(null);
-    return;
+  if (!localEnv) {
+    const { execFileSync } = await import('node:child_process');
+    try {
+      execFileSync('supabase', ['start', '--workdir', root], { stdio: 'pipe' });
+      const status = JSON.parse(execFileSync('supabase', ['status', '--workdir', root, '--output', 'json'], { encoding: 'utf8', stdio: 'pipe' }));
+      const url = new URL(status.API_URL);
+      if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('non-local API');
+      localEnv = { ...process.env, SUPABASE_URL: url.origin,
+        SUPABASE_ANON_KEY: status.ANON_KEY ?? status.PUBLISHABLE_KEY,
+        SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY ?? status.SECRET_KEY,
+        APP_ENV: '', NODE_ENV: 'development' };
+      if (!localEnv.SUPABASE_ANON_KEY || !localEnv.SUPABASE_SERVICE_ROLE_KEY) throw new Error('missing local API keys');
+    } catch {
+      console.error('[dev] Local Supabase could not start. Install the Supabase CLI and run Docker/Podman. No hosted fallback was used.');
+      process.exit(1);
+    }
   }
-  const url = await startDb();
-  startApi(url);
+  api = run('api', [path.join(root, 'server', 'index.ts')], '36', { env: localEnv });
 }
 
 let restarting = null;
@@ -131,7 +104,6 @@ async function restart(reason) {
   restarting = (async () => {
     process.stdout.write(`\x1b[36m[dev]\x1b[0m restarting the API (${reason})\n`);
     await stop(api);
-    if (!configured) await stop(db);
     await boot();
   })().finally(() => {
     restarting = null;
@@ -141,7 +113,7 @@ async function restart(reason) {
 
 /**
  * Server edits restart the API. Debounced, because an editor writes a file
- * in two or three steps and the migrations folder is written by hand in
+ * in two or three steps and server files can be written in
  * bursts; one restart per burst is the intent.
  */
 let pending = null;

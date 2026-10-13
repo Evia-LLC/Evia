@@ -4,7 +4,7 @@
  * Split out of `index.ts` because the same app now runs two ways: as a server
  * you start locally, and as a Netlify Function that is created, used and thrown
  * away per request. Everything that was previously done once at module scope —
- * applying migrations, seeding the demo account, sweeping sessions — had to
+ * checking the Data API schema, seeding the demo account, sweeping sessions — had to
  * move behind `ready()`, because on a function there is no "once": module scope
  * runs again on every cold start, and it runs concurrently across instances.
  */
@@ -14,7 +14,7 @@ import './lib/env.ts';
 import express from 'express';
 import { analysisRouter } from './routes/analysis.ts';
 import { analysisProvider, perfectCorpAvailable, sampleDemoEnabled } from './ai/perfectcorp.ts';
-import { migrate } from './db/index.ts';
+import { verifyDataApi } from './lib/data-api.ts';
 import { authRouter } from './routes/auth.ts';
 import { apiRouter } from './routes/api.ts';
 import { publicRouter } from './routes/public.ts';
@@ -23,7 +23,7 @@ import { modelAvailable, MODEL } from './ai/claude.ts';
 import { clonedVoiceAvailable, guestVoiceAllowed, speakLine, VoiceUnavailable } from './voice/tts.ts';
 import { guestVoiceLimiter } from './lib/rate-limit.ts';
 import { blobStorageAvailable } from './lib/crypto.ts';
-import { row } from './db/index.ts';
+
 import { seedDemoUser } from './demo/seed.ts';
 import { sweepExpiredSessions } from './db/users.ts';
 import { log } from './lib/log.ts';
@@ -60,7 +60,7 @@ app.use((req, res, next) =>
 app.get('/api/health', async (_req, res) => {
   let database = false;
   try {
-    await row('SELECT 1 AS ok');
+    await verifyDataApi();
     database = true;
   } catch {
     database = false;
@@ -214,14 +214,13 @@ app.use((err: Error & { status?: number; type?: string }, _req: express.Request,
  *
  * Memoised as a promise rather than a boolean: two requests arriving together
  * on a cold instance would both see "not done yet" and both start migrating.
- * They await the same promise instead, and the advisory lock inside `migrate`
- * covers the same race across separate instances.
+ * They await the same promise instead. Schema installation is an out-of-band release step.
  */
 let readiness: Promise<void> | null = null;
 
 export function ready(): Promise<void> {
   readiness ??= (async () => {
-    await migrate();
+    await verifyDataApi();
 
     if (process.env.DEMO_MODE === '1') {
       const demo = await seedDemoUser();
