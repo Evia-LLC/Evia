@@ -252,7 +252,7 @@ A fresh isolated environment is provisioned from this file plus `RUNBOOK.md`,
 
 | ID  | Blocker                                                                                                                                                 | Owner                 | Gates                                                           |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
-| B1  | Region DECIDED 2026-10-06: AWS EU West (Ireland) — operator chose EU presence over Neon colocation; projects still to be created (staging + production) | operator              | P2-T02 and everything after                                     |
+| B1  | EXECUTED 2026-10-06: staging + production projects exist in AWS EU West (Ireland) — confirmed via pooler hostnames (`aws-*-eu-west-1.pooler.supabase.com`); project refs on file locally only (`staging.txt`/`production.txt`, git-ignored, values never in repo) | operator              | P2-T02 and everything after |
 | B2  | Staging may initially use built-in mail for team accounts. Production custom SMTP provider/domain/from-address and credentials remain undecided; mail MUST precede recovery flows | operator              | P3-T03 rehearsal, P3-T06, P3-T07                                |
 | B3  | Per-environment Auth redirect URL allowlists unregistered (local known; staging + both production hosts TBD)                                            | operator              | P3-T03, P3-T06, P3-T07                                          |
 | B4  | Supabase direct/session vs pooler connection paths unrecorded                                                                                           | operator              | P2-T05 lane, any migration against a Supabase-hosted DB surface |
@@ -393,3 +393,41 @@ Official dashboard references: [API keys](https://supabase.com/docs/guides/getti
 - [x] No network probes, no live project, no real IDs/regions/hosts/credentials anywhere.
 - [x] Residuals: blockers B1–B9 open by design — P2-T01 records decision points, it does
       not make them. Staging non-existence (B8) is the largest structural gap.
+
+## 14. Branch and host linkage (staging branch + Vercel wiring, 2026-10-06)
+
+Branches (both pushed, identical code — environments differ by variables only):
+
+| Branch    | Serves       | Deploys as on Vercel                                                |
+| --------- | ------------ | ------------------------------------------------------------------- |
+| `main`    | production   | Production (Production Branch setting must name `main` — verify) |
+| `staging` | staging team | Preview, stable per-branch URL                                      |
+
+Variable mapping — the application database stays Neon: **do not change the
+existing `DATABASE_URL`/`NETLIFY_DATABASE_URL` in either environment.** Add
+only the three SDK variables per environment, values from the git-ignored
+local files (`staging.txt` → Preview scope, `production.txt` → Production
+scope). Direct/pooler DB strings stay in the password manager for now (future
+migration tooling, not runtime).
+
+| Vercel variable             | Source (local file key)                                                        | Scope           |
+| --------------------------- | ------------------------------------------------------------------------------ | --------------- |
+| `SUPABASE_URL`              | derived: `https://<ref>.supabase.co`, ref from `DB_URL` host `db.<ref>.supabase.co` | per environment |
+| `SUPABASE_ANON_KEY`         | file's `SUPABASE_ANON_KEY`                                                     | per environment |
+| `SUPABASE_SERVICE_ROLE_KEY` | file's `SUPABASE_SERVICE_ROLE_KEY`                                             | per environment, server-only |
+
+The local Vercel CLI token is currently invalid, so these go in via the
+dashboard (Project → Settings → Environment Variables, picking Production vs
+Preview scope) or after a fresh `vercel login`, e.g. for the staging values:
+
+```sh
+vercel login
+REF=$(grep ^DB_URL staging.txt | sed 's/.*@db\.\([^\.]*\)\.supabase\.co.*/\1/')
+printf %s "https://$REF.supabase.co" | vercel env add SUPABASE_URL preview staging
+grep ^SUPABASE_ANON_KEY staging.txt | cut -d= -f2- | vercel env add SUPABASE_ANON_KEY preview staging
+grep ^SUPABASE_SERVICE_ROLE_KEY staging.txt | cut -d= -f2- | vercel env add SUPABASE_SERVICE_ROLE_KEY preview staging
+```
+
+Same three commands with `production.txt` and the `production` scope for the
+production values. Values never transit through chat, issues, or source
+control; the credential files are git-ignored and slated for rotation.
