@@ -308,7 +308,7 @@ export async function bootstrap(): Promise<void> {
 
 export async function signIn(email: string, password: string): Promise<void> {
   const { token, user } = await api.login(email, password);
-  setToken(token);
+  setToken(null);
   session.user = user;
   await loadUserData();
 }
@@ -320,8 +320,9 @@ export async function register(
   dateOfBirth: string,
   termsAccepted: boolean,
 ): Promise<void> {
-  const { token, user } = await api.register(email, password, displayName, dateOfBirth, termsAccepted);
-  setToken(token);
+  const { user, confirmationRequired } = await api.register(email, password, displayName, dateOfBirth, termsAccepted);
+  if (confirmationRequired || !user) throw new Error('Check your email to confirm your account, then sign in.');
+  setToken(null);
   session.user = user;
   await loadUserData();
 }
