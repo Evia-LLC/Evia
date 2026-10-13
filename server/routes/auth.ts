@@ -100,7 +100,12 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
 });
 
 authRouter.post('/logout', async (req, res) => {
-  // Clear local cookies. Server-side global logout uses a separate session-management path.
+  const refresh = cookie(req, REFRESH);
+  if (refresh) {
+    const client = createRequestClient();
+    const { data } = await client.auth.refreshSession({ refresh_token: refresh });
+    if (data.session) await client.auth.signOut({ scope: 'local' });
+  }
   clearSession(res);
   res.json({ ok: true });
 });
