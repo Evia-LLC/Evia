@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUser } from '../server/db/users.ts';
+import { createUser } from './helpers/auth-fixtures.ts';
 import { adminSql, database, result } from './helpers/data-api.ts';
 
 describe('atomic registration over the Data API', () => {
@@ -17,7 +17,7 @@ describe('atomic registration over the Data API', () => {
       CREATE TRIGGER reject_signup_evidence BEFORE INSERT ON public.consent_events
       FOR EACH ROW EXECUTE FUNCTION evia_private.reject_signup_evidence();`);
     try {
-      await expect(createUser('rollback@example.test', 'sample-password', 'Sample', { dateOfBirth: '2000-01-01' })).rejects.toThrow('evidence unavailable');
+      await expect(createUser('rollback@example.test', 'sample-password', 'Sample', { dateOfBirth: '2000-01-01' })).rejects.toThrow('Local fixture Auth creation failed.');
       expect(await result(database().from('users').select('id').eq('email', 'rollback@example.test'))).toEqual([]);
     } finally {
       adminSql('DROP TRIGGER reject_signup_evidence ON public.consent_events; DROP FUNCTION evia_private.reject_signup_evidence();');

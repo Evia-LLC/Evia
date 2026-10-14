@@ -43,14 +43,21 @@
 
   const dateFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' });
 
+  let deleting = $state(false);
   async function remove(id: string) {
-    await api.deleteScan(id);
-    await refreshScans();
+    if (deleting || session.guest || !window.confirm('Delete this saved scan? This cannot be undone.')) return;
+    deleting = true;
+    try { const response = await api.deleteScan(id); if (response.status !== 'completed') throw new Error('The deletion has not completed.'); await refreshScans(); }
+    catch (cause) { session.operationError = cause instanceof Error ? cause.message : 'The scan could not be removed.'; }
+    finally { deleting = false; }
   }
 
   async function removePhoto(id: string) {
-    await api.deleteProgressPhoto(id);
-    session.progressPhotos = session.progressPhotos.filter((photo) => photo.id !== id);
+    if (deleting || session.guest || !window.confirm('Delete this saved photo? This cannot be undone.')) return;
+    deleting = true;
+    try { const response = await api.deleteProgressPhoto(id); if (response.status !== 'completed') throw new Error('The deletion has not completed.'); session.progressPhotos = session.progressPhotos.filter((photo) => photo.id !== id); }
+    catch (cause) { session.operationError = cause instanceof Error ? cause.message : 'The photo could not be removed.'; }
+    finally { deleting = false; }
   }
 </script>
 
@@ -180,7 +187,7 @@
               </span>
             </div>
             <div class="line__end">
-              <button class="btn btn--danger btn--mini" onclick={() => remove(scan.id!)}>Delete</button>
+              <button class="btn btn--danger btn--mini" disabled={deleting || session.guest} onclick={() => remove(scan.id!)}>Delete</button>
             </div>
           </div>
         {/each}
@@ -193,7 +200,7 @@
           {#each session.progressPhotos as photo (photo.id)}
             <div class="line">
               <span class="line__title">{dateFormat.format(new Date(photo.capturedAt))}</span>
-              <button class="btn btn--danger btn--mini" onclick={() => removePhoto(photo.id)}>Delete photo</button>
+              <button class="btn btn--danger btn--mini" disabled={deleting || session.guest} onclick={() => removePhoto(photo.id)}>Delete photo</button>
             </div>
           {/each}
         </div>

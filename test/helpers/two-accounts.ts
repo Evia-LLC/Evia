@@ -1,3 +1,4 @@
+import * as authFixtures from './auth-fixtures.ts';
 /**
  * P0-T02 — reusable two-account HTTP fixtures.
  *
@@ -24,8 +25,8 @@ const stamp = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export async function createAccount(tag: string): Promise<FixtureAccount> {
   const email = `${tag}-${stamp()}@test.local`;
-  const userId = await users.createUser(email, "Password123!", tag);
-  const token = await users.createSession(userId);
+  const userId = await authFixtures.createUser(email, "Password123!", tag);
+  const token = await authFixtures.createSession(userId);
   return { userId, token, email };
 }
 

@@ -1,9 +1,6 @@
-import { REGISTRATION_TERMS_VERSION, REGISTRATION_DOCUMENT_VERSIONS } from '../../shared/age-flow.ts';
 import { database, result, affected } from '../lib/data-api.ts';
 import { currentConsents } from './consents.ts';
-import { findCredentials } from './credentials.ts';
-import { newId, newToken, nowIso } from '../lib/ids.ts';
-import { hashPassword, verifyPassword } from '../lib/crypto.ts';
+import { nowIso } from '../lib/ids.ts';
 import {
   DEFAULT_PREFERENCES,
   type PregnancyStatus,
@@ -17,7 +14,6 @@ import {
   validateProfilePatch,
 } from '../../shared/boundary-validators.ts';
 
-const SESSION_DAYS = 30;
 
 interface UserRow {
   id: string;
@@ -25,79 +21,6 @@ interface UserRow {
   display_name: string;
   created_at: string;
   date_of_birth?: string | null;
-}
-
-export async function createUser(
-  email: string,
-  password: string,
-  displayName: string,
-  registration?: { dateOfBirth: string; ip?: string },
-): Promise<string> {
-  const normalised = email.trim().toLowerCase();
-  const existing = await result<{ id: string } | null>(database().from('users').select('id').eq('email', normalised).maybeSingle());
-  if (existing) throw new Error('An account with that email already exists.');
-
-  const { hash, salt } = await hashPassword(password);
-  const id = newId();
-  const now = nowIso();
-
-  await result(database().rpc('evia_create_user', {
-    p_user: { id, email: normalised, display_name: displayName.trim() || 'friend',
-      password_hash: hash, password_salt: salt, created_at: now, date_of_birth: registration?.dateOfBirth ?? null },
-    p_profile: { user_id: id, skin_type: 'unknown', fitzpatrick: null, concerns_json: '[]',
-      sensitivities_json: '[]', pregnancy_status: 'unknown', updated_at: now },
-    p_preferences: { user_id: id, explanation_style: DEFAULT_PREFERENCES.explanationStyle,
-      voice_enabled: 0, reduced_motion: 0, quality_tier: DEFAULT_PREFERENCES.qualityTier,
-      locale: DEFAULT_PREFERENCES.locale, voice_uri: null, updated_at: now },
-    p_consent: registration ? { id: newId(), user_id: id, consent_type: 'registration_terms',
-      wording_version_id: REGISTRATION_TERMS_VERSION, state: 'granted', recorded_at: now,
-      actor_type: 'account', actor_id: id, idempotency_key: `registration:${id}`,
-      metadata_json: { choice: 'accepted', source: 'registration', demoOnly: true, wordingStatus: 'placeholder',
-        documentVersions: REGISTRATION_DOCUMENT_VERSIONS, ip: registration.ip ?? null } } : null,
-  }));
-
-  return id;
-}
-
-// Unknown accounts perform the same KDF work without authenticating a dummy identity.
-const DUMMY_SALT = '0'.repeat(32);
-const DUMMY_HASH = '0'.repeat(128);
-
-export async function authenticate(email: string, password: string): Promise<string | null> {
-  const found = await findCredentials(email.trim().toLowerCase());
-  if (!found) {
-    await verifyPassword(password, DUMMY_HASH, DUMMY_SALT);
-    return null;
-  }
-  if (!(await verifyPassword(password, found.password_hash, found.password_salt))) return null;
-  return found.id;
-}
-
-export async function createSession(userId: string): Promise<string> {
-  const token = newToken();
-  const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 86400_000);
-  await result(database().from('sessions').insert({ token, user_id: userId, created_at: now.toISOString(), expires_at: expires.toISOString() }));
-  return token;
-}
-
-export async function userIdForSession(token: string): Promise<string | null> {
-  const found = await result<{ user_id: string; expires_at: string } | null>(database().from('sessions').select('user_id,expires_at').eq('token', token).maybeSingle());
-  if (!found) return null;
-  if (new Date(found.expires_at) < new Date()) {
-    await result(database().from('sessions').delete().eq('token', token));
-    return null;
-  }
-  return found.user_id;
-}
-
-/** Drops every session past its expiry. Called on boot and periodically. */
-export async function sweepExpiredSessions(): Promise<number> {
-  return affected(database().from('sessions').delete({ count: 'exact' }).lte('expires_at', new Date().toISOString()));
-}
-
-export async function destroySession(token: string): Promise<void> {
-  await result(database().from('sessions').delete().eq('token', token));
 }
 
 export async function getProfile(userId: string): Promise<SkinProfile> {
@@ -206,12 +129,4 @@ export async function getUserSummary(userId: string): Promise<UserSummary | null
     consents,
     scanCount,
   };
-}
-
-/**
- * Hard delete. Rows cascade from users(id); blobs are shredded by the caller,
- * which owns the list of refs (see routes/me.ts).
- */
-export async function deleteUser(userId: string): Promise<void> {
-  await result(database().from('users').delete().eq('id', userId));
 }

@@ -1,3 +1,4 @@
+import * as authFixtures from './helpers/auth-fixtures.ts';
 /**
  * What survives between one scan and the next.
  *
@@ -80,7 +81,7 @@ beforeAll(async () => {
 
   repo = await import("../server/db/body-scans.ts");
   const users: Users = await import("../server/db/users.ts");
-  userId = await users.createUser(
+  userId = await authFixtures.createUser(
     `body-store-${stamp()}@test.local`,
     "pw-not-used",
     "Tester",
@@ -138,7 +139,7 @@ describe.skipIf(!configured)("finding the scan to compare against", () => {
   let trendUser: string;
   beforeAll(async () => {
     const users: Users = await import("../server/db/users.ts");
-    trendUser = await users.createUser(
+    trendUser = await authFixtures.createUser(
       `body-trend-${stamp()}@test.local`,
       "pw-not-used",
       "Trend",

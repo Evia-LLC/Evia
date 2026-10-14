@@ -13,7 +13,7 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: 1,
     fileParallelism: false,
-    exclude: ['node_modules/**', 'test/integration/**', 'test/integration.setup.ts',
+    exclude: ['e2e/**', 'node_modules/**', 'test/integration/**', 'test/integration.setup.ts',
       'test/body-store.test.ts', 'test/product-ownership.test.ts', 'test/rate-limit.test.ts',
       'test/ownership-boundaries.test.ts', 'test/request-validation.test.ts', 'test/image-upload-boundaries.test.ts',
       'test/deletion-states.test.ts', 'test/voice-cache-privacy.test.ts', 'test/consents.test.ts',

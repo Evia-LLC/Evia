@@ -49,7 +49,7 @@ import { chatLimiter, scanLimiter, visionLimiter, voiceLimiter } from '../lib/ra
 import { log } from '../lib/log.ts';
 import { assembleDataExport } from '../privacy/export.ts';
 import { deleteAccount } from '../privacy/delete-account.ts';
-import { createAdminClient } from '../lib/supabase.ts';
+import { clearAuthCookies } from './auth.ts';
 import {
   completedAccountDeletion,
   completedItemDeletion,
@@ -213,14 +213,11 @@ apiRouter.delete('/me/data', async (req, res) => {
   }
   try {
     const result = await deleteAccount(req.userId!);
-    // Removing the managed identity also revokes future login and cascades linked profile records.
-    // An Auth API failure must not be reported as a completed deletion.
-    const { error: identityError } = await createAdminClient().auth.admin.deleteUser(req.userId!);
-    if (identityError) throw new Error('Managed identity deletion failed');
+    clearAuthCookies(req, res);
     res.json(completedAccountDeletion(result.blobsShredded));
   } catch (err) {
     const receipt = failedDeletion('account', err);
-    res.status(500).json({ ...receipt, error: receipt.error });
+    res.status(500).json({ ...receipt, error: receipt.error, rollbackConfirmed: err instanceof Error && 'rollbackConfirmed' in err && err.rollbackConfirmed === true });
   }
 });
 

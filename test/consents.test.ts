@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createUser } from '../server/db/users.ts';
+import { createUser } from './helpers/auth-fixtures.ts';
 import { recordConsentDecision, currentConsent, currentConsents, consentHistory } from '../server/db/consents.ts';
 import { database, result } from './helpers/data-api.ts';
 

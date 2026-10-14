@@ -44,7 +44,7 @@ describe('progress-photo privacy boundary', () => {
   it('shreds a selected progress photo on deletion and account deletion', () => {
     expect(api).toContain("apiRouter.delete('/progress-photos/:id'");
     const deleteService = fs.readFileSync(new URL('../server/privacy/delete-account.ts', import.meta.url), 'utf8');
-    expect(deleteService).toContain("rpc('evia_delete_account'");
+    expect(deleteService).toContain('auth.admin.deleteUser(userId)');
     expect(api).toContain('await shredBlob(ref)');
   });
 

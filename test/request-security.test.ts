@@ -1,0 +1,18 @@
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
+import express from 'express';
+import { createServer, type Server } from 'node:http';
+import { requestSecurity } from '../server/lib/request-security.ts';
+import { allowedOrigins, authOrigin, sessionIdFromVerifiedToken } from '../server/lib/auth-session.ts';
+let server:Server;let base:string;
+beforeAll(async()=>{const app=express();app.use(requestSecurity);app.use(express.json());app.post('/change',(_req,res)=>res.json({ok:true}));app.get('/read',(_req,res)=>res.json({ok:true}));server=createServer(app);await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const a=server.address();if(!a||typeof a==='string')throw Error();base='http://127.0.0.1:'+a.port;});
+afterAll(async()=>{await new Promise<void>(r=>server.close(()=>r()));});afterEach(()=>vi.unstubAllEnvs());
+const post=(headers:Record<string,string>={})=>fetch(base+'/change',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:'{}'});
+it('allows real same-origin JSON calls and prevents caching session responses',async()=>{const r=await post({Origin:base,'Sec-Fetch-Site':'same-origin'});expect(r.status).toBe(200);expect(r.headers.get('cache-control')).toContain('no-store');expect(r.headers.get('vercel-cdn-cache-control')).toBe('no-store');});
+it('rejects cross-site mutations even when a browser could attach a cookie',async()=>{expect((await post({Origin:'https://evil.test','Sec-Fetch-Site':'cross-site',Cookie:'example=token'})).status).toBe(403);});
+it('rejects opaque/null origins',async()=>{expect((await post({Origin:'null'})).status).toBe(403);});
+it('rejects HTML form content types on JSON API mutations',async()=>{const r=await fetch(base+'/change',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Origin:base},body:'password=x'});expect(r.status).toBe(415);});
+it('requires same-origin evidence or custom header for cookie requests without Origin',async()=>{expect((await post({Cookie:'session=x'})).status).toBe(403);expect((await post({Cookie:'session=x','X-Evia-Request':'1'})).status).toBe(200);});
+it('allows non-browser API JSON calls without browser cookies',async()=>expect((await post()).status).toBe(200));
+it('does not use wildcard Vercel destinations or untrusted Host for Auth redirects',()=>{vi.stubEnv('NODE_ENV','production');vi.stubEnv('APP_ENV','staging');vi.stubEnv('VERCEL','1');const mock={get:()=> 'attacker.vercel.app'} as unknown as express.Request;expect(()=>authOrigin(mock)).toThrow();expect(allowedOrigins()).not.toContain('https://attacker.vercel.app');});
+it('keeps production origins separate from staging defaults',()=>{expect(allowedOrigins({APP_ENV:'production',NODE_ENV:'production'})).not.toContain('https://evia-frontend-experiment.vercel.app');});
+it('validates session ID structure after an externally verified token',()=>{const make=(session_id:unknown)=>'a.'+Buffer.from(JSON.stringify({session_id})).toString('base64url')+'.b';expect(sessionIdFromVerifiedToken(make('06741003-c77e-42d7-b9e7-49ec2206430b'))).toBe('06741003-c77e-42d7-b9e7-49ec2206430b');expect(sessionIdFromVerifiedToken(make('arbitrary'))).toBeNull();expect(sessionIdFromVerifiedToken('invalid')).toBeNull();});

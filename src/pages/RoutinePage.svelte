@@ -32,6 +32,7 @@
   let busy = $state(false);
   let loaded = $state(false);
   let loadError = $state<string | null>(null);
+  let searchEpoch = 0;
 
   let newName = $state('');
   let newBrand = $state('');
@@ -69,66 +70,38 @@
     unrecognised: { label: 'Unknown', tone: 'flat' },
   };
 
+  async function perform(task: () => Promise<void>) {
+    if (busy) return;
+    if (session.guest) { loadError = 'Sign in to manage a saved product routine.'; return; }
+    busy = true; loadError = null;
+    try { await task(); }
+    catch (cause) { loadError = cause instanceof Error ? cause.message : 'The action could not be completed.'; }
+    finally { busy = false; }
+  }
   async function load() {
     if (session.guest) { loaded = true; return; }
     try {
-      const result = await api.routine();
-      usage = result.usage;
-      review = result.review;
-      outcomes = (await api.routineOutcomes()).outcomes;
-      loadError = null;
+      const [routine, response] = await Promise.all([api.routine(), api.routineOutcomes()]);
+      usage = routine.usage; review = routine.review; outcomes = response.outcomes; loadError = null;
       void refreshPicks();
-    } catch {
-      loadError = 'The saved routine could not be loaded. Please try again later.';
-    } finally {
-      loaded = true;
-    }
+    } catch (cause) { loadError = cause instanceof Error ? cause.message : 'The saved routine could not be loaded.'; }
+    finally { loaded = true; }
   }
-
   async function search() {
-    if (session.guest) { loadError = 'Sign in to search and track saved routine products.'; return; }
-    if (!query.trim()) return;
-    results = (await api.searchProducts(query)).products;
+    const epoch = ++searchEpoch; const text = query.trim();
+    if (!text) { results = []; return; }
+    await perform(async () => { const response = await api.searchProducts(text); if (epoch === searchEpoch && query.trim() === text) results = response.products; });
   }
-
   async function add() {
-    if (session.guest) { loadError = 'Sign in to save a product to your routine.'; return; }
     if (!newName.trim()) return;
-    busy = true;
-    try {
-      const { product } = await api.addProduct({
-        name: newName,
-        brand: newBrand || undefined,
-        ingredients: newIngredients
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      });
-      newName = '';
-      newBrand = '';
-      newIngredients = '';
-      results = [product];
-    } finally {
-      busy = false;
-    }
+    await perform(async () => {
+      const { product } = await api.addProduct({name: newName, brand: newBrand || undefined, ingredients: newIngredients.split(',').map(s => s.trim()).filter(Boolean)});
+      newName = ''; newBrand = ''; newIngredients = ''; results = [product];
+    });
   }
-
-  async function assess(product: Product) {
-    if (session.guest) { loadError = 'Sign in to assess saved products.'; return; }
-    assessment = (await api.assessProduct(product.id)).assessment;
-  }
-
-  async function start(product: Product) {
-    if (session.guest) { loadError = 'Sign in to track product usage.'; return; }
-    await api.startRoutine(product.id);
-    await load();
-  }
-
-  async function stop(id: string) {
-    if (session.guest) { loadError = 'Sign in to change tracked products.'; return; }
-    await api.stopRoutine(id);
-    await load();
-  }
+  async function assess(product: Product) { await perform(async () => { assessment = (await api.assessProduct(product.id)).assessment; }); }
+  async function start(product: Product) { await perform(async () => { await api.startRoutine(product.id); await load(); }); }
+  async function stop(id: string) { await perform(async () => { await api.stopRoutine(id); await load(); }); }
 
   $effect(() => {
     void load();
@@ -147,7 +120,7 @@
       <p class="card__text">Your personal product journal and stored routine assessments require an account. No routine records are loaded or saved in guest mode.</p>
     </div>
   {/if}
-  {#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
+  {#if loadError}<p class="error" role="alert">{loadError}</p><button class="btn btn--mini" type="button" onclick={load} disabled={busy || session.guest}>Retry loading</button>{/if}
 
   <nav class="studio-steps" aria-label="Routine sections">
     <a href="#inuse"><span>01</span> In use</a>
@@ -181,7 +154,7 @@
             <div class="line__end">
               <button
                 class="btn btn--mini"
-                onclick={() => stop(item.id)}
+                disabled={busy || session.guest} onclick={() => stop(item.id)}
                 aria-label={`Stop using ${item.product.name}`}
               >
                 Stop using
@@ -272,7 +245,7 @@
           placeholder="Search by name or brand"
           aria-label="Search products"
         />
-        <button class="btn" type="submit">Search</button>
+        <button class="btn" type="submit" disabled={busy || session.guest}>{busy ? 'Working...' : 'Search'}</button>
       </form>
 
       {#each results as product (product.id)}
@@ -286,8 +259,8 @@
             </span>
           </div>
           <div class="line__end">
-            <button class="btn btn--mini" onclick={() => assess(product)}>Assess</button>
-            <button class="btn btn--mini" onclick={() => start(product)}>Using it</button>
+            <button class="btn btn--mini" disabled={busy || session.guest} onclick={() => assess(product)}>Assess</button>
+            <button class="btn btn--mini" disabled={busy || session.guest} onclick={() => start(product)}>Using it</button>
           </div>
         </div>
       {/each}
@@ -341,7 +314,7 @@
           <textarea bind:value={newIngredients} rows="3" placeholder="Niacinamide, Zinc PCA, Glycerin"
           ></textarea>
         </label>
-        <button class="btn btn--primary" onclick={add} disabled={busy || !newName.trim()}>Add</button>
+        <button class="btn btn--primary" onclick={add} disabled={busy || session.guest || !newName.trim()}>Add</button>
       {/if}
     </div>
     <p class="legal">

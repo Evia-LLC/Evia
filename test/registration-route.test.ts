@@ -2,63 +2,46 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vite
 import express from 'express';
 import { createServer, type Server } from 'node:http';
 import { AGE_FLOW_COPY, REGISTRATION_TERMS_VERSION } from '../shared/age-flow.ts';
-const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), createUser: vi.fn(), createSession: vi.fn(), getUserSummary: vi.fn(), log: vi.fn() }));
-vi.mock('../server/db/users.ts', () => mocks);
-vi.mock('../server/lib/log.ts', () => ({ log: { info: mocks.log } }));
-vi.mock('../server/lib/rate-limit.ts', () => ({ loginLimiter: (_req: unknown, _res: unknown, next: () => void) => next(), registerLimiter: (_req: unknown, _res: unknown, next: () => void) => next() }));
-const { authRouter } = await import('../server/routes/auth.ts');
-let server: Server; let base: string;
-beforeAll(async () => {
-  const app = express(); app.use(express.json()); app.use(authRouter); server = createServer(app);
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address(); if (!address || typeof address === 'string') throw new Error('no listener');
-  base = `http://127.0.0.1:${address.port}`;
+const mocks=vi.hoisted(()=>({signUp:vi.fn(),signInWithPassword:vi.fn(),signOut:vi.fn(),exchangeCodeForSession:vi.fn(),resend:vi.fn(),resetPasswordForEmail:vi.fn(),updateUser:vi.fn(),prepare:vi.fn(),discard:vi.fn(),getUserSummary:vi.fn(),verified:vi.fn(),settings:vi.fn(),rpc:vi.fn(),adminSignOut:vi.fn()}));
+vi.mock('../server/lib/auth-session.ts',async(original)=>{const actual=await original<typeof import('../server/lib/auth-session.ts')>();return {...actual,createAuthClient:()=>({auth:mocks}),verifiedIdentity:mocks.verified,authSettings:mocks.settings,clearAuthCookies:(_req:unknown,res:express.Response)=>res.append('Set-Cookie','evia_access=; Max-Age=0; HttpOnly; Path=/')};});
+vi.mock('../server/lib/supabase.ts',()=>({createAdminClient:()=>({auth:{admin:{signOut:mocks.adminSignOut}}}),resolveSupabaseConfig:()=>({url:'http://localhost:54321',anonKey:'public'}),createRequestClient:()=>({})}));
+vi.mock('../server/db/registration.ts',()=>({prepareRegistration:mocks.prepare,discardRegistration:mocks.discard,tokenHash:(s:string)=>s}));
+vi.mock('../server/db/users.ts',()=>({getUserSummary:mocks.getUserSummary}));
+vi.mock('../server/lib/data-api.ts',()=>({database:()=>({rpc:mocks.rpc}),result:async(value:Promise<unknown>)=>value}));
+vi.mock('../server/lib/rate-limit.ts',()=>({loginLimiter:(_r:unknown,_s:unknown,next:()=>void)=>next(),registerLimiter:(_r:unknown,_s:unknown,next:()=>void)=>next()}));
+const {authRouter}=await import('../server/routes/auth.ts');
+let server:Server;let base:string;
+const uid='a745c4f0-d712-49a0-990a-bea0483feb36';const sid='06741003-c77e-42d7-b9e7-49ec2206430b';
+const access='header.'+Buffer.from(JSON.stringify({session_id:sid})).toString('base64url')+'.signature';
+const user={id:uid,email:'adult@example.test',email_confirmed_at:'2026-01-01',is_anonymous:false};
+const session={access_token:access,refresh_token:'server-only',expires_in:3600};
+beforeAll(async()=>{const app=express();app.use(express.json());app.use(authRouter);app.use((error:Error&{status?:number},_req:express.Request,res:express.Response,_next:express.NextFunction)=>res.status(error.status??500).json({error:'Request failed'}));server=createServer(app);await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const address=server.address();if(!address||typeof address==='string')throw new Error('No listener');base='http://127.0.0.1:'+address.port;});
+afterAll(async()=>{await new Promise<void>(r=>server.close(()=>r()));});
+beforeEach(()=>{
+ vi.stubEnv('EVIA_SAMPLE_DEMO','1');vi.stubEnv('APP_ENV','staging');vi.stubEnv('VERCEL','');vi.clearAllMocks();
+ mocks.prepare.mockResolvedValue('a'.repeat(64));mocks.discard.mockResolvedValue(undefined);mocks.settings.mockResolvedValue({registrationEnabled:true,emailConfirmationRequired:true});
+ mocks.signUp.mockResolvedValue({data:{user,session:null},error:null});mocks.signInWithPassword.mockResolvedValue({data:{user,session},error:null});mocks.signOut.mockResolvedValue({error:null});
+ mocks.getUserSummary.mockResolvedValue({id:uid});mocks.rpc.mockResolvedValue(true);mocks.verified.mockResolvedValue({userId:uid,sessionId:sid,accessToken:access});mocks.adminSignOut.mockResolvedValue({error:null});
+ mocks.exchangeCodeForSession.mockResolvedValue({data:{user,session,redirectType:null},error:null});mocks.resend.mockResolvedValue({error:null});mocks.resetPasswordForEmail.mockResolvedValue({error:null});mocks.updateUser.mockResolvedValue({error:null});
 });
-afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
-beforeEach(() => {
-  vi.stubEnv('EVIA_SAMPLE_DEMO', '1'); vi.clearAllMocks(); mocks.createUser.mockResolvedValue('sample-id');
-  mocks.createSession.mockResolvedValue('sample-token'); mocks.getUserSummary.mockResolvedValue({ id: 'sample-id' });
-});
-afterEach(() => vi.unstubAllEnvs());
-const post = (body: unknown) => fetch(base + '/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-function dobAtAge(age: number) { const date = new Date(); date.setUTCFullYear(date.getUTCFullYear() - age); return date.toISOString().slice(0, 10); }
-const adult = () => ({ email: 'adult@example.test', password: 'sample-password', displayName: 'Sample', dateOfBirth: dobAtAge(25), termsAccepted: true, termsVersion: REGISTRATION_TERMS_VERSION });
-it('blocks under-16 attempts without creating accounts, sessions or logging their data', async () => {
-  const response = await post({ ...adult(), dateOfBirth: dobAtAge(15) });
-  expect(response.status).toBe(403); expect((await response.json()).error).toBe(AGE_FLOW_COPY.under16);
-  expect(mocks.createUser).not.toHaveBeenCalled(); expect(mocks.createSession).not.toHaveBeenCalled(); expect(mocks.log).not.toHaveBeenCalled();
-});
-it.each([16, 17])('does not create an ordinary account for a %s-year-old', async age => {
-  const response = await post({ ...adult(), dateOfBirth: dobAtAge(age) });
-  expect(response.status).toBe(403); expect((await response.json()).guardianRequired).toBe(true); expect(mocks.createUser).not.toHaveBeenCalled();
-});
-it.each([{ dateOfBirth: 'bad' }, { termsAccepted: false }, { termsVersion: 'old' }])('rejects missing or stale registration evidence: %s', async override => {
-  expect((await post({ ...adult(), ...override })).status).toBe(400); expect(mocks.createUser).not.toHaveBeenCalled();
-});
-it('does not treat draft Terms as production approval', async () => {
-  vi.stubEnv('EVIA_SAMPLE_DEMO', '0'); expect((await post(adult())).status).toBe(403); expect(mocks.createUser).not.toHaveBeenCalled();
-});
-it('passes self-declared DOB into atomic sample registration after a separate Terms choice', async () => {
-  const request = adult(); const response = await post(request); expect(response.status).toBe(200);
-  expect(response.headers.get('set-cookie')).toContain('HttpOnly; SameSite=Strict');
-  expect(response.headers.get('set-cookie')).not.toMatch(/max-age|expires/i);
-  expect(mocks.createUser).toHaveBeenCalledWith(request.email, request.password, request.displayName, expect.objectContaining({ dateOfBirth: request.dateOfBirth }));
-});
-
-it.each(['x'.repeat(129), 'é'.repeat(65)])('rejects oversized registration passwords before account creation', async password => {
-  const response = await post({ ...adult(), password });
-  expect(response.status).toBe(400);
-  expect((await response.json()).error).toContain('128 UTF-8 bytes');
-  expect(mocks.createUser).not.toHaveBeenCalled();
-  expect(mocks.createSession).not.toHaveBeenCalled();
-});
-it.each(['x'.repeat(129), 'é'.repeat(65)])('rejects oversized login passwords before authentication', async password => {
-  const response = await fetch(base + '/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'adult@example.test', password }),
-  });
-  expect(response.status).toBe(400);
-  expect((await response.json()).error).toBe('Invalid credentials.');
-  expect(mocks.authenticate).not.toHaveBeenCalled();
-  expect(mocks.createSession).not.toHaveBeenCalled();
-});
+afterEach(()=>vi.unstubAllEnvs());
+const post=(path:string,body:unknown)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+const adult=()=>({email:'adult@example.test',password:'sample-password',displayName:'Sample',dateOfBirth:'2000-01-01',termsAccepted:true,termsVersion:REGISTRATION_TERMS_VERSION});
+it('requires an explicit valid age and current separate Terms choice before Auth writes',async()=>{for(const patch of [{dateOfBirth:''},{termsAccepted:false},{termsVersion:'stale'}])expect((await post('/register',{...adult(),...patch})).status).toBe(400);expect(mocks.signUp).not.toHaveBeenCalled();expect(mocks.prepare).not.toHaveBeenCalled();});
+it.each([15,17])('blocks age %s before capability or Auth creation',async(age)=>{const dob=new Date();dob.setUTCFullYear(dob.getUTCFullYear()-age);const response=await post('/register',{...adult(),dateOfBirth:dob.toISOString().slice(0,10)});expect(response.status).toBe(403);expect((await response.json()).error).toBe(age<16?AGE_FLOW_COPY.under16:AGE_FLOW_COPY.guardianHeading);expect(mocks.prepare).not.toHaveBeenCalled();expect(mocks.signUp).not.toHaveBeenCalled();});
+it('never enables placeholder registration in the production lane',async()=>{vi.stubEnv('APP_ENV','production');expect((await post('/register',adult())).status).toBe(403);expect(mocks.signUp).not.toHaveBeenCalled();});
+it('requires email confirmation configuration before issuing an intent',async()=>{mocks.settings.mockResolvedValue({registrationEnabled:false});expect((await post('/register',adult())).status).toBe(503);expect(mocks.prepare).not.toHaveBeenCalled();});
+it.each(['x'.repeat(129),'\u00e9'.repeat(65)])('enforces UTF-8 byte length before Auth calls',async(password)=>{const r=await post('/register',{...adult(),password});expect(r.status).toBe(400);expect((await r.json()).error).toContain('128 UTF-8 bytes');expect(mocks.signUp).not.toHaveBeenCalled();});
+it('returns confirmation pending, not a logged-in account, after real Auth signup delegation',async()=>{const response=await post('/register',adult());expect(response.status).toBe(202);expect(await response.json()).toEqual({confirmationRequired:true,user:null});expect(mocks.prepare).toHaveBeenCalledWith(expect.objectContaining({dateOfBirth:'2000-01-01',displayName:'Sample'}));expect(mocks.signUp).toHaveBeenCalledWith(expect.objectContaining({options:{emailRedirectTo:base+'/api/auth/callback',data:{evia_registration_token:'a'.repeat(64)}}}));expect(mocks.discard).toHaveBeenCalled();expect(response.headers.get('cache-control')).toContain('no-store');});
+it('rejects unexpected immediate sessions instead of bypassing verification',async()=>{mocks.signUp.mockResolvedValue({data:{user,session},error:null});expect((await post('/register',adult())).status).toBe(503);expect(mocks.signOut).toHaveBeenCalledWith({scope:'local'});});
+it('cleans failed signup intents without disclosing provider internals',async()=>{mocks.signUp.mockResolvedValue({data:{},error:{status:400,message:'secret upstream detail'}});const r=await post('/register',adult());expect(r.status).toBe(400);expect(await r.text()).not.toContain('secret');expect(mocks.discard).toHaveBeenCalled();});
+it('logs in only confirmed provisioned users and never returns access/refresh tokens',async()=>{const r=await post('/login',{email:user.email,password:'correct password'});expect(r.status).toBe(200);expect(await r.json()).toEqual({user:{id:uid}});expect(mocks.rpc).toHaveBeenCalledWith('evia_auth_session_active',{p_user_id:uid,p_session_id:sid});});
+it('rejects unconfirmed users at login',async()=>{mocks.signInWithPassword.mockResolvedValue({data:{session,user:{...user,email_confirmed_at:null}},error:null});expect((await post('/login',{email:user.email,password:'password'})).status).toBe(401);});
+it('rejects a valid Auth user with no provisioned application account',async()=>{mocks.getUserSummary.mockResolvedValue(null);expect((await post('/login',{email:user.email,password:'password'})).status).toBe(403);expect(mocks.signOut).toHaveBeenCalled();});
+it('exchanges PKCE code and uses a fixed safe redirect, ignoring arbitrary next URLs',async()=>{const r=await fetch(base+'/callback?code=code&next=https://evil.test',{redirect:'manual'});expect(r.status).toBe(303);expect(r.headers.get('location')).toBe('/?auth=confirmed');expect(mocks.exchangeCodeForSession).toHaveBeenCalledWith('code',undefined);});
+it('does not accept an invalid callback or a missing PKCE verifier',async()=>{mocks.exchangeCodeForSession.mockResolvedValue({data:{},error:{message:'bad verifier'}});const r=await fetch(base+'/callback?code=bad',{redirect:'manual'});expect(r.headers.get('location')).toBe('/?auth=link-invalid');});
+it('issues recovery authorization only from SDK-confirmed recovery exchanges',async()=>{mocks.exchangeCodeForSession.mockResolvedValue({data:{user,session,redirectType:'recovery'},error:null});const r=await fetch(base+'/callback?code=reset',{redirect:'manual'});expect(r.headers.get('location')).toBe('/auth/recovery');expect(r.headers.get('set-cookie')).toMatch(/evia_recovery=.*HttpOnly/);expect(mocks.rpc).toHaveBeenCalledWith('evia_prepare_recovery',expect.objectContaining({p_user_id:uid,p_session_id:sid}));});
+it('does not accept a password update without a server-side recovery grant',async()=>{expect((await post('/password',{password:'new password'})).status).toBe(403);expect(mocks.updateUser).not.toHaveBeenCalled();});
+it('revokes the actual session and clears HttpOnly cookies on logout',async()=>{const r=await post('/logout',{});expect(r.status).toBe(200);expect(mocks.adminSignOut).toHaveBeenCalledWith(access,'local');expect(r.headers.get('set-cookie')).toContain('Max-Age=0');});
+it('does not pretend a failed revocation succeeded',async()=>{mocks.adminSignOut.mockResolvedValue({error:{status:503}});const r=await post('/logout',{});expect(r.status).toBe(503);expect(r.headers.get('set-cookie')).toContain('Max-Age=0');});
+it('requests recovery at the same-origin callback with an enumeration-safe response',async()=>{const r=await post('/password-reset',{email:user.email});expect(r.status).toBe(202);expect(mocks.resetPasswordForEmail).toHaveBeenCalledWith(user.email,{redirectTo:base+'/api/auth/callback'});});

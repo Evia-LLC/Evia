@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { api } from '@/lib/api.ts';
   import { register, signIn, enterGuestMode } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
   import AgeGuardianFlow from '@/components/legal/AgeGuardianFlow.svelte';
@@ -16,11 +17,19 @@
   let ageBlocked = $state(false);
   let guardianPreview = $state(false);
   let error = $state<string | null>(null);
-  let notice = $state<string | null>(null);
+  let notice = $state<string | null>(new URLSearchParams(location.search).get('auth') === 'link-invalid' ? 'This email link could not be completed. Use the browser that requested it, or sign in after confirming your email.' : null);
   const age = $derived(ageOnDate(dateOfBirth));
   const canReachAccount = $derived(session.serverReachable && session.databaseAvailable);
-  const registrationAvailable = $derived(canReachAccount && session.demoMode);
+  const registrationAvailable = $derived(canReachAccount && session.registrationEnabled);
 
+  async function emailAction(action: 'reset' | 'resend') {
+    if (busy) return;
+    if (!email.trim()) { error = 'Enter your email address first.'; return; }
+    busy = true; error = null; notice = null;
+    try { const result = action === 'reset' ? await api.requestPasswordReset(email) : await api.resendConfirmation(email); notice = result.message; }
+    catch (cause) { error = cause instanceof Error ? cause.message : 'The email request failed.'; }
+    finally { busy = false; }
+  }
   function switchMode(next: 'login' | 'register') {
     mode = next;
     error = null;
@@ -56,7 +65,8 @@
           throw new Error('Sample registration is not available in this deployment while the legal wording is being reviewed.');
         }
         if (!termsAccepted) throw new Error('Please choose whether to accept the current Terms.');
-        await register(email, password, displayName, dateOfBirth, termsAccepted);
+        const signedIn = await register(email, password, displayName, dateOfBirth, termsAccepted);
+        if (!signedIn) { notice = 'Check your email to confirm your account, then sign in.'; password = ''; mode = 'login'; return; }
         router.go('/legal/age-assurance');
       }
     } catch (err) {
@@ -124,9 +134,9 @@
           <form class="entry__form" onsubmit={submit}>
             {#if mode === 'register'}
               <label class="entry__field">
-                <span>Date of birth</span>
-                <input type="date" bind:value={dateOfBirth} required />
-                <small>{AGE_FLOW_COPY.eligibility}</small>
+                <span id="entry-dob-label">Date of birth</span>
+                <input type="date" bind:value={dateOfBirth} aria-labelledby="entry-dob-label" aria-describedby="entry-dob-help" required />
+                <small id="entry-dob-help">{AGE_FLOW_COPY.eligibility}</small>
               </label>
               {#if (age ?? 0) >= 18}
                 <label class="entry__field">
@@ -170,6 +180,12 @@
               <p class="entry__notice" role="status">Account storage is currently unavailable. On-device preview still works.</p>
             {/if}
 
+            {#if mode === 'login'}
+              <div class="actions">
+                <button type="button" class="entry__plain" disabled={busy || !session.serverReachable} onclick={() => emailAction('reset')}>Forgot password?</button>
+                <button type="button" class="entry__plain" disabled={busy || !session.serverReachable} onclick={() => emailAction('resend')}>Resend confirmation</button>
+              </div>
+            {/if}
             {#if error}<p class="entry__error" role="alert">{error}</p>{/if}
             {#if notice}<p class="entry__success" role="status">{notice}</p>{/if}
 

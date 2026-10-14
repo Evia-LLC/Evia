@@ -15,7 +15,8 @@ import express from 'express';
 import { analysisRouter } from './routes/analysis.ts';
 import { analysisProvider, perfectCorpAvailable, sampleDemoEnabled } from './ai/perfectcorp.ts';
 import { verifyDataApi } from './lib/data-api.ts';
-import { authRouter } from './routes/auth.ts';
+import { authRouter, sampleRegistrationAllowed } from './routes/auth.ts';
+import { requestSecurity } from './lib/request-security.ts';
 import { apiRouter } from './routes/api.ts';
 import { publicRouter } from './routes/public.ts';
 import { adminRouter } from './routes/admin.ts';
@@ -24,11 +25,11 @@ import { clonedVoiceAvailable, guestVoiceAllowed, speakLine, VoiceUnavailable } 
 import { guestVoiceLimiter } from './lib/rate-limit.ts';
 import { blobStorageAvailable } from './lib/crypto.ts';
 
-import { seedDemoUser } from './demo/seed.ts';
-import { sweepExpiredSessions } from './db/users.ts';
 import { log } from './lib/log.ts';
 
 export const app = express();
+app.disable('x-powered-by');
+app.use('/api', requestSecurity);
 
 // Only routes that carry an image get the large body limit. Path-based limits
 // stay because the adapters need the body to route, but auth still runs at
@@ -73,7 +74,9 @@ app.get('/api/health', async (_req, res) => {
     imageStorage: blobStorageAvailable(),
     clonedVoice: clonedVoiceAvailable(),
     guestVoice: guestVoiceAllowed(),
-    demoMode: process.env.DEMO_MODE === '1',
+    demoMode: false,
+    registrationEnabled: database && sampleRegistrationAllowed(),
+    emailConfirmationRequired: true,
   });
 });
 
@@ -222,18 +225,8 @@ export function ready(): Promise<void> {
   readiness ??= (async () => {
     await verifyDataApi();
 
-    if (process.env.DEMO_MODE === '1') {
-      const demo = await seedDemoUser();
-      // The password is deliberately not logged. It is a fixed constant in
-      // seed.ts, so anyone who can read the source can read it there — but a
-      // log line puts it in the platform's log store, which is a different
-      // audience, and redact() only walks `extra`, never the message.
-      if (demo) log.info('demo', 'demo user ready', { email: demo.email });
-    }
+    // Managed Auth owns session cleanup. Fixture seeding is an explicit CLI action, never boot work.
 
-    // Expired sessions were only removed when that exact token was presented
-    // again, so rows for tokens nobody ever reuses accumulated forever.
-    await sweepExpiredSessions();
   })().catch((err) => {
     // A failed startup must not be cached as done — the next request should be
     // allowed to try again rather than serving a permanently broken instance.
