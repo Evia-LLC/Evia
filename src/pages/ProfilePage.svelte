@@ -100,6 +100,12 @@
     <a class="cta cta--quiet" href="/legal/safety-lifestyle-consent" use:link>Optional safety and lifestyle consent</a>
   {/snippet}
 
+  <div class="studio-profile-intro">
+    <span aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
+    <div><strong>{session.guest ? 'Private preview' : session.user?.displayName ?? 'Your space'}</strong>
+      <small>{session.guest ? 'Changes are not saved without an account.' : 'Your skin context and preferences, in one place.'}</small></div>
+  </div>
+
   <section class="sec" aria-labelledby="skin">
     <div class="sec__head">
       <h2 class="sec__title" id="skin">Your skin</h2>
