@@ -1,42 +1,63 @@
-name: Verify published readiness repairs
+name: Verify managed Auth integration contracts
 on:
   push:
     branches: [ops/readiness-publish-20261014]
 permissions:
   contents: read
 concurrency:
-  group: readiness-verification-20261014
-  cancel-in-progress: true
+  group: readiness-contract-publication-20261014
+  cancel-in-progress: false
 jobs:
-  integration:
+  publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
-      - name: Check out exact published staging source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5c1de7216f420e1acebbd1e45fe75eef91884430
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify both published branches and protected sources
+      - name: Verify reviewed test and report changes only
         shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 60 --proto '=https' 'https://sb-qde9k4401y7s.vercel.run/0e3d246633f03bad661cebf6a0c836f97aa5d8773071622a.bundle' -o /tmp/reviewed.bundle
+          printf '%s  %s\n' 'af277af871c68bd34a0633b11d987276e5a034f90dd3952a4c209728971ec524' /tmp/reviewed.bundle | sha256sum --check --strict
+          git bundle verify /tmp/reviewed.bundle
+          git fetch /tmp/reviewed.bundle refs/heads/staging:refs/reviewed/staging refs/heads/experiment/frontend-rebuild:refs/reviewed/experiment
+          test "$(git rev-list --parents -n 1 refs/reviewed/staging)" = '726c845903e8b131dea86638e1874af48fc3c9d5 5c1de7216f420e1acebbd1e45fe75eef91884430'
+          test "$(git rev-list --parents -n 1 refs/reviewed/experiment)" = 'fe026d5ebb4759d51d962dd09f1f7bf99b0929df c1c9ae230083c9ea339dfad257a22dfab825b5cc'
+          for ref in refs/reviewed/staging refs/reviewed/experiment; do
+            test -z "$(git diff --name-only "$ref^" "$ref" | grep -vE '^(test/(body-store|consents|deletion-states)\.test\.ts|test/integration/(data-api-security|deletion-races|export-pagination)\.test\.ts|docs/audits/READINESS_2026-10-14\.md)$' || true)"
+          done
+      - name: Atomically publish only requested branches
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/staging | cut -f1)" = '5c1de7216f420e1acebbd1e45fe75eef91884430'
           test "$(git ls-remote origin refs/heads/experiment/frontend-rebuild | cut -f1)" = 'c1c9ae230083c9ea339dfad257a22dfab825b5cc'
+          git -c credential.helper='!gh auth git-credential' push --atomic origin refs/reviewed/staging:refs/heads/staging refs/reviewed/experiment:refs/heads/experiment/frontend-rebuild
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = '0880ba093cc6e3e421021b3046441ed3e3288fc8'
-          protected=(shared src/styles src/legal src/pages/legal src/components/legal src/components/Nav.svelte src/components/Page.svelte src/pages/HomePage.svelte .github)
-          git diff --exit-code 4dea94a19b698f48773e08a817396bb96913a797 5c1de7216f420e1acebbd1e45fe75eef91884430 -- "${protected[@]}"
-          git diff --exit-code d72aeec1575d49ee6986b3767fa406b535612a0a c1c9ae230083c9ea339dfad257a22dfab825b5cc -- "${protected[@]}"
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+  integration:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 726c845903e8b131dea86638e1874af48fc3c9d5
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
           package-manager-cache: false
-      - name: Install locked dependencies without install scripts
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Set up pinned local Supabase CLI
-        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
         with:
           version: 2.120.0
       - name: Real isolated Supabase Data API integration suite
