@@ -641,3 +641,109 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+
+/* Page-specific clarity: action-led overview before detailed privacy controls. */
+.studio-page .studio-context {
+  display: grid;
+  gap: 10px;
+}
+.studio-page .studio-context > div {
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr);
+  align-items: start;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--studio-stroke);
+  border-radius: 15px;
+  background: var(--studio-paper);
+}
+.studio-page .studio-context__icon {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  width: 34px; height: 34px;
+  background: #e6f0e5;
+  color: var(--studio-accent);
+  font: italic 15px Georgia,serif;
+}
+.studio-page .studio-context strong { font: 650 13px/1.4 var(--font); color: var(--studio-ink); }
+.studio-page .studio-context p { margin: 5px 0 0; color: var(--studio-muted); font: 12px/1.7 var(--font); }
+.studio-page .studio-context__links { display: flex; flex-wrap: wrap; gap: 10px; }
+.studio-page .studio-context__links a {
+  display: flex; justify-content: space-between; gap: 15px;
+  min-height: 42px; align-items: center; padding: 10px 13px;
+  border: 1px solid #c2d6c7; border-radius: 11px;
+  background: #ecf3eb; color: var(--studio-accent); font: 650 12px/1.4 var(--font);
+}
+.studio-page .studio-context__links a:hover { background: #dfece0; }
+
+/* Legal reading experience replaces the old bare document wall. */
+.shell > main {
+  background: var(--studio-cream);
+  color: var(--studio-ink);
+}
+.shell .studio-legal-document {
+  width: min(100%, 770px);
+  margin: 0 auto;
+  padding: 35px clamp(20px,5vw,48px) 70px;
+  color: var(--studio-ink);
+  font-family: var(--font);
+}
+.shell .studio-legal-document__nav {
+  display: flex; gap: 18px; justify-content: space-between; align-items: center;
+  padding-bottom: 22px; border-bottom: 1px solid var(--studio-stroke);
+  color: #6a8472; letter-spacing: .11em; font: 700 10px/1.4 var(--font);
+}
+.shell .studio-legal-document__nav a { text-decoration: none; color: var(--studio-accent); letter-spacing: 0; font: 650 12px/1.4 var(--font); }
+.shell .studio-legal-document__header { padding: 40px 0 22px; }
+.shell .studio-legal-document__header > p {
+  color: #718976; letter-spacing: .13em; margin: 0 0 16px;
+  font: 700 10px/1.4 var(--font);
+}
+.shell .studio-legal-document__header h1 {
+  color: var(--studio-ink);
+  margin: 0 0 16px;
+  font: 400 clamp(35px,5.6vw,54px)/1.12 Georgia,serif;
+  letter-spacing: -.05em;
+  text-wrap: balance;
+}
+.shell .studio-legal-document__notice { margin: 12px 0 24px; }
+.shell .studio-legal-document__body {
+  border: 1px solid var(--studio-stroke);
+  background: var(--studio-paper);
+  border-radius: 19px;
+  padding: clamp(19px,4vw,35px);
+  box-shadow: 0 12px 30px rgba(12,31,20,.04);
+}
+.shell .studio-legal-document__body p {
+  margin: 0 0 18px;
+  color: #43574b;
+  font: 14px/1.85 var(--font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.shell .studio-legal-document__body p:last-child { margin-bottom: 0; }
+.shell .studio-legal-document__meta {
+  display: grid;
+  grid-template-columns: minmax(110px, 145px) minmax(0,1fr);
+  gap: 11px;
+  margin: 22px 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--studio-stroke);
+  border-bottom: 1px solid var(--studio-stroke);
+  font: 12px/1.6 var(--font);
+}
+.shell .studio-legal-document__meta dt { font-weight: 700; color: var(--studio-muted); }
+.shell .studio-legal-document__meta dd { margin: 0; overflow-wrap: anywhere; }
+.shell .studio-legal-document__footer { color: #76867a; font: 11px/1.5 var(--font); padding-top: 12px; }
+.shell .legal-page .decision { color: var(--studio-ink); }
+.shell .legal-page .decision label { color: #385542; }
+.shell .legal-page .decision a { text-decoration: underline; }
+.shell .legal-page .decision button { border-radius: 10px; font-weight: 600; min-height: 44px; }
+@media (max-width: 860px), (orientation: portrait) {
+  .shell .studio-legal-document { padding-top: 26px; }
+  .shell .studio-legal-document__header { padding-top: 30px; }
+  .shell .studio-legal-document__body { padding: 18px; }
+  .shell .studio-legal-document__body p { font-size: 13px; line-height: 1.8; }
+}
