@@ -307,7 +307,7 @@ export async function bootstrap(): Promise<void> {
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const { token, user } = await api.login(email, password);
+  const { user } = await api.login(email, password);
   setToken(null);
   session.user = user;
   await loadUserData();
