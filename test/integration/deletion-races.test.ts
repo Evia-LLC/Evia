@@ -16,13 +16,14 @@ describe('atomic account deletion', () => {
       BEGIN RAISE EXCEPTION 'fixture delete failure'; END; $$;
       CREATE TRIGGER reject_delete BEFORE DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION evia_private.reject_delete();`);
     try {
-      await expect(deleteAccount(userId)).rejects.toThrow('fixture delete failure');
+      await expect(deleteAccount(userId)).rejects.toMatchObject({ rollbackConfirmed: true, message: 'The deletion did not complete. Please try again.' });
       expect(await result(database().from('users').select('id').eq('id', userId).maybeSingle())).toBeTruthy();
       expect(await result(database().from('blobs').select('ref').eq('ref', 'rollback-blob').maybeSingle())).toBeTruthy();
       expect(await result(database().from('products').select('id').eq('id', 'rollback-product').maybeSingle())).toBeTruthy();
     } finally { adminSql('DROP TRIGGER reject_delete ON public.users; DROP FUNCTION evia_private.reject_delete();'); }
     expect(await deleteAccount(userId)).toEqual({ ok: true, blobsShredded: 1, blobsFailed: 0 });
-    expect(await deleteAccount(userId)).toEqual({ ok: true, blobsShredded: 0, blobsFailed: 0 });
+    // A retry reconciles the same committed receipt; it does not fabricate a fresh zero-count erase.
+    expect(await deleteAccount(userId)).toEqual({ ok: true, blobsShredded: 1, blobsFailed: 0 });
   });
   it('serializes capture with account deletion and isolates a second account', async () => {
     const a = await createAccount('delete-race-a');

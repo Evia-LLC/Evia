@@ -172,12 +172,12 @@ describe.skipIf(!configured)("finding the scan to compare against", () => {
   });
 
   it("has no previous scan on a first reading", async () => {
-    expect(await repo.previousBodyScan("nobody-with-this-id")).toBeNull();
-    expect(await repo.latestBodyScan("nobody-with-this-id")).toBeNull();
+    expect(await repo.previousBodyScan("b28a193c-7e9b-4e21-8d4e-04562fb39d13")).toBeNull();
+    expect(await repo.latestBodyScan("b28a193c-7e9b-4e21-8d4e-04562fb39d13")).toBeNull();
   });
 
   it("never returns readings belonging to another account", async () => {
-    expect((await repo.listBodyScans("someone-else")).length).toBe(0);
+    expect((await repo.listBodyScans("753ac61a-411d-4b12-9780-1c7062d832ab")).length).toBe(0);
   });
 });
 

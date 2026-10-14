@@ -8,7 +8,10 @@ beforeEach(async () => { user = await createUser(`consent-${crypto.randomUUID()}
 describe('versioned consent events over the Data API', () => {
   it('represents no decision with no event', async () => {
     expect(await currentConsent(user, 'new-key')).toBeNull();
-    expect(await currentConsents(user)).toEqual({});
+    const summaries = await currentConsents(user);
+    expect(Object.keys(summaries)).toEqual(['registration_terms']);
+    expect(summaries.registration_terms).toMatchObject({ state: 'granted', consentType: 'registration_terms' });
+    expect(summaries['new-key']).toBeUndefined();
   });
   it('retains grant and withdrawal history and resolves current summaries', async () => {
     await recordConsentDecision(user, 'photos', 'v1', 'granted');
@@ -32,13 +35,14 @@ describe('versioned consent events over the Data API', () => {
     expect(await recordConsentDecision(user, 'photos', 'v1', 'granted', { idempotencyKey: 'retry' })).toEqual(first);
     await expect(recordConsentDecision(user, 'photos', 'v2', 'granted', { idempotencyKey: 'retry' })).rejects.toThrow(/different consent/);
     await expect(result(database().from('consent_events').update({ state: 'withdrawn' }).eq('id', first.id))).rejects.toThrow(/immutable/);
-    expect(await consentHistory(user)).toHaveLength(1);
+    expect(await consentHistory(user, 'photos')).toHaveLength(1);
+    expect(await consentHistory(user, 'registration_terms')).toHaveLength(1);
   });
   it('preserves server-derived evidence and multiple wording versions', async () => {
     await recordConsentDecision(user, 'photos', 'v1', 'granted', { actorId: 'forged', source: 'forged', custom: true },
       { actorType: 'account', actorId: user, source: 'settings', ip: '127.0.0.1' });
     await recordConsentDecision(user, 'photos', 'v2', 'granted');
-    const history = await consentHistory(user);
+    const history = await consentHistory(user, 'photos');
     expect(new Set(history.map((e) => e.wordingVersionId))).toEqual(new Set(['v1', 'v2']));
     expect(history.find((e) => e.wordingVersionId === 'v1')).toMatchObject({ actorId: user,
       metadata: { custom: true, source: 'settings', ip: '127.0.0.1' } });
