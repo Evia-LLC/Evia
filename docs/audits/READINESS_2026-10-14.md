@@ -179,3 +179,13 @@ Migration `20261014132127_managed_auth_readiness` was applied only to evia-stagi
 | Full Docker Supabase integration suite | Not yet run in sandbox | Not yet run in sandbox |
 
 Browser tests use explicitly mocked API responses. PostgreSQL tests use a disposable synthetic Auth schema, not live users. Neither is represented as proof of email delivery, camera hardware, payment, age verification, or paid provider success. A scoped deployment read may bypass Vercel protection; it is not proof of anonymous public access.
+
+### Live deployment and integration follow-through
+
+Both exact functional commits were deployed READY. The staging branch alias returned HTTP 200 with database=true, registrationEnabled=true and emailConfirmationRequired=true; its responses were private/no-store. This verifies actual staging Data API credentials/readiness without reading secrets.
+
+The experimental alias still returned database=false. Its exact branch did not contain the three Supabase credentials or APP_ENV metadata; it needs the evia-staging configuration explicitly scoped to experiment/frontend-rebuild, not generic Preview and not production. EVIA_SAMPLE_DEMO=1 was added as a non-secret only on the two requested Preview branches; production registration remains blocked by the code gate.
+
+The live signup request to the user's email was blocked by the tool safety check before execution. No live test identity or email was created by that attempt, and hosted email delivery/callback cannot be marked passed.
+
+The first real Docker Supabase integration execution passed 114/123 tests. Its nine failures were traced to obsolete text-ID/password-column fixtures, registration-consent baseline counts, old frontend token-buffer assertions, and raw-error/retry-receipt expectations. These tests have been corrected to assert the managed-Auth contracts, keeping permission/ownership/rollback and pagination checks in place. The follow-up CI result is recorded separately; do not infer a pass until that run completes.

@@ -35,7 +35,11 @@ describe('complete-list contracts exceed the server row ceiling', () => {
     await insert('messages', indices.map((i) => ({ id: 'msg-' + i, conversation_id: 'conversation', role: 'user', content: i, created_at: at })));
     const lists = await Promise.all([consentHistory(userId), exportMemories(userId), exportScans(userId), exportBodyScans(userId),
       listOwnedProducts(userId), listUsage(userId), listProgressPhotos(userId), listCatalogue(n), listPendingReservations('2031-01-01')]);
-    for (const list of lists) expect(list).toHaveLength(n);
+    // Full consent export must include the registration evidence in addition to the paginated photo events.
+    expect(lists[0]).toHaveLength(n + 1);
+    expect((await consentHistory(userId, 'photos'))).toHaveLength(n);
+    expect((await consentHistory(userId, 'registration_terms'))).toHaveLength(1);
+    for (const list of lists.slice(1)) expect(list).toHaveLength(n);
     expect((await exportTranscripts(userId))[0].messages).toHaveLength(n);
   });
 });

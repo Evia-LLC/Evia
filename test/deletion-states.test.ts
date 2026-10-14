@@ -132,8 +132,9 @@ describe('deletion UI/session source contract', () => {
     );
     // Completed: confirmed response clears auth, in this order.
     expect(deletion).toContain('isDeletionCompleted(receipt)');
-    expect(deletion.indexOf('await api.deleteAccount()')).toBeLessThan(deletion.indexOf('setToken(null)'));
-    expect(deletion.indexOf('setToken(null)')).toBeLessThan(deletion.indexOf('session.reset()'));
+    expect(deletion.indexOf('await api.deleteAccount()')).toBeLessThan(deletion.indexOf('isDeletionCompleted(receipt)'));
+    expect(deletion.indexOf('isDeletionCompleted(receipt)')).toBeLessThan(deletion.indexOf('session.reset()'));
+    expect(deletion).not.toContain('setToken(');
     // Pending: returns the receipt with the session untouched.
     const pendingBranch = deletion.slice(deletion.indexOf('isDeletionPending(receipt)'));
     expect(pendingBranch).not.toContain('setToken(null)');
