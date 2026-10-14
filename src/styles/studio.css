@@ -590,7 +590,7 @@
   .studio-home {
     top: clamp(65px,10dvh,105px);
     left: 13px; right: 13px;
-    width: auto; max-height: calc(54dvh - 16px);
+    width: auto; max-height: clamp(190px, 39dvh, 265px);
     padding: 20px;
     color: #f8faf4;
     border: 1px solid rgba(255,255,255,.20);
@@ -825,4 +825,12 @@
   .studio-page .studio-scan-guide { grid-template-columns: 1fr; }
   .studio-page .studio-scan-guide > div { grid-template-columns: 26px 1fr; align-items: center; gap: 2px 8px; }
   .studio-page .studio-scan-guide small { grid-column: 2; }
+}
+
+
+@media (min-width: 861px) and (max-width: 1100px) and (orientation: landscape) {
+  .studio-home { width: min(340px, calc(100vw - 475px)); padding: 22px; }
+  .studio-home__explore small { display: none; }
+  .shell .chat { width: min(320px, 32vw); }
+  .studio-page__scroll, .studio-page--wide .studio-page__scroll { width: min(600px, calc(100vw - var(--studio-sidebar) - 65px)); }
 }
