@@ -31,6 +31,7 @@
   let assessment = $state<ProductAssessment | null>(null);
   let busy = $state(false);
   let loaded = $state(false);
+  let loadError = $state<string | null>(null);
 
   let newName = $state('');
   let newBrand = $state('');
@@ -69,20 +70,29 @@
   };
 
   async function load() {
-    const result = await api.routine();
-    usage = result.usage;
-    review = result.review;
-    outcomes = (await api.routineOutcomes()).outcomes;
-    loaded = true;
-    void refreshPicks();
+    if (session.guest) { loaded = true; return; }
+    try {
+      const result = await api.routine();
+      usage = result.usage;
+      review = result.review;
+      outcomes = (await api.routineOutcomes()).outcomes;
+      loadError = null;
+      void refreshPicks();
+    } catch {
+      loadError = 'The saved routine could not be loaded. Please try again later.';
+    } finally {
+      loaded = true;
+    }
   }
 
   async function search() {
+    if (session.guest) { loadError = 'Sign in to search and track saved routine products.'; return; }
     if (!query.trim()) return;
     results = (await api.searchProducts(query)).products;
   }
 
   async function add() {
+    if (session.guest) { loadError = 'Sign in to save a product to your routine.'; return; }
     if (!newName.trim()) return;
     busy = true;
     try {
@@ -104,15 +114,18 @@
   }
 
   async function assess(product: Product) {
+    if (session.guest) { loadError = 'Sign in to assess saved products.'; return; }
     assessment = (await api.assessProduct(product.id)).assessment;
   }
 
   async function start(product: Product) {
+    if (session.guest) { loadError = 'Sign in to track product usage.'; return; }
     await api.startRoutine(product.id);
     await load();
   }
 
   async function stop(id: string) {
+    if (session.guest) { loadError = 'Sign in to change tracked products.'; return; }
     await api.stopRoutine(id);
     await load();
   }
@@ -127,6 +140,14 @@
     <button class="cta" type="button" onclick={() => (scanning = true)}>Scan a label</button>
     <a class="cta cta--quiet" href="/progress" use:link>See what changed</a>
   {/snippet}
+
+  {#if session.guest}
+    <div class="card card--warm" role="status">
+      <p class="card__title">A private preview.</p>
+      <p class="card__text">Your personal product journal and stored routine assessments require an account. No routine records are loaded or saved in guest mode.</p>
+    </div>
+  {/if}
+  {#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 
   <nav class="studio-steps" aria-label="Routine sections">
     <a href="#inuse"><span>01</span> In use</a>
