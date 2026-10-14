@@ -1,0 +1,75 @@
+name: Publish reviewed readiness repairs
+on:
+  push:
+    branches: [ops/readiness-publish-20261014]
+permissions:
+  contents: read
+concurrency:
+  group: readiness-publication-20261014
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Read repository history without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact reviewed source bundle and unchanged protected files
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 60 --proto '=https' 'https://sb-qde9k4401y7s.vercel.run/0e3d246633f03bad661cebf6a0c836f97aa5d8773071622a.bundle' -o /tmp/reviewed.bundle
+          printf '%s  %s\n' 'bb8fcb6ce794c53daccec8828bf5809a093f76e7b336cbb7b6c1d88883bbd430' /tmp/reviewed.bundle | sha256sum --check --strict
+          git bundle verify /tmp/reviewed.bundle
+          git fetch /tmp/reviewed.bundle refs/heads/staging:refs/reviewed/staging refs/heads/experiment/frontend-rebuild:refs/reviewed/experiment
+          test "$(git rev-parse refs/reviewed/staging)" = '5c1de7216f420e1acebbd1e45fe75eef91884430'
+          test "$(git rev-parse refs/reviewed/experiment)" = 'c1c9ae230083c9ea339dfad257a22dfab825b5cc'
+          test "$(git rev-list --parents -n 1 refs/reviewed/staging)" = '5c1de7216f420e1acebbd1e45fe75eef91884430 4dea94a19b698f48773e08a817396bb96913a797'
+          test "$(git rev-list --parents -n 1 refs/reviewed/experiment)" = 'c1c9ae230083c9ea339dfad257a22dfab825b5cc d72aeec1575d49ee6986b3767fa406b535612a0a'
+          protected=(shared src/styles src/legal src/pages/legal src/components/legal src/components/Nav.svelte src/components/Page.svelte src/pages/HomePage.svelte .github)
+          git diff --exit-code '4dea94a19b698f48773e08a817396bb96913a797' refs/reviewed/staging -- "${protected[@]}"
+          git diff --exit-code 'd72aeec1575d49ee6986b3767fa406b535612a0a' refs/reviewed/experiment -- "${protected[@]}"
+          for ref in refs/reviewed/staging refs/reviewed/experiment; do
+            test -z "$(git diff --name-only "$ref^" "$ref" | grep -E '(^|/)(node_modules|\.env|\.vercel|test-results|playwright-report)(/|$)' || true)"
+          done
+      - name: Atomically fast-forward only the two authorized branches
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin https://github.com/Evia-LLC/Evia.git
+          test "$(git ls-remote origin refs/heads/staging | cut -f1)" = '4dea94a19b698f48773e08a817396bb96913a797'
+          test "$(git ls-remote origin refs/heads/experiment/frontend-rebuild | cut -f1)" = 'd72aeec1575d49ee6986b3767fa406b535612a0a'
+          git -c credential.helper='!gh auth git-credential' push --atomic origin refs/reviewed/staging:refs/heads/staging refs/reviewed/experiment:refs/heads/experiment/frontend-rebuild
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = '0880f90eb3db6cd567b68fdcad14cdc7ee0f4485'
+  integration:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact published staging source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 5c1de7216f420e1acebbd1e45fe75eef91884430
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install locked dependencies without install scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Set up the pinned local Supabase CLI
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
+        with:
+          version: 2.120.0
+      - name: Real isolated Supabase Data API integration suite
+        run: npm run test:data-api
