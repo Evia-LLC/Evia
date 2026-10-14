@@ -59,6 +59,12 @@
     <a class="cta" href="/scan" use:link>{latest ? 'Scan again' : 'Take the first scan'}</a>
   {/snippet}
 
+  <div class="studio-stats" aria-label="Your reading history at a glance">
+    <div><span>FACE READINGS</span><strong>{session.scans.length}</strong></div>
+    <div><span>BODY READINGS</span><strong>{session.bodyScans.length}</strong></div>
+    <div><span>LATEST FACE READING</span><strong>{latest ? dateFormat.format(new Date(latest.capturedAt)) : 'No baseline yet'}</strong></div>
+  </div>
+
   {#if summary?.mixedModelVersions}
     <div class="card card--warm sec">
       <p class="card__text">
