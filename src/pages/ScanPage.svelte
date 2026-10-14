@@ -292,6 +292,11 @@
         {/if}
       </section>
     {:else}
+      <div class="studio-scan-guide" aria-label="Before you begin">
+        <div><span>01</span><strong>Choose a reading</strong><small>Face or body</small></div>
+        <div><span>02</span><strong>Give permission</strong><small>Only when ready</small></div>
+        <div><span>03</span><strong>See your results</strong><small>No medical diagnosis</small></div>
+      </div>
       <section class="sec">
         <div class="card">
           <p class="card__title">Ready when you are.</p>
