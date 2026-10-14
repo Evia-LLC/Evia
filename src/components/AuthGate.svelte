@@ -19,6 +19,7 @@
    */
   import { cubicOut, expoOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
+  import { api } from '@/lib/api.ts';
   import { register, signIn } from '@/state/controller.ts';
   import { session } from '@/state/session.svelte.ts';
   import { enterGuestMode } from '@/state/controller.ts';
@@ -45,6 +46,15 @@
   let showPassword = $state(false);
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let notice = $state<string | null>(new URLSearchParams(location.search).get('auth') === 'link-invalid' ? 'This email link could not be completed. Use the browser that requested it, or sign in after confirming your email.' : null);
+  async function emailAction(action: 'reset' | 'resend') {
+    if (busy) return;
+    if (!email.trim()) { error = 'Enter your email address first.'; return; }
+    busy = true; error = null; notice = null;
+    try { const result = action === 'reset' ? await api.requestPasswordReset(email) : await api.resendConfirmation(email); notice = result.message; }
+    catch (cause) { error = cause instanceof Error ? cause.message : 'The email request failed.'; }
+    finally { busy = false; }
+  }
   /**
    * Set the moment auth succeeds. The gate is about to be removed and its
    * dissolve takes half a second, during which it is still a full-screen layer
@@ -70,7 +80,8 @@
         }
         if (age < 18) { password = ''; displayName = ''; termsAccepted = false; lockedPreview = true; return; }
         if (!termsAccepted) throw new Error('Please make the separate Terms choice before continuing.');
-        await register(email, password, displayName, dateOfBirth, termsAccepted);
+        const signedIn = await register(email, password, displayName, dateOfBirth, termsAccepted);
+        if (!signedIn) { notice = 'Check your email to confirm your account, then sign in.'; password = ''; mode = 'login'; return; }
         router.go('/legal/age-assurance');
       }
       leaving = true;
@@ -329,6 +340,13 @@
           </div>
         {/if}
 
+        {#if notice}<p role="status">{notice}</p>{/if}
+        {#if mode === 'login'}
+          <div class="actions">
+            <button type="button" class="linkish" disabled={busy || !session.serverReachable} onclick={() => emailAction('reset')}>Forgot password?</button>
+            <button type="button" class="linkish" disabled={busy || !session.serverReachable} onclick={() => emailAction('resend')}>Resend confirmation</button>
+          </div>
+        {/if}
         {#if error}
           <div class="error auth__error" role="alert" transition:makeRoom={{ duration: 320 }}>
             {error}

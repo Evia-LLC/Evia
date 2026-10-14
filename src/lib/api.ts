@@ -34,32 +34,40 @@ import type {
 } from '@shared/types.ts';
 import type { DeleteResult } from '@shared/delete-result.ts';
 
-let token: string | null = null;
-
-export function setToken(value: string | null): void {
-  token = value;
-}
-
 export class ApiError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-    this.name = 'ApiError';
+  readonly status: number;
+  readonly rollbackConfirmed: boolean;
+  constructor(status: number, message: string, rollbackConfirmed = false) {
+    super(message); this.status = status; this.rollbackConfirmed = rollbackConfirmed; this.name = 'ApiError';
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** Same-origin cookie transport. No token persistence, automatic mutation retries, or HTML-as-JSON. */
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set('Content-Type', 'application/json');
-  // Supabase Auth is conveyed by secure same-origin HttpOnly cookies.
-
-  const res = await fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin' });
-  const text = await res.text();
-  const body = text ? JSON.parse(text) : {};
-
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
-  return body as T;
+  headers.set('X-Evia-Request', '1');
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (init.signal?.aborted) abort(); else init.signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(abort, path === '/health' ? 8000 : 35000);
+  try {
+    const res = await fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try {
+      if (text) {
+        const parsed: unknown = JSON.parse(text);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid response');
+        body = parsed as Record<string, unknown>;
+      }
+    } catch { throw new ApiError(res.ok ? 502 : res.status, 'The server returned an unreadable response. Please try again.'); }
+    if (!res.ok) throw new ApiError(res.status, typeof body.error === 'string' ? body.error : 'The request could not be completed.', body.rollbackConfirmed === true);
+    return body as T;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(controller.signal.aborted ? 408 : 0, controller.signal.aborted ? 'The request timed out. Check the result before retrying a save or deletion.' : 'The server could not be reached. Please check your connection.');
+  } finally { clearTimeout(timer); init.signal?.removeEventListener('abort', abort); }
 }
 
 function attachmentFilename(value: string | null): string {
@@ -77,6 +85,8 @@ function attachmentFilename(value: string | null): string {
  * `AdminDiagnostics` below, behind `x-admin-token` auth.
  */
 export interface HealthCapabilities {
+  registrationEnabled?: boolean;
+  emailConfirmationRequired?: boolean;
   ok: boolean;
   /** Absent on an old server; `false` when nothing is attached to store into. */
   database?: boolean;
@@ -142,16 +152,20 @@ export const api = {
     }),
 
   register: (email: string, password: string, displayName: string, dateOfBirth: string, termsAccepted: boolean) =>
-    request<{ token: string; user: UserSummary | null; confirmationRequired?: boolean }>('/auth/register', {
+    request<{ user: UserSummary | null; confirmationRequired?: boolean }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password, displayName, dateOfBirth, termsAccepted, termsVersion: REGISTRATION_TERMS_VERSION }),
     }),
 
   login: (email: string, password: string) =>
-    request<{ token: string; user: UserSummary }>('/auth/login', {
+    request<{ user: UserSummary }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+
+  resendConfirmation: (email: string) => request<{ ok: true; message: string }>('/auth/resend-confirmation', { method: 'POST', body: JSON.stringify({ email }) }),
+  requestPasswordReset: (email: string) => request<{ ok: true; message: string }>('/auth/password-reset', { method: 'POST', body: JSON.stringify({ email }) }),
+  updatePassword: (password: string) => request<{ ok: true }>('/auth/password', { method: 'POST', body: JSON.stringify({ password }) }),
 
   logout: () => request<{ ok: true }>('/auth/logout', { method: 'POST' }),
 
@@ -277,7 +291,6 @@ export const api = {
 
   async progressPhotoImage(id: string): Promise<string | null> {
     const headers = new Headers();
-    if (token) headers.set('Authorization', `Bearer ${token}`);
     const res = await fetch(`/api/progress-photos/${id}/image`, { headers, credentials: 'same-origin' });
     if (!res.ok) return null;
     return URL.createObjectURL(await res.blob());

@@ -16,6 +16,7 @@
  */
 
 export type RouteId =
+  | 'auth-recovery' | 'not-found'
   | 'home' | 'scan' | 'progress' | 'routine' | 'profile' | 'privacy' | 'data'
   | 'legal-age-assurance' | 'legal-terms' | 'legal-privacy' | 'legal-facial-scan' | 'legal-health'
   | 'legal-safety-lifestyle' | 'legal-progress-photo' | 'legal-subscription' | 'legal-cancellation';
@@ -33,6 +34,7 @@ export interface Route {
 
 export const ROUTES: readonly Route[] = [
   { id: 'home', path: '/', label: 'Talk', title: 'Evia', nav: true },
+  { id: 'auth-recovery', path: '/auth/recovery', label: 'Password recovery', title: 'Password recovery - Evia', nav: false },
   { id: 'scan', path: '/scan', label: 'Scan', title: 'Scan — Evia', nav: true },
   { id: 'progress', path: '/progress', label: 'Progress', title: 'Progress — Evia', nav: true },
   { id: 'routine', path: '/routine', label: 'Routine', title: 'Routine — Evia', nav: true },
@@ -55,15 +57,15 @@ export function isLegalRoute(id: RouteId): boolean {
   return id.startsWith('legal-');
 }
 
-const HOME = ROUTES[0];
+const NOT_FOUND: Route = { id: 'not-found', path: '/404', label: 'Not found', title: 'Page not found - Evia', nav: false };
 
 function match(pathname: string): Route {
-  const clean = pathname.replace(/\/+$/, '') || '/';
-  return ROUTES.find((r) => r.path === clean) ?? HOME;
+  const clean = new URL(pathname, 'http://localhost').pathname.replace(/\/+$/, '') || '/';
+  return ROUTES.find((r) => r.path === clean) ?? NOT_FOUND;
 }
 
 class Router {
-  path = $state(typeof location === 'undefined' ? '/' : location.pathname);
+  path = $state(typeof location === 'undefined' ? '/' : location.pathname + location.search + location.hash);
 
   /** Which way the last navigation went, so a page can enter from that side. */
   direction = $state<1 | -1>(1);
@@ -72,7 +74,7 @@ class Router {
     if (typeof window === 'undefined') return;
     window.addEventListener('popstate', () => {
       this.direction = -1;
-      this.path = location.pathname;
+      this.path = location.pathname + location.search + location.hash;
     });
   }
 
@@ -89,16 +91,19 @@ class Router {
   }
 
   go(path: string, opts: { replace?: boolean } = {}): void {
-    const target = match(path).path;
-    if (target === match(this.path).path) return;
-
+    const url = new URL(path, location.href);
+    if (url.origin !== location.origin) throw new Error('External destinations must use a normal link.');
+    const target = url.pathname + url.search + url.hash;
+    if (target === this.path) return;
     const from = ROUTES.findIndex((r) => r.path === match(this.path).path);
-    const to = ROUTES.findIndex((r) => r.path === target);
+    const to = ROUTES.findIndex((r) => r.path === match(target).path);
     this.direction = to >= from ? 1 : -1;
-
     if (opts.replace) history.replaceState(null, '', target);
     else history.pushState(null, '', target);
     this.path = target;
+    if (url.hash) requestAnimationFrame(() => {
+      try { document.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView({ block: 'start' }); } catch { /* Invalid fragments do not break navigation. */ }
+    });
   }
 
   back(): void {
@@ -115,7 +120,9 @@ export function link(node: HTMLAnchorElement) {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const href = node.getAttribute('href');
-    if (!href || !href.startsWith('/')) return;
+    if (!href || node.hasAttribute('download') || (node.target && node.target !== '_self')) return;
+    const target = new URL(node.href, location.href);
+    if (!['http:', 'https:'].includes(target.protocol) || target.origin !== location.origin || target.pathname.startsWith('/api/')) return;
     event.preventDefault();
     router.go(href);
   };

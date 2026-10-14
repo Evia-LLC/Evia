@@ -5,16 +5,10 @@ export interface Database {
   public: {
     Tables: {
     users: {
-      Row: { id: string; email: string; display_name: string; password_hash: string; password_salt: string; created_at: string; date_of_birth: string | null };
-      Insert: { id: string; email: string; display_name: string; password_hash: string; password_salt: string; created_at: string; date_of_birth?: string | null };
+      Row: { id: string; email: string; display_name: string; created_at: string; date_of_birth: string | null };
+      Insert: { id: string; email: string; display_name: string; created_at: string; date_of_birth?: string | null };
       Update: Partial<Database['public']['Tables']['users']['Insert']>;
-      Relationships: [];
-    };
-    sessions: {
-      Row: { token: string; user_id: string; created_at: string; expires_at: string };
-      Insert: { token: string; user_id: string; created_at: string; expires_at: string };
-      Update: Partial<Database['public']['Tables']['sessions']['Insert']>;
-      Relationships: [{ foreignKeyName: 'sessions_user_id_fkey'; columns: ['user_id']; isOneToOne: false; referencedRelation: 'users'; referencedColumns: ['id'] }];
+      Relationships: [{ foreignKeyName: 'users_auth_identity_fkey'; columns: ['id']; isOneToOne: true; referencedRelation: 'users'; referencedColumns: ['id'] }];
     };
     skin_profiles: {
       Row: { user_id: string; skin_type: string; fitzpatrick: number | null; concerns_json: string; sensitivities_json: string; updated_at: string; pregnancy_status: string };
@@ -135,15 +129,23 @@ export interface Database {
       evia_current_consents: { Row: Database['public']['Tables']['consent_events']['Row']; Relationships: [] };
     };
     Functions: {
+    evia_start_product_usage: { Args: { p_user_id: string; p_product_id: string; p_started_at: string; p_frequency: string | null; p_notes: string | null }; Returns: string };
+    evia_prepare_registration: { Args: { p_hash: string; p_email: string; p_display_name: string; p_date_of_birth: string; p_terms_version: string; p_evidence: Json }; Returns: undefined };
+    evia_discard_registration: { Args: { p_hash: string }; Returns: undefined };
+    evia_auth_session_active: { Args: { p_user_id: string; p_session_id: string }; Returns: boolean };
+    evia_prepare_recovery: { Args: { p_hash: string; p_user_id: string; p_session_id: string }; Returns: undefined };
+    evia_consume_recovery: { Args: { p_hash: string; p_user_id: string; p_session_id: string }; Returns: boolean };
+    evia_deletion_receipt: { Args: { p_user_id: string }; Returns: Json };
+
       evia_search_products: { Args: { p_query: string; p_user_id: string | null; p_limit: number }; Returns: Database['public']['Tables']['products']['Row'][] };
-      evia_create_user: { Args: { p_user: Json; p_profile: Json; p_preferences: Json; p_consent: Json | null }; Returns: Json };
+
       evia_insert_skin_scan: { Args: { p_row: Json }; Returns: Json };
       evia_insert_body_scan: { Args: { p_row: Json }; Returns: Json };
       evia_delete_skin_scan: { Args: { p_user_id: string; p_id: string }; Returns: Json };
       evia_delete_body_scan: { Args: { p_user_id: string; p_id: string }; Returns: Json };
       evia_create_progress_photo: { Args: { p_row: Json }; Returns: Json };
       evia_delete_progress_photo: { Args: { p_user_id: string; p_id: string }; Returns: Json };
-      evia_delete_account: { Args: { p_user_id: string }; Returns: Json };
+
       evia_upsert_memory: { Args: { p_row: Json }; Returns: Json };
       evia_find_product_match: { Args: { p_name: string; p_brand: string | null; p_owner_id: string | null }; Returns: Database['public']['Tables']['products']['Row'][] };
       evia_find_catalogue_match: { Args: { p_source: string; p_name: string; p_brand: string | null }; Returns: Database['public']['Tables']['catalogue_products']['Row'][] };

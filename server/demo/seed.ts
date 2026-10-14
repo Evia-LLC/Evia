@@ -14,9 +14,9 @@ import * as scansRepo from '../db/scans.ts';
 import * as productsRepo from '../db/products.ts';
 import { SKIN_MODEL_VERSION, type SkinAnalysis } from '../../shared/types.ts';
 import { log } from '../lib/log.ts';
+import { createAdminClient } from '../lib/supabase.ts';
+import { UUID } from '../lib/auth-session.ts';
 
-const DEMO_EMAIL = 'demo@elohim.local';
-const DEMO_PASSWORD = 'demo1234';
 
 /**
  * Six scans across ten weeks. Hydration climbs, texture and acne ease off,
@@ -33,18 +33,16 @@ const TRACK: Array<{ daysAgo: number; m: Record<string, number>; quality: number
   { daysAgo: 2, m: { hydration: 64, oiliness: 64, redness: 41, texture: 61, pores: 55, darkSpots: 52, evenness: 52, underEye: 46, acneIndicators: 51 }, quality: 0.87 },
 ];
 
-export async function seedDemoUser(): Promise<{ email: string; password: string } | null> {
-  const existing = await result<{ id: string } | null>(database().from('users').select('id').eq('email', DEMO_EMAIL).maybeSingle());
-
-  if (existing) return { email: DEMO_EMAIL, password: DEMO_PASSWORD };
-
-  let userId: string;
-  try {
-    userId = await users.createUser(DEMO_EMAIL, DEMO_PASSWORD, 'Ada');
-  } catch (err) {
-    log.error('demo', 'could not seed demo user', { error: (err as Error).message });
-    return null;
+export async function seedDemoUser(userId: string): Promise<{ userId: string }> {
+  if (process.env.APP_ENV === 'production' || process.env.VERCEL_ENV === 'production' || process.env.EVIA_SEED_DEMO !== '1' || !UUID.test(userId)) {
+    throw new Error('Explicit non-production fixture seeding is required.');
   }
+  const { data, error } = await createAdminClient().auth.admin.getUserById(userId);
+  if (error || !data.user?.email_confirmed_at || data.user.app_metadata.evia_synthetic !== true) {
+    throw new Error('Select a confirmed synthetic Auth account marked by an administrator.');
+  }
+  const existing = await result<Array<{ id: string }>>(database().from('skin_scans').select('id').eq('user_id',userId).limit(1));
+  if (existing.length) throw new Error('The selected synthetic account already has scan data.');
 
   await users.updateProfile(userId, {
     skinType: 'combination',
@@ -103,7 +101,5 @@ export async function seedDemoUser(): Promise<{ email: string; password: string 
   });
 
   log.info('demo', 'seeded demo user with 6 scans and 2 routine products');
-  return { email: DEMO_EMAIL, password: DEMO_PASSWORD };
+  return { userId };
 }
-
-export { DEMO_EMAIL, DEMO_PASSWORD };

@@ -2,6 +2,7 @@
   import type { DeleteResult } from '@shared/delete-result.ts';
   import { ACCOUNT_COPY } from '@shared/legal-screen-copy.ts';
   import { recordLegalReview } from '@/lib/legal-review.ts';
+  import { ApiError } from '@/lib/api.ts';
   import Page from '@/components/Page.svelte';
   import { session } from '@/state/session.svelte.ts';
   import { deleteAccount, downloadDataExport } from '@/state/controller.ts';
@@ -14,6 +15,7 @@
   let secondConfirmation = $state(false);
   let deleting = $state(false);
   let deletionError = $state<string | null>(null);
+  let rollbackConfirmed = $state(false);
   /**
    * P1-T10 — the durable outcome of the last deletion attempt. `completed`
    * renders the signed-out success receipt, `pending` the status screen with
@@ -44,7 +46,7 @@
   async function removeAccount() {
     if (!typedCorrectly || !secondConfirmation || deleting) return;
     deleting = true;
-    deletionError = null;
+    deletionError = null; rollbackConfirmed = false;
     try {
       // Audit availability must not prevent the existing account deletion right.
       try { await recordLegalReview('account-controls', 'attempted', session.user?.id, { action: 'delete_account' }); } catch { /* Account deletion still proceeds; retention gap is disclosed below. */ }
@@ -53,6 +55,7 @@
       // receipt branch below states what was deleted. `pending`: the session
       // is preserved and the status branch below keeps the export available.
     } catch (err) {
+      rollbackConfirmed = err instanceof ApiError && err.rollbackConfirmed;
       deletionError = err instanceof Error ? err.message : 'Your account could not be deleted.';
       deleting = false;
       secondConfirmation = false;
@@ -137,7 +140,7 @@
         {/if}
         {#if deletionError}
           <p class="error" aria-live="assertive">{deletionError}</p>
-          <p class="intact">Your account and data are intact — nothing was deleted. Your export above is still available, and you can retry once the problem passes.</p>
+          {#if rollbackConfirmed}<p class="intact">Your account and data are intact — nothing was deleted. Your export above is still available, and you can retry once the problem passes.</p>{:else}<p role="status">The result could not be verified. Reload and check your account before trying again.</p>{/if}
         {/if}
       {/if}
     </div>

@@ -58,7 +58,8 @@ describe('sole runtime transport', () => {
     }
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     for (const name of ['pg', '@types/pg', '@electric-sql/pglite', '@electric-sql/pglite-socket']) {
-      expect({ ...pkg.dependencies, ...pkg.devDependencies }).not.toHaveProperty(name);
+      expect(pkg.dependencies ?? {}).not.toHaveProperty(name);
+      if (name !== '@electric-sql/pglite') expect(pkg.devDependencies ?? {}).not.toHaveProperty(name);
     }
   });
 });

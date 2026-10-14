@@ -50,6 +50,8 @@ class SessionState {
   analysisNotice = $state('');
   modelAvailable = $state(false);
   demoMode = $state(false);
+  registrationEnabled = $state(false);
+  operationError = $state<string | null>(null);
   imageStorage = $state(false);
 
   messages = $state<ChatMessage[]>([]);
@@ -201,6 +203,10 @@ class SessionState {
   }
 
   reset(): void {
+    this.guest = false;
+    this.thinking = false;
+    this.chatError = null;
+    this.operationError = null;
     this.analysisNotice = '';
     this.clearScanArtifacts();
     this.user = null;

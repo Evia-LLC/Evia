@@ -1,4 +1,7 @@
 <script lang="ts">
+  import AuthRecovery from '@/components/AuthRecovery.svelte';
+  import OperationNotice from '@/components/OperationNotice.svelte';
+  import NotFound from '@/components/NotFound.svelte';
   import CookieBanner from '@/components/legal/CookieBanner.svelte';
   import { onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
@@ -167,6 +170,10 @@
 
   {#if booting}
     <div class="auth"><div class="auth__mark">Evia</div></div>
+  {:else if router.is('auth-recovery')}
+    <AuthRecovery />
+  {:else if router.is('not-found')}
+    <NotFound />
   {:else if isLegalRoute(router.id)}
     {#key router.id}
       {#if router.is('legal-age-assurance')}<AgeAssurancePage />
@@ -223,6 +230,7 @@
 </div>
 
 <CookieBanner />
+<OperationNotice />
 
 {#if import.meta.env.VITE_SAMPLE_DEMO === '1'}
   <aside class="sample-demo-notice" aria-label="Demo notice">

@@ -32,7 +32,6 @@ vi.mock('../server/db/credentials.ts', () => ({
 
 const { hashPassword, verifyPassword, MAX_PASSWORD_BYTES } =
   await import("../server/lib/crypto.ts");
-const { authenticate } = await import("../server/db/users.ts");
 
 // A hash produced by the LEGACY sync derivation — computed once with
 // scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }) — so this test
@@ -85,29 +84,7 @@ describe("password derivation (P1-T03 async bridge)", () => {
     ).resolves.toBe(false);
   });
 
-  it("authenticates a legacy hash, and fails wrong/unknown credentials", async () => {
-    await expect(
-      authenticate("legacy@example.test", LEGACY_PASSWORD),
-    ).resolves.toBe("legacy-id");
-    await expect(
-      authenticate("legacy@example.test", "wrong-password"),
-    ).resolves.toBeNull();
-    await expect(
-      authenticate("nobody-here@example.test", "any-password"),
-    ).resolves.toBeNull();
-  });
 
-  it("performs one identical-parameter derivation for unknown and known accounts", async () => {
-    await authenticate("legacy@example.test", "wrong-password");
-    await authenticate("nobody@example.test", "wrong-password");
-    const calls = vi.mocked(scrypt).mock.calls;
-    expect(calls).toHaveLength(2);
-    for (const call of calls) {
-      expect(call[0]).toBe("wrong-password");
-      expect(call[2]).toBe(64);
-      expect(call[3]).toMatchObject({ N: 16384, r: 8, p: 1 });
-    }
-  });
 
   it("yields the event loop while deriving (non-blocking)", async () => {
     const pending = Promise.all(Array.from({ length: 4 }, (_, i) => hashPassword(`event-loop-probe-${i}`)));
@@ -140,13 +117,7 @@ describe("password derivation (P1-T03 async bridge)", () => {
     );
     // No elapsed-time heuristic: rejected inputs never enter the KDF.
     expect(scrypt).not.toHaveBeenCalled();
-    // Unknown accounts reject identically (no oracle), and the error leaks nothing.
-    const err = await authenticate("nobody-here@example.test", tooBig).catch(
-      (e: Error) => e,
-    );
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toBe("Invalid credentials.");
-    expect(scrypt).not.toHaveBeenCalled();
+
   });
 
   it("accepts a password exactly at the cap", async () => {

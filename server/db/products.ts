@@ -163,12 +163,10 @@ export async function startUsage(
   // any usage row is written, so a 404 leaves no orphan behind.
   const visible = await getVisibleProduct(productId, userId);
   if (!visible) throw new ProductAccessDenied(productId);
-  const id = newId();
-  await result(database().from('product_usage').insert({
-    id, user_id: userId, product_id: productId, started_at: opts.startedAt ?? nowIso(),
-    frequency: opts.frequency ?? null, notes: opts.notes ?? null,
+  return result<string>(database().rpc('evia_start_product_usage', {
+    p_user_id: userId, p_product_id: productId, p_started_at: opts.startedAt ?? nowIso(),
+    p_frequency: opts.frequency ?? null, p_notes: opts.notes ?? null,
   }));
-  return id;
 }
 
 export async function endUsage(

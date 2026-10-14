@@ -49,6 +49,7 @@
       .filter(Boolean);
 
   async function save() {
+    if (saving || session.guest) return;
     saving = true;
     saved = false;
     try {
@@ -69,7 +70,7 @@
       await refreshVoice();
       saved = true;
       setTimeout(() => (saved = false), 2400);
-    } finally {
+    } catch (cause) { session.operationError = cause instanceof Error ? cause.message : 'Some changes could not be saved. Reload to check the saved values.'; } finally {
       saving = false;
     }
   }
@@ -80,12 +81,13 @@
   }
 
   async function forget(id: string) {
-    await api.forget(id);
-    await loadMemories();
+    if (session.guest) return;
+    try { await api.forget(id); await loadMemories(); }
+    catch (cause) { session.operationError = cause instanceof Error ? cause.message : 'The memory could not be removed.'; }
   }
 
   $effect(() => {
-    void loadMemories();
+    void loadMemories().catch(() => { session.operationError = 'Saved memories could not be loaded.'; });
     void listVoiceOptions().then((options) => (voiceOptions = options));
   });
 </script>

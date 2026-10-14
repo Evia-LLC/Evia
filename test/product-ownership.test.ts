@@ -1,3 +1,4 @@
+import * as authFixtures from './helpers/auth-fixtures.ts';
 /**
  * P1-T04 — cross-user product poisoning is closed.
  *
@@ -58,12 +59,12 @@ const SHARED_INGREDIENTS = ["Aqua", "Avena Sativa", "Squalane"];
 async function createAccount(
   tag: string,
 ): Promise<{ userId: string; token: string }> {
-  const userId = await users.createUser(
+  const userId = await authFixtures.createUser(
     `${tag}-${stamp()}@test.local`,
     "Password123!",
     tag,
   );
-  const token = await users.createSession(userId);
+  const token = await authFixtures.createSession(userId);
   return { userId, token };
 }
 

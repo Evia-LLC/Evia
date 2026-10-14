@@ -71,7 +71,7 @@ export function decodeBytea(value: string): Buffer {
   return Buffer.from(value.slice(2), 'hex');
 }
 
-export const DATA_API_CONTRACT = 'evia-data-api-v1';
+export const DATA_API_CONTRACT = 'evia-managed-auth-v2';
 
 export async function verifyDataApi(): Promise<void> {
   const status = await result<{ contract: string }>(database().rpc('evia_data_api_status'));

@@ -6,7 +6,7 @@ import { selectAnalysis } from '@/skin-analysis/provider.ts';
  * component ever calls the API directly and no component ever touches three.js.
  * Components render state and call these functions; everything else happens here.
  */
-import { api, ApiError, setToken } from '@/lib/api.ts';
+import { api, ApiError } from '@/lib/api.ts';
 import { session, type ScanKind } from './session.svelte.ts';
 import type { SessionDirector } from '@/scene/director.ts';
 import { analyseFace, CaptureRejected } from '@/skin-analysis/pipeline.ts';
@@ -44,6 +44,7 @@ import {
 } from '@shared/delete-result.ts';
 
 let director: SessionDirector | null = null;
+let accountEpoch = 0;
 
 /*
  * Poke pacing. The lines themselves live in lib/lines.ts with everything else
@@ -250,6 +251,7 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T | null> {
 }
 
 export async function bootstrap(): Promise<void> {
+  const epoch = accountEpoch;
   try {
     const quick = await within(api.health(), 3500);
     if (quick === null) {
@@ -260,6 +262,7 @@ export async function bootstrap(): Promise<void> {
         .then((late) => {
           session.modelAvailable = late.modelAvailable;
           session.demoMode = late.demoMode;
+          session.registrationEnabled = late.registrationEnabled === true;
           session.imageStorage = late.imageStorage;
           session.guestVoice = late.guestVoice === true;
           session.databaseAvailable = late.database !== false;
@@ -268,7 +271,7 @@ export async function bootstrap(): Promise<void> {
           session.serverReachable = false;
         });
       void within(api.me(), 8000).then((me) => {
-        if (me) {
+        if (me?.user && epoch === accountEpoch && !session.guest && !session.user) {
           session.user = me.user;
           session.modelAvailable = me.modelAvailable;
           void loadUserData();
@@ -279,6 +282,7 @@ export async function bootstrap(): Promise<void> {
     const health = quick;
     session.modelAvailable = health.modelAvailable;
     session.demoMode = health.demoMode;
+    session.registrationEnabled = health.registrationEnabled === true;
     session.imageStorage = health.imageStorage;
     session.guestVoice = health.guestVoice === true;
     // A server with nothing behind it. Everything on the device still works;
@@ -294,6 +298,7 @@ export async function bootstrap(): Promise<void> {
 
   try {
     const me = await api.me();
+    if (epoch !== accountEpoch || session.guest || !me.user) return;
     session.user = me.user;
     session.modelAvailable = me.modelAvailable;
     await loadUserData();
@@ -301,14 +306,15 @@ export async function bootstrap(): Promise<void> {
     // 401 is the server working and saying no. Anything else — the store
     // being down mid-session, say — must also land on the gate rather than
     // leave the boot screen up forever.
-    if (!(err instanceof ApiError)) throw err;
-    if (err.status !== 401) session.databaseAvailable = false;
+    if (!(err instanceof ApiError) || err.status !== 401) session.operationError = err instanceof Error ? err.message : 'Account loading failed.';
   }
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const { token, user } = await api.login(email, password);
-  setToken(null);
+  const epoch = ++accountEpoch;
+  const { user } = await api.login(email, password);
+  if (!user || epoch !== accountEpoch) throw new Error('The sign-in response could not be verified.');
+  session.reset();
   session.user = user;
   await loadUserData();
 }
@@ -319,23 +325,26 @@ export async function register(
   displayName: string,
   dateOfBirth: string,
   termsAccepted: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const { user, confirmationRequired } = await api.register(email, password, displayName, dateOfBirth, termsAccepted);
-  if (confirmationRequired || !user) throw new Error('Check your email to confirm your account, then sign in.');
-  setToken(null);
+  if (confirmationRequired || !user) return false;
+
+  ++accountEpoch;
+  session.reset();
   session.user = user;
   await loadUserData();
+  return true;
 }
 
 export async function signOut(): Promise<void> {
-  voice.dispose();
-  session.clearScanArtifacts();
-  director?.setFaceMesh(null);
-  // A guest was never signed in, so there is no session to end and no server
-  // to tell. Asking would only produce an error about a thing that never was.
-  if (!session.guest) await api.logout();
-  setToken(null);
-  session.reset();
+  ++accountEpoch;
+  voice.dispose(); session.clearScanArtifacts(); director?.setFaceMesh(null);
+  const wasGuest = session.guest;
+  let message: string | null = null;
+  try { if (!wasGuest) await api.logout(); }
+  catch (error) { message = error instanceof Error ? error.message : 'Server sign-out could not be confirmed.'; }
+  finally { session.reset(); router.go('/'); }
+  session.operationError = message;
 }
 
 /**
@@ -354,6 +363,8 @@ export async function signOut(): Promise<void> {
  * either.
  */
 export function enterGuestMode(): void {
+  ++accountEpoch;
+  session.reset();
   session.guest = true;
   session.chatError = null;
   session.user = {
@@ -426,28 +437,16 @@ const DEFAULT_GUEST_PREFERENCES = {
 };
 
 async function loadUserData(): Promise<void> {
-  const [history, scans, summary, body, photos] = await Promise.all([
-    api.chatHistory(),
-    api.scans(),
-    api.scanSummary(),
-    /*
-     * Body history, fetched alongside but kept apart.
-     *
-     * This is what makes a body scan a measurement rather than a moment: with
-     * the previous reading loaded, the next scan has something to be compared
-     * against. Without it every scan was a first reading forever, which is the
-     * one thing a tracking feature cannot be.
-     */
-    api.bodyScans().catch(() => ({ scans: [] })),
-    api.progressPhotos().catch(() => ({ photos: [] })),
-  ]);
-  session.messages = history.messages;
-  session.scans = scans.scans;
-  session.latestScan = scans.scans[0] ?? null;
-  session.summary = summary.summary;
-  session.bodyScans = body.scans;
-  session.latestBody = body.scans[0] ?? null;
-  session.progressPhotos = photos.photos;
+  const epoch = accountEpoch;
+  const data = await Promise.allSettled([api.chatHistory(), api.scans(), api.scanSummary(), api.bodyScans(), api.progressPhotos()]);
+  if (epoch !== accountEpoch || session.guest || !session.user) return;
+  const [history, scans, summary, body, photos] = data;
+  if (history.status === 'fulfilled') session.messages = history.value.messages;
+  if (scans.status === 'fulfilled') { session.scans = scans.value.scans; session.latestScan = scans.value.scans[0] ?? null; }
+  if (summary.status === 'fulfilled') session.summary = summary.value.summary;
+  if (body.status === 'fulfilled') { session.bodyScans = body.value.scans; session.latestBody = body.value.scans[0] ?? null; }
+  if (photos.status === 'fulfilled') session.progressPhotos = photos.value.photos;
+  if (data.some(value => value.status === 'rejected')) session.operationError = 'Some account data could not be loaded. Your account is signed in; reload to try again.';
 
   /*
    * She speaks first: into an empty transcript, and into one that has gone
@@ -1217,7 +1216,7 @@ export async function deleteAccount(): Promise<DeleteResult> {
   if (isDeletionCompleted(receipt)) {
     // Authentication is retained throughout the request. Only a confirmed
     // server response clears the in-memory token and local session.
-    setToken(null);
+
     session.reset();
     return receipt;
   }

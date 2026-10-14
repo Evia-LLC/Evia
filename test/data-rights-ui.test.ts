@@ -13,8 +13,10 @@ describe('data rights confirmation UI contract', () => {
   it('keeps authentication until deletion is confirmed by the server', async () => {
     const source = await readFile(new URL('../src/state/controller.ts', import.meta.url), 'utf8');
     const deletion = source.slice(source.indexOf('export async function deleteAccount'), source.indexOf('export async function refreshScans'));
-    expect(deletion.indexOf('await api.deleteAccount()')).toBeLessThan(deletion.indexOf('setToken(null)'));
-    expect(deletion.indexOf('setToken(null)')).toBeLessThan(deletion.indexOf('session.reset()'));
+    expect(deletion.indexOf('await api.deleteAccount()')).toBeLessThan(deletion.indexOf('session.reset()'));
+    expect(deletion.indexOf('isDeletionCompleted(receipt)')).toBeGreaterThan(-1);
+    expect(deletion.indexOf('isDeletionCompleted(receipt)')).toBeLessThan(deletion.indexOf('session.reset()'));
+    expect(deletion).not.toContain('setToken(');
   });
 
   it('registers an authenticated attachment route with private no-store headers', async () => {
