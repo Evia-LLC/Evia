@@ -128,6 +128,12 @@
     <a class="cta cta--quiet" href="/progress" use:link>See what changed</a>
   {/snippet}
 
+  <nav class="studio-steps" aria-label="Routine sections">
+    <a href="#inuse"><span>01</span> In use</a>
+    <a href="#check"><span>02</span> Check a product</a>
+    <a href="#add"><span>03</span> Add a product</a>
+  </nav>
+
   {#if session.picks.length}
     <section class="sec" aria-label="What I would get">
       <Picks picks={session.picks} title="What I would get for your last reading" />
