@@ -28,6 +28,7 @@ const AURA_TALKING = new THREE.Color(0xffe4c4);
 import type { ElohimEnvironment } from './environment.ts';
 import { ProceduralAvatar } from '@/character/procedural-avatar.ts';
 import { SpriteAvatar } from '@/character/sprite-avatar.ts';
+import { MetaHumanAvatar } from '@/character/metahuman-avatar.ts';
 import type { BodyAnalysis } from '@/body-analysis/pipeline.ts';
 import type { ScanMesh } from '@/holograms/face-mesh-3d.ts';
 import type { ElohimAvatar } from '@/character/types.ts';
@@ -80,12 +81,19 @@ const FACE_GAZE = new THREE.Vector3(0.62, 1.5, -0.18);
  * a wait and a load. See `scripts/shrink-glb.mjs`.
  */
 const ELOHIM_SPRITE = '/character/elohim/manifest.json';
+const CLINIC_LOAD_ERROR = 'The clinic could not load. Return Home and try Scan again.';
 
 /** Lazily loaded so the lounge boots without paying for the clinical room. */
 type ClinicalModule = typeof import('./clinical.ts');
 type HologramModule = typeof import('@/holograms/rig.ts');
 
 export class SessionDirector {
+  private disposed = false;
+  private clinicalRequest = 0;
+  private clinicalLoad: Promise<void> | null = null;
+  private pendingAvatar: MetaHumanAvatar | null = null;
+  characterStatus: 'loading' | 'ready' | 'fallback' = 'loading';
+  onCharacterStatus: ((status: 'loading' | 'ready' | 'fallback') => void) | null = null;
   private stage: Stage;
   private avatar: ElohimAvatar;
   private lounge: LoungeEnvironment;
@@ -208,37 +216,12 @@ export class SessionDirector {
     });
     this.stage.scene.add(this.lounge.group);
 
-    /*
-     * Elohim is painted.
-     *
-     * The rooms have been photographic plates since the backdrop rewrite, and
-     * the rigged glTF model was the only thing left in frame being lit and
-     * shaded in real time — which is what every compositing fix in this file
-     * was working around. Matching a live PBR character to a photograph is a
-     * problem that stops existing when both are painted by the same hand.
-     *
-     * The model and its loader are gone rather than kept behind a flag: 2MB of
-     * asset and 588 lines of rig that nothing loads is not a fallback, it is
-     * weight. The procedural rig stays as the genuine last resort, so a failed
-     * fetch degrades to a character rather than to an empty room.
-     */
-    const avatar = new SpriteAvatar();
-    avatar.onDirectiveRejected = (info) =>
-      console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
-    avatar.mount(this.stage.scene);
-    this.avatar = avatar;
-
-    void avatar.load(ELOHIM_SPRITE).catch((error: unknown) => {
-      console.error('[elohim/character] could not load Elohim', error);
-      avatar.dispose();
-      const fallback = new ProceduralAvatar();
-      fallback.mount(this.stage.scene);
-      fallback.applyDirective(this.currentDirective);
-      this.avatar = fallback;
-    });
-
-
-
+    // Keep the scene's placement and interaction state alive during the fetch.
+    // The loading caption remains visible until a complete character is ready.
+    this.avatar = new ProceduralAvatar();
+    this.avatar.mount(this.stage.scene);
+    this.avatar.root.visible = false;
+    void this.loadCharacter();
     this.grade = new Grade(this.stage.camera);
     // The camera has children now, so it has to be in the scene graph for their
     // world matrices to update.
@@ -285,6 +268,60 @@ export class SessionDirector {
     // is not compositing. Dev builds only.
     if (import.meta.env.DEV) {
       (window as unknown as { __elohim?: SessionDirector }).__elohim = this;
+    }
+  }
+
+  private replaceAvatar(next: ElohimAvatar): void {
+    const previous = this.avatar;
+    next.root.position.copy(previous.root.position);
+    next.root.quaternion.copy(previous.root.quaternion);
+    next.root.scale.copy(previous.root.scale);
+    // A download can finish after the reading. The new rig starts in IDLE;
+    // enter the clinical state before restoring its completed reading.
+    if (this.currentDirective.state === 'ANALYSIS_COMPLETE') {
+      next.applyDirective({ ...this.currentDirective, state: 'CLINICAL_ANALYSIS', gesture: 'none' });
+    }
+    next.applyDirective(this.currentDirective);
+    next.setOutfit(this.transitionTarget === 1 ? 'clinical' : 'casual');
+    next.lookAt(this.gazeTarget);
+    next.mount(this.stage.scene);
+    this.avatar = next;
+    previous.dispose();
+  }
+
+  private setCharacterStatus(status: 'ready' | 'fallback'): void {
+    this.characterStatus = status;
+    this.onCharacterStatus?.(status);
+  }
+
+  private async loadCharacter(): Promise<void> {
+    const avatar = new MetaHumanAvatar();
+    this.pendingAvatar = avatar;
+    avatar.onDirectiveRejected = (info) =>
+      console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
+    try {
+      await avatar.load();
+      if (this.disposed) { avatar.dispose(); return; }
+      this.replaceAvatar(avatar);
+      this.setCharacterStatus('ready');
+    } catch (error) {
+      avatar.dispose();
+      if (this.disposed) return;
+      console.warn('[elohim/character] MetaHuman unavailable; using standard avatar', error);
+      const fallback = new SpriteAvatar();
+      try {
+        await fallback.load(ELOHIM_SPRITE);
+        if (this.disposed) { fallback.dispose(); return; }
+        this.replaceAvatar(fallback);
+      } catch (fallbackError) {
+        fallback.dispose();
+        if (this.disposed) return;
+        console.warn('[elohim/character] standard avatar unavailable', fallbackError);
+        this.avatar.root.visible = true;
+      }
+      this.setCharacterStatus('fallback');
+    } finally {
+      if (this.pendingAvatar === avatar) this.pendingAvatar = null;
     }
   }
 
@@ -878,14 +915,26 @@ export class SessionDirector {
   // -------------------------------------------------------------------------
 
   async enterClinical(): Promise<void> {
-    if (session.sceneMode !== 'lounge') return;
+    if (this.disposed || session.sceneMode !== 'lounge') return;
+    if (session.chatError === CLINIC_LOAD_ERROR) session.chatError = null;
+    const request = ++this.clinicalRequest;
     session.sceneMode = 'transitioning';
     // Arrive on the room itself. It is the one moment the place is the subject.
     this.cine.reset('establish');
 
     // Beat 3 needs the room to exist; load it before the lights start moving so
     // the transition never stalls waiting on a network round trip.
-    await this.ensureClinicalLoaded();
+    try {
+      await this.ensureClinicalLoaded();
+    } catch (error) {
+      if (this.disposed || request !== this.clinicalRequest) return;
+      console.warn('[elohim/scene] clinic could not load', error);
+      this.transitionTarget = 0;
+      session.sceneMode = 'lounge';
+      session.chatError = CLINIC_LOAD_ERROR;
+      return;
+    }
+    if (this.disposed || request !== this.clinicalRequest) return;
     // The clinic has a floor under its silence. Fades in over the transition.
     sound.startRoom();
 
@@ -938,6 +987,8 @@ export class SessionDirector {
   }
 
   exitClinical(): void {
+    ++this.clinicalRequest;
+    if (this.disposed) return;
     if (session.sceneMode === 'lounge') return;
     session.sceneMode = 'transitioning';
     sound.stopRoom();
@@ -1045,51 +1096,69 @@ export class SessionDirector {
     return this.stage.aspect < 0.85 ? SHOT_CLINICAL_PORTRAIT : SHOT_CLINICAL;
   }
 
-  private async ensureClinicalLoaded(): Promise<void> {
-    if (this.clinical) return;
+  private ensureClinicalLoaded(): Promise<void> {
+    if (this.disposed || this.clinical) return Promise.resolve();
+    if (this.clinicalLoad) return this.clinicalLoad;
+    this.clinicalLoad = this.loadClinical().finally(() => { this.clinicalLoad = null; });
+    return this.clinicalLoad;
+  }
+
+  private async loadClinical(): Promise<void> {
     const [clinicalMod, holoMod]: [ClinicalModule, HologramModule] = await Promise.all([
       import('./clinical.ts'),
       import('@/holograms/rig.ts'),
     ]);
+    if (this.disposed) return;
 
-    this.clinical = new clinicalMod.ClinicalEnvironment({
+    const clinical = new clinicalMod.ClinicalEnvironment({
       particles: this.stage.settings.particles,
     });
-    this.clinical.setPresence(0);
-    this.stage.scene.add(this.clinical.group);
+    let holograms: InstanceType<HologramModule['HologramRig']> | null = null;
+    try {
+      clinical.setPresence(0);
+      this.stage.scene.add(clinical.group);
 
-    /*
-     * The backdrop plate, for the mood grade to tint.
-     *
-     * The environment does not export it, and the environment seam should not
-     * grow a member for one consumer. Render order is the plate's contract —
-     * it is the only thing in the room drawn at -10, the very back of the
-     * world — so it is picked out by that. `setPresence` only ever touches
-     * opacity, so the colour channel is the director's alone.
-     */
-    this.plateMaterial = null;
-    this.clinical.group.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh && mesh.renderOrder === -10) {
-        this.plateMaterial = mesh.material as THREE.MeshBasicMaterial;
-      }
-    });
+      /*
+       * The backdrop plate, for the mood grade to tint.
+       *
+       * The environment does not export it, and the environment seam should not
+       * grow a member for one consumer. Render order is the plate's contract —
+       * it is the only thing in the room drawn at -10, the very back of the
+       * world — so it is picked out by that. `setPresence` only ever touches
+       * opacity, so the colour channel is the director's alone.
+       */
+      let plateMaterial: THREE.MeshBasicMaterial | null = null;
+      clinical.group.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh && mesh.renderOrder === -10) {
+          plateMaterial = mesh.material as THREE.MeshBasicMaterial;
+        }
+      });
 
-    // No furniture.
-    //
-    // The chair, lamp, trolley and plant were built for the previous clinic —
-    // a wide, evenly lit room where a bare floor read as unfinished. This room
-    // is a dark corridor whose whole character is receding light, and objects
-    // standing about in it read as clutter that happens to be in the way. The
-    // only furniture here is the backlit shelving, which the room draws itself.
-    // The modelled props are gone with it: 890KB of chair, lamp and trolley
-    // that nothing constructed and nothing drew.
+      // No furniture.
+      //
+      // The chair, lamp, trolley and plant were built for the previous clinic —
+      // a wide, evenly lit room where a bare floor read as unfinished. This room
+      // is a dark corridor whose whole character is receding light, and objects
+      // standing about in it read as clutter that happens to be in the way. The
+      // only furniture here is the backlit shelving, which the room draws itself.
+      // The modelled props are gone with it: 890KB of chair, lamp and trolley
+      // that nothing constructed and nothing drew.
 
-    this.holograms = new holoMod.HologramRig({
-      rich: this.stage.settings.richEffects,
-    });
-    this.holograms.mount(this.stage.scene);
-    this.holograms.setLayout(this.viewFrustum());
+      holograms = new holoMod.HologramRig({
+        rich: this.stage.settings.richEffects,
+      });
+      holograms.mount(this.stage.scene);
+      holograms.setLayout(this.viewFrustum());
+      // A failed setup must leave the next visit free to build the whole room.
+      this.clinical = clinical;
+      this.holograms = holograms;
+      this.plateMaterial = plateMaterial;
+    } catch (error) {
+      holograms?.dispose();
+      clinical.dispose();
+      throw error;
+    }
   }
 
   private advanceTransition(dt: number): void {
@@ -1370,10 +1439,27 @@ export class SessionDirector {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    ++this.clinicalRequest;
+    this.pendingAvatar?.dispose();
+    this.pendingAvatar = null;
+    this.onCharacterStatus = null;
+    this.beatCallbacks = [];
+    this.speech = null;
+    sound.stopRoom();
     this.holograms?.dispose();
     this.clinical?.dispose();
     this.lounge.dispose();
     this.avatar.dispose();
+    this.grade.dispose();
+    this.aura.removeFromParent();
+    this.aura.geometry.dispose();
+    const auraMaterial = this.aura.material as THREE.MeshBasicMaterial;
+    auraMaterial.map?.dispose();
+    auraMaterial.dispose();
     this.stage.dispose();
+    const dev = window as unknown as { __elohim?: SessionDirector };
+    if (dev.__elohim === this) delete dev.__elohim;
   }
 }

@@ -283,6 +283,9 @@
   </div>
 {:else}
   <Page eyebrow="Scan" {title} {lede} wide side="right">
+    {#if session.chatError}
+      <div class="error" role="alert">{session.chatError}</div>
+    {/if}
     {#if capturing}
       <section class="sec" aria-label="Capture">
         {#if facialAccepted}

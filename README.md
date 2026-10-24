@@ -62,6 +62,20 @@ variables; the local launcher supplies them. Provider and encryption keys remain
 | `DEMO_MODE` | Defaults to `1` outside production. |
 | `ELOHIM_MODEL` | Defaults to `claude-opus-5`. |
 
+### Character preview
+
+The default character is the supplied C6 nurse MetaHuman, served from
+`public/character/evia/evia-metahuman.glb`. The adapter keeps her body and face rigs
+aligned and adds gaze, blinking, restrained expressions, gestures, and audio-driven
+jaw movement. This export contains no animation clips or facial blendshapes and
+has one nurse outfit. See [asset provenance and conversion](public/character/evia/README.md).
+
+For a frontend-only preview, run `npm run dev:web` and choose **Look around without
+an account**. This tests the character and local guest conversation; accounts,
+saved history, and provider-backed services still require the API. A loading
+caption identifies the character download, and a failed model download falls
+back to the existing illustrated avatar with a visible notice.
+
 ---
 
 ## What is real
