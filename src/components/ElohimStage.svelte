@@ -16,10 +16,13 @@
   import { session } from '@/state/session.svelte.ts';
 
   let canvas: HTMLCanvasElement;
+  let characterStatus = $state<'loading' | 'ready' | 'fallback'>('loading');
 
   onMount(() => {
     const tier = session.user?.preferences.qualityTier ?? 'auto';
     const director = new SessionDirector(canvas, tier);
+    director.onCharacterStatus = (status) => { characterStatus = status; };
+    characterStatus = director.characterStatus;
     registerDirector(director);
 
 /*
@@ -61,4 +64,27 @@
   });
 </script>
 
-<canvas class="stage-canvas" bind:this={canvas}></canvas>
+<canvas class="stage-canvas" bind:this={canvas} aria-label="Evia, your virtual skincare companion"></canvas>
+{#if characterStatus !== 'ready'}
+  <div class="character-status" role="status" aria-live="polite">
+    {characterStatus === 'loading' ? 'Loading Evia…' : 'Showing the standard avatar. The 3D character could not load.'}
+  </div>
+{/if}
+
+<style>
+  .character-status {
+    position: fixed;
+    left: 50%;
+    top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+    transform: translateX(-50%);
+    z-index: 30;
+    max-width: min(90vw, 32rem);
+    padding: 0.5rem 0.9rem;
+    border-radius: 1rem;
+    background: rgb(12 16 22 / 88%);
+    color: #edf1f4;
+    font-size: 0.8rem;
+    text-align: center;
+    pointer-events: none;
+  }
+</style>

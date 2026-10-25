@@ -34,7 +34,9 @@
     finally { busy = false; }
   }
 </script>
-<footer class="cookie-footer"><button onclick={openCookieSettings}>cookie settings</button></footer>
+{#if !session.signedIn && !session.introPlaying}
+  <footer class="cookie-footer"><button onclick={openCookieSettings}>cookie settings</button></footer>
+{/if}
 {#if visible}
   <section class="cookie-panel" aria-label="Cookie preferences">
     <p>{COOKIE_COPY.body}</p>

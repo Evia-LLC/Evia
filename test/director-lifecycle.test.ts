@@ -1,0 +1,382 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as THREE from 'three';
+import type { CharacterDirective } from '../shared/types.ts';
+
+type Gate = ReturnType<typeof deferred>;
+type TestAvatar = ReturnType<typeof avatarDouble>;
+const controls = vi.hoisted(() => ({
+  avatarLoad: null as Gate | null,
+  procedural: [] as TestAvatar[],
+  metahuman: [] as TestAvatar[],
+  sprite: [] as TestAvatar[],
+  stages: [] as Array<{ scene: THREE.Scene; setShot: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }>,
+  clinicError: null as Error | null,
+  hologramLayoutError: null as Error | null,
+  clinics: [] as Array<{ group: THREE.Group; dispose: ReturnType<typeof vi.fn> }>,
+  holograms: [] as Array<{ group: THREE.Group; setLayout: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }>,
+}));
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function avatarDouble(kind: 'procedural' | 'metahuman' | 'sprite') {
+  const root = new THREE.Group();
+  const avatar = {
+    root,
+    state: 'IDLE',
+    load: vi.fn(() => kind === 'metahuman' ? controls.avatarLoad!.promise : Promise.resolve()),
+    mount: vi.fn((scene: THREE.Scene) => scene.add(root)),
+    dispose: vi.fn(() => root.removeFromParent()),
+    setOutfit: vi.fn(),
+    lookAt: vi.fn(),
+    setViseme: vi.fn(),
+    wink: vi.fn(),
+    update: vi.fn(),
+    stats: vi.fn(() => ({ meshes: 1, triangles: 1 })),
+    applyDirective: vi.fn((directive: CharacterDirective) => {
+      // Preserve the real FSM constraint which made late completed readings fail.
+      if (directive.state === 'ANALYSIS_COMPLETE' && avatar.state !== 'CLINICAL_ANALYSIS') return;
+      avatar.state = directive.state;
+    }),
+  };
+  controls[kind].push(avatar);
+  return avatar;
+}
+
+vi.mock('../src/character/procedural-avatar.ts', () => ({ ProceduralAvatar: class { constructor() { return avatarDouble('procedural'); } } }));
+vi.mock('../src/character/metahuman-avatar.ts', () => ({ MetaHumanAvatar: class { constructor() { return avatarDouble('metahuman'); } } }));
+vi.mock('../src/character/sprite-avatar.ts', () => ({ SpriteAvatar: class { constructor() { return avatarDouble('sprite'); } } }));
+vi.mock('../src/character/speech.ts', () => ({ MutedSpeechTrack: class {}, SpeechTrack: class {} }));
+vi.mock('../src/state/session.svelte.ts', () => ({ session: { sceneMode: 'lounge', chatError: null } }));
+vi.mock('../src/lib/sound.ts', () => ({ startRoom: vi.fn(), stopRoom: vi.fn() }));
+vi.mock('../src/holograms/primitives.ts', () => ({ METRIC_FACE_REGIONS: {} }));
+vi.mock('../src/scene/textures.ts', () => ({ radialTexture: () => new THREE.Texture() }));
+vi.mock('../src/scene/grade.ts', () => ({ Grade: class {
+  setStrength = vi.fn();
+  setMood = vi.fn();
+  update = vi.fn();
+  dispose = vi.fn();
+} }));
+vi.mock('../src/scene/cinematography.ts', () => ({ Cinematographer: class { reset = vi.fn(); request = vi.fn(); } }));
+vi.mock('../src/scene/lounge.ts', () => ({ LoungeEnvironment: class {
+  group = new THREE.Group();
+  background = new THREE.Color();
+  setPresence = vi.fn();
+  update = vi.fn();
+  dispose = vi.fn();
+} }));
+vi.mock('../src/scene/stage.ts', () => ({
+  SHOT_CONVERSATION: { fov: 40, target: { y: 1.5 }, position: { z: 3 } },
+  SHOT_CLINICAL: { fov: 45, target: { y: 1.5 }, position: { z: 4 } },
+  SHOT_CLINICAL_PORTRAIT: { fov: 50, target: { y: 1.5 }, position: { z: 5 } },
+  Stage: class {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera();
+    settings = { particles: false, richEffects: false };
+    renderer = { setClearColor: vi.fn(), getContext: () => ({ getContextAttributes: () => ({ antialias: true }) }) };
+    aspect = 1.44;
+    setShot = vi.fn();
+    start = vi.fn();
+    stats = vi.fn(() => ({ calls: 1, triangles: 1 }));
+    dispose = vi.fn();
+    constructor() { controls.stages.push(this); }
+  },
+}));
+vi.mock('../src/scene/clinical.ts', () => ({ ClinicalEnvironment: class {
+  group = new THREE.Group();
+  background = new THREE.Color();
+  setPresence = vi.fn();
+  dispose = vi.fn(() => this.group.removeFromParent());
+  constructor() {
+    if (controls.clinicError) throw controls.clinicError;
+    controls.clinics.push(this);
+  }
+} }));
+vi.mock('../src/holograms/rig.ts', () => ({ HologramRig: class {
+  group = new THREE.Group();
+  mount = vi.fn((parent: THREE.Object3D) => parent.add(this.group));
+  setLayout = vi.fn(() => { if (controls.hologramLayoutError) throw controls.hologramLayoutError; });
+  shutdown = vi.fn();
+  dispose = vi.fn(() => this.group.removeFromParent());
+  constructor() { controls.holograms.push(this); }
+} }));
+
+import { SessionDirector } from '../src/scene/director.ts';
+import { session } from '../src/state/session.svelte.ts';
+import * as sound from '../src/lib/sound.ts';
+import { MutedSpeechTrack } from '../src/character/speech.ts';
+
+let director: SessionDirector | null;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal('window', {});
+  controls.avatarLoad = deferred();
+  controls.procedural.length = controls.metahuman.length = controls.sprite.length = controls.stages.length = 0;
+  controls.clinicError = null;
+  controls.hologramLayoutError = null;
+  controls.clinics.length = controls.holograms.length = 0;
+  session.sceneMode = 'lounge';
+  session.chatError = null;
+  director = new SessionDirector({} as HTMLCanvasElement);
+});
+
+afterEach(() => {
+  director?.dispose();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('SessionDirector asynchronous lifecycle', () => {
+  it('does not perform speech beats before audio starts and preserves real action time on slow frames', () => {
+    const turn: CharacterDirective = { state: 'SPEAKING', expression: 'reassuring', gesture: 'small_wave', intensity: 0.65 };
+    director!.applyDirective(turn);
+    const silence = { advance: () => ({ viseme: 'sil' as const, weight: 0, level: 0 }), finished: false };
+    const waiting = Object.assign(new MutedSpeechTrack(silence), {
+      advance: vi.fn(silence.advance), finished: false, consumePhrase: () => true,
+    });
+    director!.useSpeechTrack(waiting);
+    const internal = director as unknown as {
+      frame(dt: number, elapsed: number, animationDt: number): void;
+      gesticulate(dt: number, phrase: boolean): void;
+      speechElapsed: number;
+      speechDuration: number;
+      closeFired: boolean;
+    };
+    internal.speechElapsed = 1.8;
+    internal.speechDuration = 2;
+    internal.closeFired = false;
+    controls.procedural[0].applyDirective.mockClear();
+    const gestures = vi.spyOn(internal, 'gesticulate');
+    internal.frame(0.1, 0.25, 0.25);
+    expect(waiting.advance).toHaveBeenCalledWith(0.25);
+    expect(gestures).not.toHaveBeenCalled();
+    expect(controls.procedural[0].applyDirective).not.toHaveBeenCalled();
+    expect(internal.closeFired).toBe(false);
+    expect(controls.procedural[0].update).toHaveBeenLastCalledWith(0.1, expect.objectContaining({ animationDt: 0.25 }));
+    Object.assign(waiting, { finished: true });
+    internal.frame(0.1, 0.35, 0.1);
+    expect(internal.closeFired).toBe(false);
+    expect(controls.procedural[0].applyDirective).toHaveBeenLastCalledWith({ ...turn, state: 'IDLE', gesture: 'none' });
+    director!.useSpeechTrack(silence);
+    expect(internal.speechElapsed).toBe(0);
+    expect(controls.procedural[0].applyDirective).toHaveBeenLastCalledWith(turn);
+  });
+
+  it('accepts real gestures only after loading and leaves the conversation untouched by a wink', async () => {
+    const loaded = controls.metahuman[0];
+    expect(director!.previewGesture('wave')).toBe(false);
+    expect(director!.previewGesture('wink')).toBe(false);
+    expect(loaded.wink).not.toHaveBeenCalled();
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+
+    loaded.applyDirective.mockClear();
+    expect(director!.previewGesture('wink')).toBe(true);
+    expect(loaded.wink).toHaveBeenCalledWith('left');
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    director!.dispose();
+    expect(director!.previewGesture('wave')).toBe(false);
+    expect(director!.previewGesture('wink')).toBe(false);
+    expect(loaded.wink).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a requested pose finish over speech beats and speech ending, then restores the settled pose', async () => {
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+    const loaded = controls.metahuman[0];
+    const internal = director as unknown as {
+      frame(dt: number, elapsed: number): void;
+      closeFired: boolean;
+      speechDuration: number;
+      speechElapsed: number;
+    };
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const speaking: CharacterDirective = { state: 'SPEAKING', expression: 'reassuring', gesture: 'small_wave', intensity: 0.65 };
+    director!.applyDirective(speaking);
+    const track = {
+      advance: vi.fn(() => ({ viseme: 'AA' as const, weight: 0.6, level: 0.5 })),
+      finished: false,
+      consumePhrase: () => true,
+    };
+    director!.useSpeechTrack(track);
+    // Near the end of a reassuring line, both a phrase beat and the closing
+    // smile are due. Neither should cut across an explicitly requested pose.
+    internal.closeFired = false;
+    internal.speechDuration = 2;
+    internal.speechElapsed = 1.6;
+    director!.previewGesture('explain');
+    loaded.applyDirective.mockClear();
+    now = 2000;
+    for (let i = 0; i < 12; i++) internal.frame(0.1, i / 10);
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    expect(loaded.setViseme).toHaveBeenLastCalledWith('AA', 0.6);
+
+    track.finished = true;
+    now = 2200;
+    internal.frame(0.1, 1.2);
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    expect(loaded.setViseme).toHaveBeenLastCalledWith('sil', 0);
+    now = 3900;
+    internal.frame(0.1, 2.9);
+    const completed = { ...speaking, expression: 'smile' as const };
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith({ ...completed, state: 'IDLE', gesture: 'none' });
+
+    // Another preview must borrow the actual rest, not resurrect SPEAKING or
+    // the sample's opening wave. Late audio can still resume its own turn.
+    director!.previewGesture('wave');
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'IDLE', gesture: 'small_wave' }));
+    now = 6800;
+    internal.frame(0.1, 5.8);
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith({ ...completed, state: 'IDLE', gesture: 'none' });
+    director!.useSpeechTrack({ ...track, finished: false });
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith(completed);
+  });
+
+  it('cancels the old gesture lease when a newer conversation turn arrives', async () => {
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+    const loaded = controls.metahuman[0];
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    director!.previewGesture('wave');
+    const next: CharacterDirective = { state: 'LISTENING', expression: 'focused', gesture: 'none', intensity: 0.6 };
+    director!.applyDirective(next);
+    loaded.applyDirective.mockClear();
+    now = 4000;
+    (director as unknown as { frame(dt: number, elapsed: number): void }).frame(0.1, 3);
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    expect(loaded.state).toBe('LISTENING');
+  });
+
+  it('disposes a character that completes after teardown without mounting or announcing it', async () => {
+    const loaded = controls.metahuman[0];
+    const onStatus = vi.fn();
+    director!.onCharacterStatus = onStatus;
+    director!.dispose();
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+
+    expect(loaded.dispose).toHaveBeenCalled();
+    expect(loaded.mount).not.toHaveBeenCalled();
+    expect(onStatus).not.toHaveBeenCalled();
+    expect(controls.stages[0].dispose).toHaveBeenCalledTimes(1);
+    expect(controls.sprite).toHaveLength(0);
+  });
+
+  it('copies the latest scene transform and conversation directive into a late character', async () => {
+    const placeholder = controls.procedural[0];
+    placeholder.root.position.set(-0.35, 0.2, 0.28);
+    placeholder.root.rotation.set(0.02, 0.42, -0.01);
+    placeholder.root.scale.setScalar(0.93);
+    const directive: CharacterDirective = { state: 'THINKING', expression: 'focused', gesture: 'hand_to_chin', intensity: 0.6 };
+    director!.applyDirective(directive);
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+
+    const loaded = controls.metahuman[0];
+    expect(loaded.root.position.equals(placeholder.root.position)).toBe(true);
+    expect(loaded.root.quaternion.equals(placeholder.root.quaternion)).toBe(true);
+    expect(loaded.root.scale.equals(placeholder.root.scale)).toBe(true);
+    expect(loaded.state).toBe('THINKING');
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith(directive);
+    expect(loaded.setOutfit).toHaveBeenCalledWith('casual');
+    expect(loaded.root.parent).toBe(controls.stages[0].scene);
+    expect(placeholder.dispose).toHaveBeenCalledTimes(1);
+    expect(director!.characterStatus).toBe('ready');
+  });
+
+  it('restores a completed reading through the valid clinical state before swapping the avatar', async () => {
+    await director!.enterClinical();
+    const directive: CharacterDirective = { state: 'ANALYSIS_COMPLETE', expression: 'warm', gesture: 'point_to_hologram', intensity: 0.7 };
+    director!.applyDirective(directive);
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+
+    const loaded = controls.metahuman[0];
+    expect(loaded.applyDirective.mock.calls.map(([value]) => value.state)).toEqual(['CLINICAL_ANALYSIS', 'ANALYSIS_COMPLETE']);
+    expect(loaded.state).toBe('ANALYSIS_COMPLETE');
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith(directive);
+    expect(loaded.setOutfit).toHaveBeenCalledWith('clinical');
+  });
+
+  it('ignores clinic loading that finishes after the user has returned home', async () => {
+    const room = deferred();
+    const internal = director as unknown as { ensureClinicalLoaded(): Promise<void>; advanceTransition(dt: number): void };
+    vi.spyOn(internal, 'ensureClinicalLoaded').mockReturnValue(room.promise);
+    const entering = director!.enterClinical();
+    expect(session.sceneMode).toBe('transitioning');
+    director!.exitClinical();
+    internal.advanceTransition(1);
+    expect(session.sceneMode).toBe('lounge');
+    room.resolve();
+    await entering;
+
+    expect(session.sceneMode).toBe('lounge');
+    expect(sound.startRoom).not.toHaveBeenCalled();
+    expect(controls.stages[0].setShot).toHaveBeenCalledTimes(1);
+    expect(controls.procedural[0].setOutfit).toHaveBeenLastCalledWith('casual', { transitionSeconds: 0.7 });
+  });
+
+  it('returns to the lounge with an actionable error when the clinic cannot load', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    controls.clinicError = new Error('Clinical module unavailable');
+    await director!.enterClinical();
+
+    expect(session.sceneMode).toBe('lounge');
+    expect(session.chatError).toMatch(/clinic could not load.*try Scan again/i);
+    expect(sound.startRoom).not.toHaveBeenCalled();
+    expect(controls.stages[0].setShot).not.toHaveBeenCalled();
+
+    // A failed import must release the shared pending load so Scan can retry.
+    controls.clinicError = null;
+    await director!.enterClinical();
+    expect(sound.startRoom).toHaveBeenCalledTimes(1);
+    expect(session.sceneMode).toBe('transitioning');
+    expect(session.chatError).toBeNull();
+  });
+
+  it('disposes partial clinic setup and rebuilds both groups on retry', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const scene = controls.stages[0].scene;
+    const initialChildren = [...scene.children];
+    controls.hologramLayoutError = new Error('Hologram layout unavailable');
+    await director!.enterClinical();
+
+    expect(session.sceneMode).toBe('lounge');
+    expect(controls.clinics).toHaveLength(1);
+    expect(controls.holograms).toHaveLength(1);
+    expect(controls.clinics[0].dispose).toHaveBeenCalledTimes(1);
+    expect(controls.holograms[0].dispose).toHaveBeenCalledTimes(1);
+    expect(scene.children).toEqual(initialChildren);
+    expect(sound.startRoom).not.toHaveBeenCalled();
+
+    controls.hologramLayoutError = null;
+    await director!.enterClinical();
+    expect(controls.clinics).toHaveLength(2);
+    expect(controls.holograms).toHaveLength(2);
+    expect(controls.clinics[1].group.parent).toBe(scene);
+    expect(controls.holograms[1].group.parent).toBe(scene);
+    expect(controls.holograms[1].setLayout).toHaveBeenCalled();
+    expect(scene.children).toHaveLength(initialChildren.length + 2);
+    expect(sound.startRoom).toHaveBeenCalledTimes(1);
+    expect(session.chatError).toBeNull();
+
+    director!.dispose();
+    for (const room of [...controls.clinics, ...controls.holograms]) {
+      expect(room.dispose).toHaveBeenCalledTimes(1);
+      expect(room.group.parent).toBeNull();
+    }
+  });
+});

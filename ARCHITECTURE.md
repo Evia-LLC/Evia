@@ -16,7 +16,7 @@ unfinished. All visual assets sit behind interfaces so they can be replaced whol
 |---|---|---|
 | Frontend | Vite + Svelte 5 + TypeScript | Small runtime, fine-grained reactivity. Matters on the target hardware. |
 | 3D | three.js (WebGL2) | Only mature option. Held to a strict budget — see §9. |
-| Character | Procedural low-poly hierarchical rig | No asset pipeline, no downloads, swappable for glTF later. |
+| Character | Imported C6 MetaHuman, with illustrated/procedural fallbacks | Shared avatar interface; source geometry retained, web textures optimized. |
 | Server | Node 24 + Express, `.ts` run via native type-stripping | No build step for the server. |
 | DB | `node:sqlite` (built into Node 24) | Real relational DB, zero native modules, zero install friction. |
 | AI | Anthropic SDK, `claude-opus-5` | Server-side only. The browser never sees a key. |
@@ -210,9 +210,12 @@ interface ElohimAvatar {
 }
 ```
 
-MVP ships `ProceduralAvatar` (hierarchical low-poly parts: root, hips, spine, chest, neck,
-head; chest to shoulder, upperArm, forearm, hand on each side). V2 ships `GltfAvatar` with
-a real SkinnedMesh and baked clips. Nothing outside `src/character/` knows which is loaded.
+`MetaHumanAvatar` loads the supplied C6 nurse character with independent body and face
+skeletons. The adapter preserves their rest poses and synchronizes shared neck and
+shoulder motion. It provides restrained bone-driven expressions, gaze, blinking, gestures,
+and speech-driven jaw movement. The supplied export has no animation clips or facial
+blendshapes and only one outfit. `SpriteAvatar` is the download-failure fallback, followed
+by `ProceduralAvatar` if its assets also fail. The director uses the same avatar interface.
 
 ### 5.2 Animation state machine
 
@@ -301,7 +304,7 @@ The development machine is an Intel HD Graphics 620 — an integrated GPU roughl
 of magnitude behind what a three.js scene is usually tuned on. The budget below is not
 aspirational; it is the constraint the art direction was chosen to satisfy.
 
-**Measured**, via `__elohim.inspect()` in a dev build at 1280×720:
+**Historical procedural-avatar measurements**, via `__elohim.inspect()` in a dev build at 1280×720:
 
 | Scene | Draw calls | Triangles |
 |---|---|---|
@@ -310,9 +313,12 @@ aspirational; it is the constraint the art direction was chosen to satisfy.
 | Peak, mid cross-fade | 38 | 3,008 |
 | Character alone | 16 meshes | 1,596 |
 
-Ceilings: **40 draw calls, 6k triangles.** The mid-transition peak is the real ceiling
-because both environments are alive at once for about a second; that is inherent to
-cross-fading rather than cutting, and it was judged worth the draw calls.
+That version targeted **40 draw calls and 6k triangles**. The supplied C6 character
+changes this budget: its unchanged geometry has **214,716 triangles across 12 meshes**
+and its optimized download is **17.9 MB**. A 600-frame CPU-only adapter profile measured
+0.67 ms mean / 1.15 ms p95 on the development machine; this does not measure GPU rendering
+or certify phone frame rates. Device testing and a lower-detail export are needed before
+claiming the original low-end GPU target. The existing adaptive pixel budget remains active.
 
 Also enforced:
 

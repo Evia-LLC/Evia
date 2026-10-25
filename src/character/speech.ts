@@ -21,6 +21,14 @@ export interface MouthState {
   level: number;
 }
 
+/** A snapshot of the recording at the point currently reaching the speakers. */
+export interface AudioSpeechFrame {
+  /** AudioContext seconds; word.start uses the same clock. */
+  time: number;
+  level: number;
+  word: { word: string; start: number; duration?: number } | null;
+}
+
 export interface SpeechTrackLike {
   advance(dt: number): MouthState;
   readonly finished: boolean;
@@ -107,16 +115,51 @@ interface Phone {
 /** Roughly conversational pace, used only when nothing better is known. */
 const BASE_PHONE_SECONDS = 0.075;
 
-/** Breaks one word into visemes. Vowels carry the energy and the duration. */
-function phonemesForWord(word: string): Phone[] {
-  const phones: Phone[] = [];
-  for (const ch of word.toLowerCase()) {
-    if (!/[a-z]/.test(ch)) continue;
-    const vowel = VOWEL_MAP[ch];
-    const consonant = CONSONANT_MAP[ch];
+const vowel = (viseme: Viseme, span = 1): Phone => ({ viseme, span, energy: 0.85 });
+const consonant = (viseme: Viseme, span = 0.25): Phone => ({ viseme, span, energy: 0.35 });
 
-    if (vowel) phones.push({ viseme: vowel, span: 1.35, energy: 0.85 });
-    else if (consonant) phones.push({ viseme: consonant, span: 0.8, energy: 0.45 });
+/**
+ * Broad, authored mouth poses for the neutral shipped demonstration phrases.
+ * These avoid pronouncing silent spelling and hold the spoken vowels. Their
+ * durations are apportioned inside measured words; they are not a provider's
+ * phoneme alignment or a complete English pronunciation dictionary.
+ */
+const SPOKEN_WORDS: Record<string, Phone[]> = {
+  "i'm": [vowel('AA', 0.7), vowel('IH', 0.5), consonant('MBP', 0.35)],
+  right: [vowel('AA', 0.75), vowel('IH', 0.65)],
+  here: [vowel('IH', 1)],
+  what: [consonant('OU'), vowel('AA'), consonant('IH', 0.15)],
+  do: [consonant('IH', 0.2), vowel('OU')],
+  you: [consonant('IH', 0.2), vowel('OU')],
+  need: [consonant('IH', 0.2), vowel('EE', 1.3), consonant('IH', 0.15)],
+  have: [vowel('AA', 1), consonant('FV', 0.3)],
+  my: [consonant('MBP', 0.3), vowel('AA', 0.7), vowel('IH', 0.6)],
+  attention: [vowel('AA', 0.35), consonant('IH', 0.15), vowel('EE', 0.9), consonant('S', 0.35), vowel('IH', 0.6)],
+  whenever: [consonant('OU', 0.2), vowel('EE', 0.7), consonant('IH', 0.15), vowel('EE', 0.8), consonant('FV', 0.3), vowel('IH', 0.4)],
+  "you're": [consonant('IH', 0.2), vowel('OU', 1), consonant('IH', 0.2)],
+  ready: [consonant('IH', 0.2), vowel('EE', 0.8), consonant('IH', 0.2), vowel('EE', 0.6)],
+};
+
+/** Authored common words, then a deliberately approximate spelling fallback. */
+function phonemesForWord(word: string): Phone[] {
+  const spelling = word.toLowerCase().replace(/’/g, "'").replace(/[^a-z']/g, '');
+  const known = SPOKEN_WORDS[spelling];
+  if (known) return known;
+  const phones: Phone[] = [];
+  for (let i = 0; i < spelling.length; i++) {
+    const ch = spelling[i];
+    if (!/[a-z]/.test(ch)) continue;
+    const pair = spelling.slice(i, i + 2);
+    if (pair === 'ee' || pair === 'oo') {
+      phones.push(vowel(pair === 'ee' ? 'EE' : 'OU', 1.7));
+      i++;
+      continue;
+    }
+    const vowelViseme = VOWEL_MAP[ch];
+    const consonantViseme = CONSONANT_MAP[ch];
+
+    if (vowelViseme) phones.push({ viseme: vowelViseme, span: 1.35, energy: 0.85 });
+    else if (consonantViseme) phones.push({ viseme: consonantViseme, span: 0.8, energy: 0.45 });
     // Unmapped consonants still move the jaw slightly rather than freezing it.
     else phones.push({ viseme: 'IH', span: 0.7, energy: 0.3 });
   }
@@ -264,12 +307,9 @@ export class EstimatedSpeechTrack implements SpeechTrackLike {
 // ---------------------------------------------------------------------------
 
 /**
- * Driven by word-boundary events from the speech engine.
- *
- * Each boundary tells us a word started *now*. We do not know how long it will
- * last, so the track spreads that word's visemes over an estimate that is
- * continuously corrected by the measured interval between the last two
- * boundaries. In practice the mouth locks to the voice within two words.
+ * Recordings provide an audio clock, measured word lengths and PCM loudness.
+ * Browser synthesis falls back to boundary events and a rolling word length.
+ * Letter-derived visemes are approximate; word alignment is not phoneme data.
  */
 export class AudioLockedSpeechTrack implements SpeechTrackLike {
   private phones: Phone[] = [];
@@ -301,6 +341,17 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
    * the phone's own energy stands.
    */
   private measuredLevel: number | null = null;
+  private readAudio: (() => AudioSpeechFrame) | null = null;
+  private previousAudioTime: number | null = null;
+  private audioWordStart: number | null = null;
+  private audioWord = '';
+
+  /** The recording supplies its own clock; dropped render frames cannot slow it. */
+  useAudioClock(read: () => AudioSpeechFrame): void {
+    this.readAudio = read;
+    this.previousAudioTime = null;
+    this.audioWordStart = null;
+  }
 
   get finished(): boolean {
     return this.ended;
@@ -318,6 +369,13 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
    * fallback for engines that only ever say a word *started*.
    */
   beginWord(word: string, elapsedSeconds: number, knownDuration?: number): void {
+    // Caption callbacks may arrive late or in a batch. A recording's current
+    // word is selected from its audio timeline, never from callback delivery.
+    if (this.readAudio) return;
+    this.setWord(word, elapsedSeconds, knownDuration);
+  }
+
+  private setWord(word: string, elapsedSeconds: number, knownDuration?: number): void {
     // Correct the pace estimate from the interval actually observed.
     if (this.lastBoundaryAt >= 0) {
       const observed = elapsedSeconds - this.lastBoundaryAt;
@@ -371,7 +429,34 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
   }
 
   advance(dt: number): MouthState {
-    const state = this.step(dt);
+    let phraseDt = dt;
+    let state: MouthState;
+    if (this.readAudio && !this.ended) {
+      const frame = this.readAudio();
+      phraseDt = this.previousAudioTime === null ? 0 : Math.max(0, frame.time - this.previousAudioTime);
+      this.previousAudioTime = frame.time;
+      this.elapsed = frame.time;
+      this.setLevel(frame.level);
+      if (!frame.word) {
+        if (this.audioWordStart !== null) {
+          // A slow frame may cross most of a word and only a tiny gap. Count
+          // the actual quiet tail, not the whole render interval as a pause.
+          phraseDt = Math.max(0, frame.time - this.audioWordStart - this.currentWordSeconds);
+        }
+        this.audioWordStart = null;
+        state = SILENT;
+      } else {
+        if (frame.word.start !== this.audioWordStart || frame.word.word !== this.audioWord) {
+          this.setWord(frame.word.word, frame.word.start, frame.word.duration);
+          this.audioWordStart = frame.word.start;
+          this.audioWord = frame.word.word;
+          this.wordStartedAt = frame.word.start;
+        }
+        state = this.step(0);
+      }
+    } else {
+      state = this.step(dt);
+    }
     /*
      * Phrase accounting. This track cannot see its future the way the
      * estimated one can, so a boundary is recognised the moment enough quiet
@@ -380,12 +465,12 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
      * warming up, not a phrase — unless the track already ended, in which
      * case the utterance's close still deserves its tick.
      */
-    const quiet = state.viseme === 'sil' && state.level < 0.12;
+    const quiet = (state.viseme === 'sil' || state.weight < 0.01) && state.level < 0.12;
     if (!quiet || (this.awaitingFirstBoundary && !this.ended)) {
       this.silenceRun = 0;
       this.phraseFlagged = false;
     } else {
-      this.silenceRun += dt;
+      this.silenceRun += phraseDt;
       if (!this.phraseFlagged && this.silenceRun >= PHRASE_GAP_SECONDS) {
         this.phraseFlagged = true;
         this.phrasePending = true;
@@ -434,7 +519,9 @@ export class AudioLockedSpeechTrack implements SpeechTrackLike {
       viseme: phone.viseme,
       // The word says which shape; the waveform says how far into it.
       weight: (0.35 + 0.65 * s) * gate,
-      level: this.measuredLevel === null ? shaped : shaped * 0.4 + this.measuredLevel * 0.6,
+      // A measured silent interval must not retain invented phoneme energy;
+      // the director uses this level for speech beats as well as the mouth.
+      level: this.measuredLevel ?? shaped,
     };
   }
 }

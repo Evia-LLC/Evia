@@ -15,6 +15,8 @@ export type Outfit = 'casual' | 'clinical';
 export interface AvatarContext {
   /** Seconds since the avatar was mounted. */
   elapsed: number;
+  /** Real elapsed time for gesture phases; spring integration may use a capped dt. */
+  animationDt?: number;
   /** Where the user's attention is, in world space. Null means "look ahead". */
   gazeTarget: THREE.Vector3 | null;
   /** 0..1 speech envelope driving the mouth. */
@@ -30,6 +32,8 @@ export interface ElohimAvatar {
   applyDirective(directive: CharacterDirective): void;
   setOutfit(outfit: Outfit, opts?: { transitionSeconds?: number }): void;
   setViseme(viseme: Viseme, weight: number): void;
+  /** A deliberate, one-sided eyelid gesture when supported by the rig. */
+  wink?(side?: 'left' | 'right'): void;
   /**
    * Enables the edge fringe that softens her silhouette into the backdrop.
    *

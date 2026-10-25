@@ -40,8 +40,7 @@
  * list directly under Node's type stripping.
  */
 export const STOCK_LINES: readonly string[] = [
-  // Intro narrations (src/lib/lines.ts INTRO_LINES, in beat order).
-  "Hi — I'm Elohim.",
+  // Intro narrations; the neutral opening also appears in the face replies.
   "Let me take a proper look at your skin. I'll read nine things, just using your camera.",
   "Everything's measured right here, on your device — nothing leaves it unless you say so.",
   "I'll remember what I see, and next time I'll show you what changed.",
@@ -67,8 +66,7 @@ export const STOCK_LINES: readonly string[] = [
   // Connection lines (CONNECTION_LOST_LINE, LONG_THINK_LINE).
   "I lost my connection for a moment. Say that again?",
   "Bear with me — thinking about this one.",
-  // Voice picker preview (VOICE_PREVIEW_LINE).
-  "Hey, it's Elohim. This is what I sound like.",
+  // The voice preview reuses "I'm right here. What do you need?" above.
 ];
 
 /** Rolling lifetime of a cached stock line, in days. Enforced on read. */

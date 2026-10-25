@@ -136,7 +136,7 @@ const {
 } = await import("../server/voice/tts.ts");
 const { STOCK_LINES, STOCK_CACHE_MAX_ROWS } =
   await import("../server/voice/stock-lines.ts");
-const { allShippedLines } = await import("../src/lib/lines.ts");
+const { allShippedLines, VOICE_PREVIEW_LINE } = await import("../src/lib/lines.ts");
 
 const stamp = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const personalLine = (tag: string) =>
@@ -254,7 +254,7 @@ describe("non-stock synthesis persists nothing", () => {
 describe("stock lines use the persistent cache", () => {
   it("a stock line is synthesised once, then served from cache", async () => {
     if (!configured) return;
-    const stock = "Hey, it's Elohim. This is what I sound like.";
+    const stock = VOICE_PREVIEW_LINE;
     const first = await speakLine(stock, {}, "user:aaa");
     expect(first.cached).toBe(false);
     expect(providerCalls.count).toBe(1);
@@ -338,7 +338,7 @@ describe("stock lines use the persistent cache", () => {
 describe("guest synthesis never writes", () => {
   it("a cold stock line synthesised as a guest leaves no row", async () => {
     if (!configured) return;
-    const stock = "Hey, it's Elohim. This is what I sound like.";
+    const stock = VOICE_PREVIEW_LINE;
     // Exactly the budget identity the public guest route passes.
     const line = await speakLine(stock, {}, "guest:voice");
     expect(line.cached).toBe(false);
@@ -348,7 +348,7 @@ describe("guest synthesis never writes", () => {
 
   it("a guest is served a stock hit but still writes nothing", async () => {
     if (!configured) return;
-    const stock = "Hey, it's Elohim. This is what I sound like.";
+    const stock = VOICE_PREVIEW_LINE;
     await speakLine(stock, {}, "user:aaa");
     expect(await rowCount()).toBe(1);
     const afterAccount = providerCalls.count;
@@ -364,7 +364,7 @@ describe("guest synthesis never writes", () => {
     const secret = personalLine(`guest-${stamp()}`);
     await speakLine(secret, {}, "guest:voice");
     await speakLine(
-      "Hey, it's Elohim. This is what I sound like.",
+      VOICE_PREVIEW_LINE,
       {},
       "user:bbb",
       { guest: true },

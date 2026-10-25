@@ -215,6 +215,24 @@ export function previewVoice(voiceURI: string | null): void {
   voice.preview(voiceURI, session.user?.preferences.locale ?? 'en');
 }
 
+/** Explicit voice audition: a shipped line with actual audio-driven lips. */
+export function sampleEvia(): void {
+  sound.primeSound();
+  voice.sample();
+}
+
+export function stopEviaSample(): void {
+  voice.stopSample();
+}
+
+export function gestureEvia(action: 'wink' | 'wave' | 'explain'): boolean {
+  return director?.previewGesture(action) ?? false;
+}
+
+export function frameEviaPreview(enabled: boolean): void {
+  director?.setCharacterPreview(enabled);
+}
+
 export async function listVoiceOptions() {
   return voice.availableVoices();
 }

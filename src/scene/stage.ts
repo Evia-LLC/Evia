@@ -152,7 +152,7 @@ export class Stage {
   private tierResolved = false;
 
   tier: QualityTier = 'high';
-  onFrame: ((dt: number, elapsed: number) => void) | null = null;
+  onFrame: ((dt: number, elapsed: number, animationDt: number) => void) | null = null;
   onTierResolved: ((tier: QualityTier) => void) | null = null;
 
   /** Rolling average frame time in ms, for the dev overlay. */
@@ -162,7 +162,9 @@ export class Stage {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: false, // costs more than it returns on an iGPU at this stylisation
+      // Thin eyelash and hair cards need multisampling; the adaptive pixel
+      // budget still reduces rendering cost on slower devices.
+      antialias: true,
       alpha: false,
       powerPreference: 'high-performance',
       stencil: false,
@@ -271,7 +273,7 @@ export class Stage {
     this.lastTime = now;
     // Guard against tab-restore producing a multi-second dt that teleports
     // every spring in the rig.
-    const dt = clamp(raw, 0, 0.1);
+    const timelineStep = Math.max(0, raw);
 
     this.frameMs = this.frameMs === 0 ? raw * 1000 : this.frameMs * 0.9 + raw * 1000 * 0.1;
     this.probeQuality(raw);
@@ -279,14 +281,17 @@ export class Stage {
     // Frame pacing: on the low tier we deliberately render at 30fps and give the
     // GPU the other half of every 33ms back.
     const minStep = 1 / TIER_SETTINGS[this.tier].targetFps;
-    this.accumulator += dt;
+    this.accumulator += timelineStep;
     if (this.accumulator < minStep - 0.002) return;
     const step = this.accumulator;
     this.accumulator = 0;
 
     this.elapsed += step;
-    this.updateCamera(step);
-    this.onFrame?.(step, this.elapsed);
+    // Spring integration stays bounded; animation time must retain the real
+    // elapsed interval so gestures cannot fall behind audio on a slow frame.
+    const dt = clamp(step, 0, 0.1);
+    this.updateCamera(dt);
+    this.onFrame?.(dt, this.elapsed, step);
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -387,7 +392,7 @@ export class Stage {
   stepManually(dt = 1 / 60): void {
     this.elapsed += dt;
     this.updateCamera(dt);
-    this.onFrame?.(dt, this.elapsed);
+    this.onFrame?.(dt, this.elapsed, dt);
     this.renderer.render(this.scene, this.camera);
   }
 

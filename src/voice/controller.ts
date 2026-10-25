@@ -105,30 +105,41 @@ export class VoiceController {
    * diagnosis.
    */
   preview(voiceURI: string | null, locale = 'en'): void {
-    // From the shared line list, so the shipped audio for it never goes stale.
-    const line = VOICE_PREVIEW_LINE;
-    if (this.cloned.ready && this.cloned.canSay(line)) {
-      this.cancelAll();
-      session.voiceStatus = 'Playing her voice…';
-      this.cloned.speak(line, {
-        onStart: () => {
-          session.voiceStatus = `Her voice is playing (audio ${audioStateLabel()}). If you hear nothing, check Silent mode and the volume.`;
-        },
-        onEnd: () => {
-          session.voiceStatus = `Her voice played (audio ${audioStateLabel()}).`;
-        },
-        onFailed: (reason) => {
-          session.voiceStatus = `Her voice could not play: ${reason} (audio ${audioStateLabel()}).`;
-        },
-      });
+    if (this.cloned.ready) {
+      this.sample();
       return;
     }
-    session.voiceStatus = this.cloned.ready
-      ? 'Her voice is not available for this line.'
-      : 'Her voice is not configured here; the device voice is used.';
+    this.stopSpeaking();
+    const request = this.line;
+    session.voiceStatus = 'Preparing the device voice…';
     void this.speaker.prepare(locale, voiceURI).then(() => {
-      this.speaker.speak(line);
+      if (request === this.line) this.sample();
     });
+  }
+
+  /** One requested sample; does not change the voice preference for replies. */
+  sample(text = VOICE_PREVIEW_LINE): void {
+    this.cancelListening();
+    if (this.willSpeak(text, true) === 'none') {
+      this.stopSpeaking();
+      session.voiceStatus = 'This voice sample is unavailable. Please try again once the audio has loaded.';
+      return;
+    }
+    this.director?.elohimSpoke({ state: 'SPEAKING', expression: 'warm', gesture: 'none', intensity: 0.65 }, text);
+    session.voiceStatus = 'Loading voice sample…';
+    const request = this.line + 1;
+    this.say(text, (played) => {
+      if (request !== this.line || session.voiceStatus?.includes('could not play')) return;
+      this.sampleLine = null;
+      session.voiceStatus = played ? 'Voice sample finished.' : 'Audio did not start. Check your sound settings and try again.';
+    }, true);
+    this.sampleLine = this.line;
+  }
+
+  stopSample(): void {
+    if (this.sampleLine !== this.line) return;
+    this.stopSpeaking();
+    session.voiceStatus = 'Voice sample stopped.';
   }
 
   get listening(): boolean {
@@ -193,8 +204,8 @@ export class VoiceController {
    * voice starts at once and may never report timing, and no voice means no
    * mouth at all.
    */
-  willSpeak(text: string): 'cloned' | 'browser' | 'none' {
-    if (!session.user?.preferences.voiceEnabled) return 'none';
+  willSpeak(text: string, explicitSample = false): 'cloned' | 'browser' | 'none' {
+    if (!explicitSample && !session.user?.preferences.voiceEnabled) return 'none';
     if (this.cloned.ready && this.cloned.canSay(text)) return 'cloned';
     // Once she has her own voice, the browser's is never a stand-in. A line
     // her voice cannot say is written, not spoken by a stranger.
@@ -242,11 +253,15 @@ export class VoiceController {
    * is still the current one before touching shared state.
    */
   private line = 0;
+  private sampleLine: number | null = null;
 
-  private say(text: string, onDone: () => void): void {
-    const which = this.willSpeak(text);
-    this.cancelAll();
+  private say(text: string, onDone: (played?: boolean) => void, explicitSample = false): void {
+    const which = this.willSpeak(text, explicitSample);
     const mine = ++this.line;
+    this.sampleLine = null;
+    this.cancelAll();
+    session.speaking = false;
+    this.director?.stopMouth();
     const live = () => mine === this.line;
     // A new line starts unrevealed; boundary events advance it from here.
     session.spokenChars = 0;
@@ -261,6 +276,7 @@ export class VoiceController {
     const track = new AudioLockedSpeechTrack();
     let locked = false;
     let ended = false;
+    let started = false;
     let windDown = 0;
 
     const lock = () => {
@@ -271,7 +287,11 @@ export class VoiceController {
 
     const handlers = {
       onStart: () => {
-        if (live()) session.speaking = true;
+        if (live()) {
+          started = true;
+          session.speaking = true;
+          if (explicitSample) session.voiceStatus = 'Voice sample playing.';
+        }
       },
       onBoundary: (boundary: SpeechBoundary) => {
         if (!live()) return;
@@ -299,7 +319,7 @@ export class VoiceController {
           // No timing ever arrived: whatever estimate was miming stops now.
           if (!locked) this.director?.stopMouth();
         }
-        onDone();
+        onDone(started);
       },
     };
 
@@ -340,11 +360,12 @@ export class VoiceController {
           onStart: () => {
             if (!live()) return;
             handlers.onStart();
-            session.voiceStatus = `Her voice is playing (audio ${audioStateLabel()}).`;
+            session.voiceStatus = explicitSample ? 'Voice sample playing.' : `Her voice is playing (audio ${audioStateLabel()}).`;
             // Real audio is playing from this instant; the mouth is hers now.
             lock();
           },
-          onLevel: (level) => track.setLevel(level),
+          onAudioClock: (read) => { if (live()) track.useAudioClock(read); },
+          onLevel: (level) => { if (live()) track.setLevel(level); },
           onFailed: (reason) => {
             if (!live()) return;
             console.warn(`[elohim/voice] licensed voice unavailable: ${reason}`);

@@ -28,6 +28,7 @@ const AURA_TALKING = new THREE.Color(0xffe4c4);
 import type { ElohimEnvironment } from './environment.ts';
 import { ProceduralAvatar } from '@/character/procedural-avatar.ts';
 import { SpriteAvatar } from '@/character/sprite-avatar.ts';
+import { MetaHumanAvatar } from '@/character/metahuman-avatar.ts';
 import type { BodyAnalysis } from '@/body-analysis/pipeline.ts';
 import type { ScanMesh } from '@/holograms/face-mesh-3d.ts';
 import type { ElohimAvatar } from '@/character/types.ts';
@@ -80,12 +81,19 @@ const FACE_GAZE = new THREE.Vector3(0.62, 1.5, -0.18);
  * a wait and a load. See `scripts/shrink-glb.mjs`.
  */
 const ELOHIM_SPRITE = '/character/elohim/manifest.json';
+const CLINIC_LOAD_ERROR = 'The clinic could not load. Return Home and try Scan again.';
 
 /** Lazily loaded so the lounge boots without paying for the clinical room. */
 type ClinicalModule = typeof import('./clinical.ts');
 type HologramModule = typeof import('@/holograms/rig.ts');
 
 export class SessionDirector {
+  private disposed = false;
+  private clinicalRequest = 0;
+  private clinicalLoad: Promise<void> | null = null;
+  private pendingAvatar: MetaHumanAvatar | null = null;
+  characterStatus: 'loading' | 'ready' | 'fallback' = 'loading';
+  onCharacterStatus: ((status: 'loading' | 'ready' | 'fallback') => void) | null = null;
   private stage: Stage;
   private avatar: ElohimAvatar;
   private lounge: LoungeEnvironment;
@@ -133,6 +141,19 @@ export class SessionDirector {
    * something else happened to overwrite it.
    */
   private reactionUntil = 0;
+  private characterPreview = false;
+  private readonly previewShot = {
+    position: new THREE.Vector3(0, 1.52, 1.38),
+    target: new THREE.Vector3(0, 1.43, 0),
+    fov: 34,
+  };
+  private readonly previewPortraitShot = {
+    position: new THREE.Vector3(0, 1.50, 1.75),
+    target: new THREE.Vector3(0, 1.45, 0),
+    fov: 42,
+  };
+  /** The displayed rest after speech ends; keep its turn for late audio. */
+  private settledDirective: CharacterDirective | null = null;
 
   /** 0 = lounge, 1 = clinical. Everything in the transition reads from this. */
   private clinicalPresence = 0;
@@ -208,37 +229,12 @@ export class SessionDirector {
     });
     this.stage.scene.add(this.lounge.group);
 
-    /*
-     * Elohim is painted.
-     *
-     * The rooms have been photographic plates since the backdrop rewrite, and
-     * the rigged glTF model was the only thing left in frame being lit and
-     * shaded in real time — which is what every compositing fix in this file
-     * was working around. Matching a live PBR character to a photograph is a
-     * problem that stops existing when both are painted by the same hand.
-     *
-     * The model and its loader are gone rather than kept behind a flag: 2MB of
-     * asset and 588 lines of rig that nothing loads is not a fallback, it is
-     * weight. The procedural rig stays as the genuine last resort, so a failed
-     * fetch degrades to a character rather than to an empty room.
-     */
-    const avatar = new SpriteAvatar();
-    avatar.onDirectiveRejected = (info) =>
-      console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
-    avatar.mount(this.stage.scene);
-    this.avatar = avatar;
-
-    void avatar.load(ELOHIM_SPRITE).catch((error: unknown) => {
-      console.error('[elohim/character] could not load Elohim', error);
-      avatar.dispose();
-      const fallback = new ProceduralAvatar();
-      fallback.mount(this.stage.scene);
-      fallback.applyDirective(this.currentDirective);
-      this.avatar = fallback;
-    });
-
-
-
+    // Keep the scene's placement and interaction state alive during the fetch.
+    // The loading caption remains visible until a complete character is ready.
+    this.avatar = new ProceduralAvatar();
+    this.avatar.mount(this.stage.scene);
+    this.avatar.root.visible = false;
+    void this.loadCharacter();
     this.grade = new Grade(this.stage.camera);
     // The camera has children now, so it has to be in the scene graph for their
     // world matrices to update.
@@ -277,7 +273,7 @@ export class SessionDirector {
       this.avatar.setFringe?.(tier !== 'low');
       console.info(`[elohim/stage] quality tier resolved to "${tier}"`);
     };
-    this.stage.onFrame = (dt, elapsed) => this.frame(dt, elapsed);
+    this.stage.onFrame = (dt, elapsed, animationDt) => this.frame(dt, elapsed, animationDt);
     this.stage.start();
 
     // Developer handle (brief §35). Exposes the scene for inspection and lets it
@@ -285,6 +281,63 @@ export class SessionDirector {
     // is not compositing. Dev builds only.
     if (import.meta.env.DEV) {
       (window as unknown as { __elohim?: SessionDirector }).__elohim = this;
+    }
+  }
+
+  private replaceAvatar(next: ElohimAvatar): void {
+    const previous = this.avatar;
+    next.root.position.copy(previous.root.position);
+    next.root.quaternion.copy(previous.root.quaternion);
+    next.root.scale.copy(previous.root.scale);
+    // A download can finish after the reading. The new rig starts in IDLE;
+    // enter the clinical state before restoring its completed reading.
+    const directive = this.settledDirective ?? this.currentDirective;
+    if (directive.state === 'ANALYSIS_COMPLETE') {
+      next.applyDirective({ ...directive, state: 'CLINICAL_ANALYSIS', gesture: 'none' });
+    }
+    next.applyDirective(directive);
+    next.setOutfit(this.transitionTarget === 1 ? 'clinical' : 'casual');
+    next.lookAt(this.gazeTarget);
+    next.mount(this.stage.scene);
+    this.avatar = next;
+    previous.dispose();
+  }
+
+  private setCharacterStatus(status: 'ready' | 'fallback'): void {
+    this.characterStatus = status;
+    this.onCharacterStatus?.(status);
+  }
+
+  private async loadCharacter(): Promise<void> {
+    const avatar = new MetaHumanAvatar({
+      antialias: this.stage.renderer.getContext().getContextAttributes()?.antialias === true,
+    });
+    this.pendingAvatar = avatar;
+    avatar.onDirectiveRejected = (info) =>
+      console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
+    try {
+      await avatar.load();
+      if (this.disposed) { avatar.dispose(); return; }
+      this.replaceAvatar(avatar);
+      this.setCharacterStatus('ready');
+    } catch (error) {
+      avatar.dispose();
+      if (this.disposed) return;
+      console.warn('[elohim/character] MetaHuman unavailable; using standard avatar', error);
+      const fallback = new SpriteAvatar();
+      try {
+        await fallback.load(ELOHIM_SPRITE);
+        if (this.disposed) { fallback.dispose(); return; }
+        this.replaceAvatar(fallback);
+      } catch (fallbackError) {
+        fallback.dispose();
+        if (this.disposed) return;
+        console.warn('[elohim/character] standard avatar unavailable', fallbackError);
+        this.avatar.root.visible = true;
+      }
+      this.setCharacterStatus('fallback');
+    } finally {
+      if (this.pendingAvatar === avatar) this.pendingAvatar = null;
     }
   }
 
@@ -332,36 +385,45 @@ export class SessionDirector {
   // Frame
   // -------------------------------------------------------------------------
 
-  private frame(dt: number, elapsed: number): void {
+  private frame(dt: number, elapsed: number, animationDt = dt): void {
     this.advanceTransition(dt);
 
     if (this.speech) {
-      const { viseme, weight, level } = this.speech.advance(dt);
+      const waitingForVoice = this.speech instanceof MutedSpeechTrack;
+      const { viseme, weight, level } = this.speech.advance(animationDt);
       this.avatar.setViseme(viseme, weight);
       this.speechLevel = level;
-      this.speechElapsed += dt;
+      this.speechElapsed += animationDt;
       // Her phrasing, when the track can report it. A boundary is the instant
       // a pause starts — exactly where a person lands a beat gesture.
       const phrase = this.speech.consumePhrase?.() ?? false;
-      if (phrase) this.maybeCloseTurn(false);
-      this.gesticulate(dt, phrase);
+      if (phrase && !waitingForVoice) this.maybeCloseTurn(false);
+      if (!waitingForVoice && !this.speech.finished) {
+        this.gesticulate(animationDt, phrase);
+      }
       if (this.speech.finished) {
         this.speech = null;
         this.speechLevel = 0;
         this.avatar.setViseme('sil', 0);
         // The last chance for the turn's closing expression to land.
-        this.maybeCloseTurn(true);
+        if (!waitingForVoice) this.maybeCloseTurn(true);
         // Settle back into whatever she was doing, without inventing a mood.
         // The resting state is only adopted where the FSM allows it — a
         // result mood like HAPPY cannot legally reach ANALYSIS_COMPLETE, and
         // it outlives the line that delivered it.
         const rest = session.sceneMode === 'clinical' ? 'ANALYSIS_COMPLETE' : 'IDLE';
-        this.avatar.applyDirective({
+        this.settledDirective = {
           ...this.currentDirective,
           state: canTransition(this.currentDirective.state, rest)
             ? rest
             : this.currentDirective.state,
-        });
+          // A completed greeting must not replay its wave when a later
+          // requested expression returns to rest. Clinical pointing is held.
+          gesture: rest === 'ANALYSIS_COMPLETE' && this.currentDirective.gesture === 'point_to_hologram'
+            ? 'point_to_hologram'
+            : 'none',
+        };
+        if (performance.now() >= this.reactionUntil) this.avatar.applyDirective(this.settledDirective);
       }
     }
 
@@ -371,15 +433,10 @@ export class SessionDirector {
     // the turn's own beat two seconds late would read as a second reaction.
     if (this.reactionUntil > 0 && performance.now() >= this.reactionUntil) {
       this.reactionUntil = 0;
-      /*
-       * Head gestures are impulses and would replay on a reapply, so they
-       * are dropped - but the three arm gestures are painted body poses, and
-       * a turn that landed during the reaction still deserves its arms.
-       * Stripping those cut her from open palms back to rest mid-sentence.
-       */
-      const g = this.currentDirective.gesture;
-      const pose = g === 'open_palms' || g === 'point_to_hologram' || g === 'small_wave';
-      this.avatar.applyDirective({ ...this.currentDirective, gesture: pose ? g : 'none' });
+      // Clinical pointing is a held pose. Waves and open palms are one-shot
+      // gestures, so restoring the turn must not play them again.
+      const directive = this.settledDirective ?? this.currentDirective;
+      this.avatar.applyDirective({ ...directive, gesture: directive.gesture === 'point_to_hologram' ? 'point_to_hologram' : 'none' });
     }
 
     // Thinking is allowed to take a moment; after seven seconds it should
@@ -410,6 +467,9 @@ export class SessionDirector {
     if (directed) this.direct(dt);
     // In the lounge she is talking with you, which is what mood = 1 means.
     else this.mood = damp(this.mood, 1, 1.5, dt);
+    if (this.characterPreview && !directed) {
+      this.stage.setShot(this.stage.aspect < 0.85 ? this.previewPortraitShot : this.previewShot, 0.8);
+    }
 
     // She walks to her mark rather than teleporting. In the lounge that mark is
     // the origin; in the clinical room it is beside the panel.
@@ -422,6 +482,7 @@ export class SessionDirector {
 
     this.avatar.update(dt, {
       elapsed,
+      animationDt,
       // In the clinic the shot decides where she looks. Being looked at while
       // she talks to you, and looked past while she reads the panel, is most of
       // what makes her feel present rather than aimed at the lens forever.
@@ -534,14 +595,15 @@ export class SessionDirector {
    * for a long unbroken clause where no boundary ever comes.
    */
   private gesticulate(dt: number, phrase: boolean): void {
+    if (performance.now() < this.reactionUntil) return;
     this.gestureTimer -= dt;
     this.phraseGestureGap += dt;
-    const onPhrase = phrase && this.phraseGestureGap >= 2;
+    const onPhrase = phrase && this.phraseGestureGap >= 4;
     if (!onPhrase && this.gestureTimer > 0) return;
     // The fallback stays irregular on purpose: a gesture on a fixed metronome
     // reads as a loop. Four to eight seconds, because a person explaining
     // something moves in phrases, not in ticks.
-    this.gestureTimer = 4.2 + Math.random() * 3.6;
+    this.gestureTimer = 5.5 + Math.random() * 2.5;
     this.phraseGestureGap = 0;
 
     const presenting =
@@ -612,7 +674,7 @@ export class SessionDirector {
     this.currentDirective = { ...d, expression: 'smile' };
     // Mid-line the cut is applied now; on the settle the caller's own
     // directive spread carries it, so she does not get two cuts in a frame.
-    if (!settling) this.avatar.applyDirective(this.currentDirective);
+    if (!settling && performance.now() >= this.reactionUntil) this.avatar.applyDirective(this.currentDirective);
   }
 
   /** How far through the current line she is, 0..1, best evidence first. */
@@ -638,6 +700,30 @@ export class SessionDirector {
   // -------------------------------------------------------------------------
   // Conversation hooks
   // -------------------------------------------------------------------------
+
+  /** Keep the face and requested hand gestures inside the preview viewport. */
+  setCharacterPreview(enabled: boolean): void {
+    this.characterPreview = enabled;
+    if (!enabled) this.stage.setShot(SHOT_CONVERSATION, 0.8);
+  }
+
+  /** A short, requested action; the ongoing conversation keeps its own state. */
+  previewGesture(action: 'wink' | 'wave' | 'explain'): boolean {
+    if (this.disposed || this.characterStatus !== 'ready') return false;
+    if (action === 'wink') {
+      if (!this.avatar.wink) return false;
+      this.avatar.wink('left');
+      return true;
+    }
+    this.reactionUntil = performance.now() + 2_800;
+    this.avatar.applyDirective({
+      ...(this.settledDirective ?? this.currentDirective),
+      expression: action === 'wave' ? 'smile' : 'warm',
+      gesture: action === 'wave' ? 'small_wave' : 'open_palms',
+      intensity: 0.85,
+    });
+    return true;
+  }
 
   /** Called the moment the user starts typing — she notices. */
   userIsTyping(): void {
@@ -679,6 +765,9 @@ export class SessionDirector {
    */
   elohimSpoke(directive: CharacterDirective, text: string, mouth: 'wait' | 'keep' = 'wait'): void {
     this.applyDirective(directive);
+    // A fetched voice may start much later. Hold the spoken gesture until
+    // actual playback owns the timeline, instead of waving over silence.
+    if (mouth === 'wait') this.avatar.applyDirective({ ...directive, gesture: 'none' });
     // The line's estimated timeline is built either way: it is the mouth when
     // nothing speaks, and the progress yardstick for the turn's closing
     // expression when something does.
@@ -691,7 +780,7 @@ export class SessionDirector {
     this.closeFired = false;
     // First beat lands shortly after she starts, not immediately — nobody
     // gestures on their opening syllable. The phrase path waits with it.
-    this.gestureTimer = 0.9;
+    this.gestureTimer = 3.5;
     this.phraseGestureGap = 0;
 
     // What she is doing decides how she is framed. Pointing at a readout is a
@@ -716,9 +805,12 @@ export class SessionDirector {
     // though - the audio arriving here is usually the poke line itself, and
     // restoring the turn's directive at that instant wiped the reaction a
     // beat after it landed.
-    if (!this.speech && performance.now() >= this.reactionUntil) {
-      this.avatar.applyDirective(this.currentDirective);
-      this.gestureTimer = Math.max(this.gestureTimer, 0.9);
+    this.settledDirective = null;
+    if (!this.speech || this.speech instanceof MutedSpeechTrack) {
+      this.speechElapsed = 0;
+      this.closeFired = false;
+      if (performance.now() >= this.reactionUntil) this.avatar.applyDirective(this.currentDirective);
+      this.gestureTimer = 3.5;
       this.phraseGestureGap = 0;
     }
     this.speech = track;
@@ -740,6 +832,10 @@ export class SessionDirector {
   }
 
   applyDirective(directive: CharacterDirective): void {
+    // A newer turn takes ownership immediately; an old preview must not
+    // reapply its gesture when its wall-clock lease expires later.
+    this.reactionUntil = 0;
+    this.settledDirective = null;
     this.currentDirective = directive;
     this.avatar.applyDirective(directive);
   }
@@ -878,14 +974,26 @@ export class SessionDirector {
   // -------------------------------------------------------------------------
 
   async enterClinical(): Promise<void> {
-    if (session.sceneMode !== 'lounge') return;
+    if (this.disposed || session.sceneMode !== 'lounge') return;
+    if (session.chatError === CLINIC_LOAD_ERROR) session.chatError = null;
+    const request = ++this.clinicalRequest;
     session.sceneMode = 'transitioning';
     // Arrive on the room itself. It is the one moment the place is the subject.
     this.cine.reset('establish');
 
     // Beat 3 needs the room to exist; load it before the lights start moving so
     // the transition never stalls waiting on a network round trip.
-    await this.ensureClinicalLoaded();
+    try {
+      await this.ensureClinicalLoaded();
+    } catch (error) {
+      if (this.disposed || request !== this.clinicalRequest) return;
+      console.warn('[elohim/scene] clinic could not load', error);
+      this.transitionTarget = 0;
+      session.sceneMode = 'lounge';
+      session.chatError = CLINIC_LOAD_ERROR;
+      return;
+    }
+    if (this.disposed || request !== this.clinicalRequest) return;
     // The clinic has a floor under its silence. Fades in over the transition.
     sound.startRoom();
 
@@ -938,6 +1046,8 @@ export class SessionDirector {
   }
 
   exitClinical(): void {
+    ++this.clinicalRequest;
+    if (this.disposed) return;
     if (session.sceneMode === 'lounge') return;
     session.sceneMode = 'transitioning';
     sound.stopRoom();
@@ -1045,51 +1155,69 @@ export class SessionDirector {
     return this.stage.aspect < 0.85 ? SHOT_CLINICAL_PORTRAIT : SHOT_CLINICAL;
   }
 
-  private async ensureClinicalLoaded(): Promise<void> {
-    if (this.clinical) return;
+  private ensureClinicalLoaded(): Promise<void> {
+    if (this.disposed || this.clinical) return Promise.resolve();
+    if (this.clinicalLoad) return this.clinicalLoad;
+    this.clinicalLoad = this.loadClinical().finally(() => { this.clinicalLoad = null; });
+    return this.clinicalLoad;
+  }
+
+  private async loadClinical(): Promise<void> {
     const [clinicalMod, holoMod]: [ClinicalModule, HologramModule] = await Promise.all([
       import('./clinical.ts'),
       import('@/holograms/rig.ts'),
     ]);
+    if (this.disposed) return;
 
-    this.clinical = new clinicalMod.ClinicalEnvironment({
+    const clinical = new clinicalMod.ClinicalEnvironment({
       particles: this.stage.settings.particles,
     });
-    this.clinical.setPresence(0);
-    this.stage.scene.add(this.clinical.group);
+    let holograms: InstanceType<HologramModule['HologramRig']> | null = null;
+    try {
+      clinical.setPresence(0);
+      this.stage.scene.add(clinical.group);
 
-    /*
-     * The backdrop plate, for the mood grade to tint.
-     *
-     * The environment does not export it, and the environment seam should not
-     * grow a member for one consumer. Render order is the plate's contract —
-     * it is the only thing in the room drawn at -10, the very back of the
-     * world — so it is picked out by that. `setPresence` only ever touches
-     * opacity, so the colour channel is the director's alone.
-     */
-    this.plateMaterial = null;
-    this.clinical.group.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh && mesh.renderOrder === -10) {
-        this.plateMaterial = mesh.material as THREE.MeshBasicMaterial;
-      }
-    });
+      /*
+       * The backdrop plate, for the mood grade to tint.
+       *
+       * The environment does not export it, and the environment seam should not
+       * grow a member for one consumer. Render order is the plate's contract —
+       * it is the only thing in the room drawn at -10, the very back of the
+       * world — so it is picked out by that. `setPresence` only ever touches
+       * opacity, so the colour channel is the director's alone.
+       */
+      let plateMaterial: THREE.MeshBasicMaterial | null = null;
+      clinical.group.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh && mesh.renderOrder === -10) {
+          plateMaterial = mesh.material as THREE.MeshBasicMaterial;
+        }
+      });
 
-    // No furniture.
-    //
-    // The chair, lamp, trolley and plant were built for the previous clinic —
-    // a wide, evenly lit room where a bare floor read as unfinished. This room
-    // is a dark corridor whose whole character is receding light, and objects
-    // standing about in it read as clutter that happens to be in the way. The
-    // only furniture here is the backlit shelving, which the room draws itself.
-    // The modelled props are gone with it: 890KB of chair, lamp and trolley
-    // that nothing constructed and nothing drew.
+      // No furniture.
+      //
+      // The chair, lamp, trolley and plant were built for the previous clinic —
+      // a wide, evenly lit room where a bare floor read as unfinished. This room
+      // is a dark corridor whose whole character is receding light, and objects
+      // standing about in it read as clutter that happens to be in the way. The
+      // only furniture here is the backlit shelving, which the room draws itself.
+      // The modelled props are gone with it: 890KB of chair, lamp and trolley
+      // that nothing constructed and nothing drew.
 
-    this.holograms = new holoMod.HologramRig({
-      rich: this.stage.settings.richEffects,
-    });
-    this.holograms.mount(this.stage.scene);
-    this.holograms.setLayout(this.viewFrustum());
+      holograms = new holoMod.HologramRig({
+        rich: this.stage.settings.richEffects,
+      });
+      holograms.mount(this.stage.scene);
+      holograms.setLayout(this.viewFrustum());
+      // A failed setup must leave the next visit free to build the whole room.
+      this.clinical = clinical;
+      this.holograms = holograms;
+      this.plateMaterial = plateMaterial;
+    } catch (error) {
+      holograms?.dispose();
+      clinical.dispose();
+      throw error;
+    }
   }
 
   private advanceTransition(dt: number): void {
@@ -1370,10 +1498,27 @@ export class SessionDirector {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    ++this.clinicalRequest;
+    this.pendingAvatar?.dispose();
+    this.pendingAvatar = null;
+    this.onCharacterStatus = null;
+    this.beatCallbacks = [];
+    this.speech = null;
+    sound.stopRoom();
     this.holograms?.dispose();
     this.clinical?.dispose();
     this.lounge.dispose();
     this.avatar.dispose();
+    this.grade.dispose();
+    this.aura.removeFromParent();
+    this.aura.geometry.dispose();
+    const auraMaterial = this.aura.material as THREE.MeshBasicMaterial;
+    auraMaterial.map?.dispose();
+    auraMaterial.dispose();
     this.stage.dispose();
+    const dev = window as unknown as { __elohim?: SessionDirector };
+    if (dev.__elohim === this) delete dev.__elohim;
   }
 }
