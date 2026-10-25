@@ -15,6 +15,8 @@ export type Outfit = 'casual' | 'clinical';
 export interface AvatarContext {
   /** Seconds since the avatar was mounted. */
   elapsed: number;
+  /** Real elapsed time for gesture phases; spring integration may use a capped dt. */
+  animationDt?: number;
   /** Where the user's attention is, in world space. Null means "look ahead". */
   gazeTarget: THREE.Vector3 | null;
   /** 0..1 speech envelope driving the mouth. */

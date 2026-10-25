@@ -19,11 +19,11 @@
  * splitting mirrors the server's exactly — the server caches per sentence,
  * and matching chunks is what makes those cache rows hit.
  *
- * Two things are still read off the audio itself:
+ * Two things are read off the audio itself:
  *
- *   loudness — a WebAudio analyser samples the real envelope forty times a
- *   second, so the mouth opens when there is sound and closes in the gaps,
- *   including pauses the text gives no hint of;
+ *   loudness — a compact envelope is measured from decoded PCM. Each render
+ *   reads it at the audible output position, so throttled timers cannot leave
+ *   the mouth reacting to an old syllable;
  *
  *   a fallback — if a line ever arrives without timings, the words are spread
  *   across the measured duration weighted by their length, which is the old
@@ -32,8 +32,10 @@
 import type { SpeakHandle, SpeechBoundary } from './synthesis.ts';
 import { audioContext, audioRunning } from '@/lib/sound.ts';
 import { voiceCapabilityGranted, type HealthCapabilities } from '@/lib/api.ts';
+import type { AudioSpeechFrame } from '@/character/speech.ts';
+import { audibleAudioTime, buildAudioEnvelope, readAudioPlayback } from './audio-clock.ts';
 
-/** How often the envelope is sampled, in Hz. Fast enough for syllables. */
+/** Caption and legacy loudness callback frequency. Lip phase reads the audio clock. */
 const ENVELOPE_HZ = 40;
 
 /**
@@ -115,6 +117,8 @@ export interface ClonedVoiceHandlers {
   onEnd?: () => void;
   /** 0..1 loudness, sampled from the real audio. Drives how open the mouth is. */
   onLevel?: (level: number) => void;
+  /** Read current word phase and loudness directly on each rendered frame. */
+  onAudioClock?: (read: () => AudioSpeechFrame) => void;
   /**
    * The licensed voice could not be reached or played.
    *
@@ -195,6 +199,7 @@ function bytesOf(base64: string): ArrayBuffer {
 interface FetchedChunk {
   buffer: AudioBuffer;
   words: Word[];
+  envelope: Float32Array;
 }
 
 /** One planned piece of a line: its text, where it sits, and how to get it. */
@@ -416,7 +421,7 @@ export class ClonedSpeaker {
       scheduleWords(words, buffer.duration);
     }
 
-    const chunk = { buffer, words };
+    const chunk = { buffer, words, envelope: buildAudioEnvelope(buffer) };
     this.remember(entry.text, chunk);
     return chunk;
   }
@@ -461,7 +466,7 @@ export class ClonedSpeaker {
       scheduleWords(words, buffer.duration);
     }
 
-    const chunk = { buffer, words };
+    const chunk = { buffer, words, envelope: buildAudioEnvelope(buffer) };
     this.remember(sentence, chunk);
     return chunk;
   }
@@ -554,19 +559,8 @@ export class ClonedSpeaker {
       }
 
       const context = this.context;
-      // One analyser for the whole line, so the envelope smoothing carries
-      // across sentence seams instead of resetting to a closed mouth and
-      // snapping open again.
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
-      // Short window: the mouth should follow syllables, not paragraphs.
-      analyser.smoothingTimeConstant = 0.35;
-      analyser.connect(context.destination);
-
-      const samples = new Uint8Array(analyser.frequencyBinCount);
-      let level = 0;
       /** The chunk being voiced right now; null in the pauses between them. */
-      let playing: { words: Word[]; startedAt: number; charOffset: number; next: number } | null = null;
+      let playing: (FetchedChunk & { startedAt: number; charOffset: number; next: number }) | null = null;
       let activeSource: AudioBufferSourceNode | null = null;
       let gapTimer = 0;
       let done = false;
@@ -576,47 +570,36 @@ export class ClonedSpeaker {
         done = true;
         window.clearInterval(tick);
         window.clearTimeout(gapTimer);
-        try {
-          analyser.disconnect();
-        } catch {
-          // Already disconnected; the context may even be closing.
-        }
+        playing = null;
         handlers.onLevel?.(0);
         if (this.current === handle) this.current = null;
         handlers.onEnd?.();
         resolveFinished();
       };
 
-      // Timed off the audio clock, not the wall clock: the two drift apart
-      // under load, and the boundaries have to land on the recording.
+      const readAudio = (): AudioSpeechFrame => {
+        const time = audibleAudioTime(context);
+        return readAudioPlayback(done || cancelled || context.state !== 'running' ? null : playing, time);
+      };
+      handlers.onAudioClock?.(readAudio);
+
+      // These callbacks update captions and legacy consumers. Mouth phase
+      // reads readAudio directly and remains correct even if this timer stalls.
       const tick = window.setInterval(() => {
-        // Envelope: RMS over the current window, lightly curved so quiet
-        // speech still opens the mouth a little.
-        analyser.getByteTimeDomainData(samples);
-        let sum = 0;
-        for (let i = 0; i < samples.length; i++) {
-          const v = (samples[i] - 128) / 128;
-          sum += v * v;
-        }
-        const rms = Math.sqrt(sum / samples.length);
-        const raw = Math.min(1, Math.pow(rms * 3.2, 0.75));
-        // Fast to open, slow to close: the mouth answers the syllable, not
-        // every ripple inside it. Per 25 ms sample, roughly 40 ms attack and
-        // 120 ms release.
-        level += (raw - level) * (raw > level ? 0.55 : 0.2);
-        handlers.onLevel?.(level);
+        const frame = readAudio();
+        handlers.onLevel?.(frame.level);
 
         // Between sentences the pause is real: no words fire, and the
         // envelope above closes the mouth on actual silence.
-        if (!playing) return;
-        const elapsed = context.currentTime - playing.startedAt;
+        if (!playing || context.state !== 'running') return;
+        const elapsed = frame.time - playing.startedAt;
         while (playing.next < playing.words.length && playing.words[playing.next].at <= elapsed) {
           const word = playing.words[playing.next++];
           handlers.onBoundary?.({
             charIndex: playing.charOffset + word.charIndex,
             charLength: word.charLength,
             word: word.word,
-            elapsed,
+            elapsed: word.at,
             duration: word.duration,
           });
         }
@@ -629,10 +612,10 @@ export class ClonedSpeaker {
         }
         const source = context.createBufferSource();
         source.buffer = chunk.buffer;
-        source.connect(analyser);
+        source.connect(context.destination);
         activeSource = source;
         playing = {
-          words: chunk.words,
+          ...chunk,
           startedAt: context.currentTime,
           charOffset: plans[index].charOffset,
           next: 0,
@@ -641,7 +624,20 @@ export class ClonedSpeaker {
         // by the time its turn comes it is usually decoded and waiting.
         if (index + 2 < plans.length) void chunkAt(index + 2).catch(() => {});
 
-        source.onended = () => {
+        const playback = playing;
+        const completeChunk = () => {
+          if (done) return;
+          if (abandoned()) {
+            finish();
+            return;
+          }
+          // onended follows the render clock, which can precede the last
+          // sample reaching the output device. Keep the lips for that tail.
+          const remaining = playback.startedAt + chunk.buffer.duration - audibleAudioTime(context);
+          if (remaining > 0.002) {
+            gapTimer = window.setTimeout(completeChunk, Math.max(4, remaining * 1000));
+            return;
+          }
           if (activeSource === source) activeSource = null;
           playing = null;
           if (abandoned() || index + 1 >= plans.length) {
@@ -658,8 +654,10 @@ export class ClonedSpeaker {
               .catch(() => finish());
           }, SENTENCE_GAP_MS);
         };
+        source.onended = completeChunk;
 
-        source.start();
+        source.start(playback.startedAt);
+        if (index === 0) handlers.onStart?.();
       };
 
       const handle = {
@@ -675,7 +673,6 @@ export class ClonedSpeaker {
       };
       this.current = handle;
 
-      handlers.onStart?.();
       startChunk(0, first);
     };
 

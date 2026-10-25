@@ -32,6 +32,10 @@ function fixture() {
     const brow = add(head, 'FACIAL_L_ForeheadIn', 0.09);
     const corner = add(head, 'FACIAL_L_LipCorner', -0.03);
     corner.position.x = 0.03;
+    const cornerRight = add(head, 'FACIAL_R_LipCorner', -0.03);
+    cornerRight.position.x = -0.03;
+    const lipUpper = add(head, 'FACIAL_C_LipUpper', -0.03);
+    const lipLower = add(lips, 'FACIAL_C_LipLower', 0.02);
     const lids = ['UpperA', 'UpperB', 'LowerA', 'LowerB'].map((lid) => add(head, `FACIAL_L_Eyelid${lid}`, 0.075));
     const lidsRight = ['UpperA', 'UpperB', 'LowerA', 'LowerB'].map((lid) => add(head, `FACIAL_R_Eyelid${lid}`, 0.075));
     // C6's inner corner has less clearance than its central lid. These
@@ -54,7 +58,7 @@ function fixture() {
       return { arm, lower, hand };
     });
     rig.add(new THREE.Mesh(geometry, material));
-    return { rig, spine, neck, head, eye, eyeRight, jaw, lips, lids, lidsRight, margins, arms, brow, corner };
+    return { rig, spine, neck, head, eye, eyeRight, jaw, lips, lids, lidsRight, margins, arms, brow, corner, cornerRight, lipUpper, lipLower };
   });
   const hairGeometry = new THREE.BufferGeometry();
   hairGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 1.6, 0, 0.1, 1.7, 0, 0, 1.85, 0], 3));
@@ -140,6 +144,32 @@ describe('MetaHumanAvatar', () => {
       expect(model.rigs[1].jaw.quaternion.angleTo(rest)).toBeLessThan(1e-5);
       expect(model.rigs[1].lips.quaternion.angleTo(rest)).toBeLessThan(1e-5);
     }
+    avatar.dispose();
+  });
+
+  it('spreads and rounds the lips for vowels, then releases speech offsets on closed phones', async () => {
+    const model = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(loaded(model.scene));
+    const avatar = new MetaHumanAvatar();
+    await avatar.load();
+    avatar.applyDirective({ ...DEFAULT_DIRECTIVE, expression: 'neutral' });
+    const face = model.rigs[1];
+    const rest = [face.corner, face.cornerRight, face.lipUpper, face.lipLower].map((bone) => bone.position.clone());
+    avatar.setViseme('EE', 1);
+    for (let i = 0; i < 4; i++) avatar.update(0.1, context);
+    const spread = face.corner.position.x - face.cornerRight.position.x;
+    expect(spread).toBeGreaterThan(0.063);
+    avatar.setViseme('OU', 1);
+    for (let i = 0; i < 4; i++) avatar.update(0.1, context);
+    expect(face.corner.position.x - face.cornerRight.position.x).toBeLessThan(0.057);
+    expect(face.lipUpper.position.z).toBeGreaterThan(rest[2].z + 0.001);
+    expect(face.lipLower.position.z).toBeGreaterThan(rest[3].z + 0.001);
+    avatar.setViseme('MBP', 1);
+    for (let i = 0; i < 12; i++) avatar.update(0.1, { ...context, speechLevel: 1 });
+    [face.corner, face.cornerRight, face.lipUpper, face.lipLower].forEach((bone, index) => {
+      expect(bone.position.distanceTo(rest[index])).toBeLessThan(1e-6);
+    });
+    expect(face.jaw.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-6);
     avatar.dispose();
   });
 
@@ -287,6 +317,84 @@ describe('MetaHumanAvatar', () => {
     const wave = gesture('small_wave');
     expect(wave[1].y).toBeGreaterThan(rest[1].y + 0.4);
     expect(wave.every((hand) => Number.isFinite(hand.lengthSq()))).toBe(true);
+    avatar.dispose();
+  });
+
+  it('keeps a wave continuous when the speaking expression changes mid-gesture', async () => {
+    const first = fixture();
+    const reference = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync')
+      .mockResolvedValueOnce(loaded(first.scene))
+      .mockResolvedValueOnce(loaded(reference.scene));
+    const avatar = new MetaHumanAvatar();
+    const other = new MetaHumanAvatar();
+    await avatar.load();
+    await other.load();
+    const directive = { ...DEFAULT_DIRECTIVE, gesture: 'small_wave' as const, intensity: 0.85 };
+    avatar.applyDirective(directive);
+    other.applyDirective(directive);
+    for (let i = 0; i < 36; i++) {
+      const ctx = { ...context, reducedMotion: false, elapsed: i / 60 };
+      avatar.update(1 / 60, ctx);
+      other.update(1 / 60, ctx);
+    }
+    avatar.applyDirective({ ...directive, expression: 'smile' });
+    for (let i = 36; i < 90; i++) {
+      const ctx = { ...context, reducedMotion: false, elapsed: i / 60 };
+      avatar.update(1 / 60, ctx);
+      other.update(1 / 60, ctx);
+      for (const part of ['arm', 'lower', 'hand'] as const) {
+        expect(first.rigs[0].arms[1][part].quaternion.angleTo(reference.rigs[0].arms[1][part].quaternion)).toBeLessThan(1e-6);
+      }
+    }
+    avatar.dispose();
+    other.dispose();
+  });
+
+  it('raises and lowers an arm without a sudden elbow or wrist flip', async () => {
+    const model = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(loaded(model.scene));
+    const avatar = new MetaHumanAvatar();
+    await avatar.load();
+    avatar.update(1 / 60, context);
+    const arm = model.rigs[0].arms[1];
+    const bones = [arm.arm, arm.lower, arm.hand];
+    const previous = bones.map((bone) => bone.quaternion.clone());
+    let maxStep = 0;
+    const ctx = { ...context, reducedMotion: false };
+    for (const [gesture, frames] of [['small_wave', 36], ['open_palms', 36], ['small_wave', 180], ['none', 180]] as const) {
+      avatar.applyDirective({ ...DEFAULT_DIRECTIVE, gesture, intensity: 0.85 });
+      for (let frame = 0; frame < frames; frame++) {
+        ctx.elapsed += 1 / 60;
+        avatar.update(1 / 60, ctx);
+        bones.forEach((bone, index) => {
+          maxStep = Math.max(maxStep, bone.quaternion.angleTo(previous[index]));
+          previous[index].copy(bone.quaternion);
+        });
+      }
+    }
+    // At 60 fps a larger single-frame turn reads as a visible pose cut.
+    expect(maxStep).toBeLessThan(0.1);
+    avatar.dispose();
+  });
+
+  it('finishes requested gestures on real time when rendering drops frames', async () => {
+    const model = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(loaded(model.scene));
+    const avatar = new MetaHumanAvatar();
+    await avatar.load();
+    const ctx = { ...context, reducedMotion: false };
+    avatar.update(0.1, ctx);
+    const rest = model.rigs[0].arms[1].hand.getWorldPosition(new THREE.Vector3());
+    avatar.applyDirective({ ...DEFAULT_DIRECTIVE, gesture: 'small_wave', intensity: 0.85 });
+    avatar.update(0.1, { ...ctx, animationDt: 0.7 });
+    expect(model.rigs[0].arms[1].hand.getWorldPosition(new THREE.Vector3()).y).toBeGreaterThan(rest.y + 0.3);
+    avatar.wink();
+    avatar.update(0.1, { ...ctx, animationDt: 0.1 });
+    expect(model.rigs[1].lids[0].quaternion.angleTo(new THREE.Quaternion())).toBeGreaterThan(0.5);
+    avatar.update(0.1, { ...ctx, animationDt: 3 });
+    expect(model.rigs[0].arms[1].hand.getWorldPosition(new THREE.Vector3()).distanceTo(rest)).toBeLessThan(0.0001);
+    expect(model.rigs[1].lids[0].quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(0.1);
     avatar.dispose();
   });
 

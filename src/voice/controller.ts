@@ -19,7 +19,7 @@ import {
 } from './synthesis.ts';
 import { ClonedSpeaker } from './cloned.ts';
 import { AudioLockedSpeechTrack, SpeechTrack } from '@/character/speech.ts';
-import { POKE_LINES } from '@/lib/lines.ts';
+import { VOICE_PREVIEW_LINE } from '@/lib/lines.ts';
 import { audioContext } from '@/lib/sound.ts';
 import { session } from '@/state/session.svelte.ts';
 import type { SessionDirector } from '@/scene/director.ts';
@@ -118,14 +118,14 @@ export class VoiceController {
   }
 
   /** One requested sample; does not change the voice preference for replies. */
-  sample(text = POKE_LINES.body[0]): void {
+  sample(text = VOICE_PREVIEW_LINE): void {
     this.cancelListening();
     if (this.willSpeak(text, true) === 'none') {
       this.stopSpeaking();
       session.voiceStatus = 'This voice sample is unavailable. Please try again once the audio has loaded.';
       return;
     }
-    this.director?.elohimSpoke({ state: 'SPEAKING', expression: 'warm', gesture: 'small_wave', intensity: 0.65 }, text);
+    this.director?.elohimSpoke({ state: 'SPEAKING', expression: 'warm', gesture: 'none', intensity: 0.65 }, text);
     session.voiceStatus = 'Loading voice sample…';
     const request = this.line + 1;
     this.say(text, (played) => {
@@ -364,7 +364,8 @@ export class VoiceController {
             // Real audio is playing from this instant; the mouth is hers now.
             lock();
           },
-          onLevel: (level) => track.setLevel(level),
+          onAudioClock: (read) => { if (live()) track.useAudioClock(read); },
+          onLevel: (level) => { if (live()) track.setLevel(level); },
           onFailed: (reason) => {
             if (!live()) return;
             console.warn(`[elohim/voice] licensed voice unavailable: ${reason}`);

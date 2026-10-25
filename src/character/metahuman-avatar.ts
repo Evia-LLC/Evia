@@ -6,21 +6,18 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { CharacterDirective, Viseme } from '@shared/types.ts';
+import { VISEMES, type CharacterDirective, type Viseme } from '@shared/types.ts';
 import type { AvatarContext, ElohimAvatar, Outfit } from './types.ts';
 import { CharacterStateMachine } from './state-machine.ts';
 import { EXPRESSION_POSES, STATE_POSES } from './expressions.ts';
 import { configureMetaHumanMaterials, type MetaHumanMaterialOptions } from './metahuman-materials.ts';
+import { metaHumanSpeechPose, SPEECH_POSE_BONES } from './metahuman-speech-pose.ts';
 
 export const METAHUMAN_URL = '/character/evia/evia-metahuman.glb';
 const EYE_HEIGHT = 1.6;
 const X = new THREE.Vector3(1, 0, 0);
 const Y = new THREE.Vector3(0, 1, 0);
 const Z = new THREE.Vector3(0, 0, 1);
-const JAW_OPEN: Record<Viseme, number> = {
-  sil: 0, AA: 1, EE: 0.22, IH: 0.36, OH: 0.7, OU: 0.32,
-  MBP: 0, FV: 0.12, L: 0.4, S: 0.12,
-};
 
 interface RestBone {
   bone: THREE.Bone;
@@ -124,12 +121,20 @@ export class MetaHumanAvatar implements ElohimAvatar {
   private eyeSeed = 0x6c657669;
   private expression = { inner: 0, outer: 0, smile: 0, tilt: 0, lid: 0, squint: 0 };
   private gesture = { open: 0, point: 0, wave: 0, chin: 0, lean: 0 };
+  private readonly armRoll = { l: 0, r: 0 };
+  private readonly armTwist = { l: 0, r: 0 };
+  private readonly wristArc: Record<'l' | 'r', THREE.Quaternion | null> = { l: null, r: null };
+  private readonly speechOffsets = new Map<string, THREE.Vector3>(SPEECH_POSE_BONES.map((name) => [name, new THREE.Vector3()]));
+  private readonly speechTargets = new Map<string, THREE.Vector3>(SPEECH_POSE_BONES.map((name) => [name, new THREE.Vector3()]));
 
   private readonly axis = new THREE.Vector3();
   private readonly target = new THREE.Vector3();
   private readonly modelRotation = new THREE.Quaternion();
   private readonly parentRotation = new THREE.Quaternion();
   private readonly offsetRotation = new THREE.Quaternion();
+  private readonly translationPosition = new THREE.Vector3();
+  private readonly translationOrigin = new THREE.Vector3();
+  private readonly translationOffset = new THREE.Vector3();
   private readonly materialOptions: MetaHumanMaterialOptions;
 
   onDirectiveRejected: ((info: { reason: string; detail: string }) => void) | null = null;
@@ -234,7 +239,7 @@ export class MetaHumanAvatar implements ElohimAvatar {
         if (bone) animated.push(bone);
       }
     }
-    for (const name of ['FACIAL_C_Jaw', 'FACIAL_C_LowerLipRotation']) {
+    for (const name of ['FACIAL_C_Jaw', 'FACIAL_C_LowerLipRotation', ...SPEECH_POSE_BONES]) {
       const bone = face.get(name);
       if (bone) animated.push(bone);
     }
@@ -247,7 +252,7 @@ export class MetaHumanAvatar implements ElohimAvatar {
           if (margin) animated.push(margin);
         }
       }
-      for (const part of ['Eye', 'ForeheadIn', 'ForeheadInSkin', 'ForeheadMid', 'ForeheadMidSkin', 'ForeheadOut', 'ForeheadOutSkin', 'LipCorner']) {
+      for (const part of ['Eye', 'ForeheadIn', 'ForeheadInSkin', 'ForeheadMid', 'ForeheadMidSkin', 'ForeheadOut', 'ForeheadOutSkin']) {
         const bone = face.get(`FACIAL_${side}_${part}`);
         if (bone) animated.push(bone);
       }
@@ -274,15 +279,23 @@ export class MetaHumanAvatar implements ElohimAvatar {
   }
 
   applyDirective(directive: CharacterDirective): void {
+    const previousGesture = this.fsm.directive.gesture;
     this.fsm.apply(directive);
-    this.gestureTime = 0;
+    const gesture = this.fsm.directive.gesture;
+    // A closing smile or another state update is not a second wave. Repeated
+    // requests may replay a completed gesture, but never restart it mid-lift.
+    const duration = gesture === 'small_wave' ? 2.6
+      : gesture === 'open_palms' || gesture === 'lean_in' || gesture === 'head_tilt' ? 2.5
+        : gesture === 'point_to_hologram' || gesture === 'hand_to_chin' ? 3.2
+          : gesture === 'slow_nod' ? 1.8 : 1.1;
+    if (gesture !== previousGesture || this.gestureTime >= duration) this.gestureTime = 0;
   }
 
   /** C6 currently supplies one nurse uniform; scene changes keep that outfit. */
   setOutfit(_outfit: Outfit, _opts?: { transitionSeconds?: number }): void {}
 
   setViseme(viseme: Viseme, weight: number): void {
-    this.viseme = Object.hasOwn(JAW_OPEN, viseme) ? viseme : 'sil';
+    this.viseme = VISEMES.includes(viseme) ? viseme : 'sil';
     this.visemeWeight = finiteUnit(weight);
     this.hasViseme = true;
   }
@@ -326,13 +339,13 @@ export class MetaHumanAvatar implements ElohimAvatar {
   }
 
   /** A small facial translation in model metres, independent of bone roll. */
-  private shift(name: string, y: number, x = 0): void {
+  private shift(name: string, y: number, x = 0, z = 0): void {
     const bone = this.face.get(name)?.bone;
-    if (!bone?.parent || (!x && !y)) return;
+    if (!bone?.parent || (!x && !y && !z)) return;
     bone.parent.updateWorldMatrix(true, false);
-    const position = bone.getWorldPosition(new THREE.Vector3());
-    const origin = this.model!.localToWorld(new THREE.Vector3());
-    const offset = this.model!.localToWorld(new THREE.Vector3(x, y, 0)).sub(origin);
+    const position = bone.getWorldPosition(this.translationPosition);
+    const origin = this.model!.localToWorld(this.translationOrigin.set(0, 0, 0));
+    const offset = this.model!.localToWorld(this.translationOffset.set(x, y, z)).sub(origin);
     bone.position.copy(bone.parent.worldToLocal(position.add(offset)));
     bone.updateWorldMatrix(false, false);
   }
@@ -351,22 +364,41 @@ export class MetaHumanAvatar implements ElohimAvatar {
     bone.updateWorldMatrix(false, false);
   }
 
-  /** A bounded two-bone reach; no retargeting assumptions about C6's local axes. */
-  private poseArm(side: 'l' | 'r', target: THREE.Vector3, weight: number, fingers: THREE.Vector3, palm: THREE.Vector3): void {
+  /** A fixed hand frame in model space; blend these frames as quaternions. */
+  private handOrientation(side: 'l' | 'r', fingers: THREE.Vector3, palm: THREE.Vector3): THREE.Quaternion {
+    const sign = side === 'l' ? 1 : -1;
+    const xx = fingers.clone().normalize().multiplyScalar(sign);
+    const zz = palm.clone().multiplyScalar(sign);
+    zz.addScaledVector(xx, -zz.dot(xx)).normalize();
+    const yy = zz.clone().cross(xx).normalize();
+    return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xx, yy, zz));
+  }
+
+  /** Solve one complete pose, then blend its joints once from their rest. */
+  private poseArm(side: 'l' | 'r', target: THREE.Vector3, weight: number, orientation: THREE.Quaternion, animationDelta: number): void {
     const upper = this.body.get(`upperarm_${side}`)?.bone;
     const lower = this.body.get(`lowerarm_${side}`)?.bone;
     const hand = this.body.get(`hand_${side}`)?.bone;
-    if (!upper || !lower || !hand || weight < 0.001) return;
+    if (!upper || !lower || !hand) return;
+    if (weight < 0.001) {
+      this.armRoll[side] = 0;
+      this.armTwist[side] = 0;
+      this.wristArc[side] = null;
+      return;
+    }
+    const restUpper = upper.quaternion.clone();
+    const restLower = lower.quaternion.clone();
+    const restHand = hand.quaternion.clone();
     const sign = side === 'l' ? 1 : -1;
     const shoulder = this.modelPoint(upper), elbow = this.modelPoint(lower), wrist = this.modelPoint(hand);
     const a = shoulder.distanceTo(elbow), b = elbow.distanceTo(wrist);
     if (a < 0.01 || b < 0.01) return;
-    const goal = wrist.clone().lerp(target, clamp(weight, 0, 1));
+    const goal = target.clone();
     const line = goal.clone().sub(shoulder);
     const distance = clamp(line.length(), Math.abs(a - b) + 0.08, (a + b) * 0.94);
     line.normalize();
     goal.copy(shoulder).addScaledVector(line, distance);
-    const pole = elbow.clone().lerp(new THREE.Vector3(sign * 0.48, 1.08, 0.03), weight).sub(shoulder);
+    const pole = new THREE.Vector3(sign * 0.48, 1.08, 0.03).sub(shoulder);
     pole.addScaledVector(line, -pole.dot(line)).normalize();
     const along = (a * a - b * b + distance * distance) / (2 * distance);
     const bend = Math.sqrt(Math.max(0, a * a - along * along));
@@ -375,31 +407,57 @@ export class MetaHumanAvatar implements ElohimAvatar {
     this.aim(lower, hand, goal);
 
     // Share palm roll between forearm and wrist, keeping the wrist correction
-    // below 32 degrees. C6's finger direction is +/-X and palm normal +/-Z.
+    // below 26 degrees. C6's finger direction is +/-X and palm normal +/-Z.
     const foreAxis = this.modelPoint(hand).sub(this.modelPoint(lower)).normalize();
     const handWorld = hand.getWorldQuaternion(new THREE.Quaternion());
     const currentPalm = new THREE.Vector3(0, 0, sign).applyQuaternion(handWorld)
       .applyQuaternion(this.modelRotation.clone().invert());
-    const fingerDirection = fingers.clone().normalize();
-    const desiredPalm = palm.clone().addScaledVector(fingerDirection, -palm.dot(fingerDirection));
-    if (desiredPalm.lengthSq() < 0.02) {
-      desiredPalm.copy(currentPalm).addScaledVector(fingerDirection, -currentPalm.dot(fingerDirection));
+    const desiredPalm = new THREE.Vector3(0, 0, sign).applyQuaternion(orientation);
+    const projected = currentPalm.clone().addScaledVector(foreAxis, -currentPalm.dot(foreAxis));
+    const desired = desiredPalm.clone().addScaledVector(foreAxis, -desiredPalm.dot(foreAxis));
+    let roll = this.armRoll[side];
+    if (projected.lengthSq() > 1e-6 && desired.lengthSq() > 1e-6) {
+      projected.normalize();
+      desired.normalize();
+      roll = Math.atan2(foreAxis.dot(projected.clone().cross(desired)), projected.dot(desired));
+      // Preserve the same side of the +/-PI branch during a cross-fade.
+      // Clamping two equivalent angles of +PI/-PI produced opposite twists.
+      while (roll - this.armRoll[side] > Math.PI) roll -= Math.PI * 2;
+      while (roll - this.armRoll[side] < -Math.PI) roll += Math.PI * 2;
+      this.armRoll[side] = roll;
     }
-    desiredPalm.normalize();
-    const projected = currentPalm.clone().addScaledVector(foreAxis, -currentPalm.dot(foreAxis)).normalize();
-    const desired = desiredPalm.clone().addScaledVector(foreAxis, -desiredPalm.dot(foreAxis)).normalize();
-    const roll = Math.atan2(foreAxis.dot(projected.clone().cross(desired)), projected.dot(desired));
-    this.rotate(this.body, `lowerarm_${side}`, foreAxis, clamp(roll, -0.85, 0.85) * weight);
-    const xx = fingers.clone().normalize().multiplyScalar(sign);
-    const zz = desiredPalm.multiplyScalar(sign).addScaledVector(xx, -desiredPalm.dot(xx)).normalize();
-    const yy = zz.clone().cross(xx).normalize();
-    const wanted = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xx, yy, zz));
-    wanted.premultiply(this.modelRotation);
+    // Palm projection becomes sensitive when it nearly aligns with the
+    // forearm. Bound pronation speed as well as range through that region.
+    const twistTarget = clamp(roll, -0.7, 0.7);
+    const twistStep = 2 * animationDelta;
+    this.armTwist[side] += clamp(twistTarget - this.armTwist[side], -twistStep, twistStep);
+    this.rotate(this.body, `lowerarm_${side}`, foreAxis, this.armTwist[side]);
+    const wanted = orientation.clone().premultiply(this.modelRotation);
     const current = hand.getWorldQuaternion(new THREE.Quaternion());
-    const angle = current.angleTo(wanted);
-    current.slerp(wanted, Math.min(weight, 0.55 / Math.max(angle, 1e-6)));
+    const correction = wanted.multiply(current.clone().invert());
+    const previousArc = this.wristArc[side];
+    // Near 180 degrees, choosing the shortest slerp afresh changes the
+    // correction's direction and snaps a capped wrist to the opposite side.
+    // Keep the same quaternion hemisphere throughout an active gesture.
+    if ((previousArc ? correction.dot(previousArc) : correction.w) < 0) {
+      correction.set(-correction.x, -correction.y, -correction.z, -correction.w);
+    }
+    this.wristArc[side] = correction.clone();
+    const correctionAxis = new THREE.Vector3(correction.x, correction.y, correction.z);
+    const sine = correctionAxis.length();
+    if (sine > 1e-6) {
+      const angle = 2 * Math.atan2(sine, correction.w);
+      correction.setFromAxisAngle(correctionAxis.divideScalar(sine), Math.min(0.45, angle));
+      current.premultiply(correction);
+    }
     hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(current));
-    hand.updateWorldMatrix(false, false);
+    // Blending the target position and then the wrist orientation separately
+    // made the elbow and palm trace different paths, with sudden twists near
+    // a straight arm. Interpolate the three solved local joints together.
+    const blend = clamp(weight, 0, 1);
+    upper.quaternion.slerp(restUpper, 1 - blend);
+    lower.quaternion.slerp(restLower, 1 - blend);
+    hand.quaternion.slerp(restHand, 1 - blend);
   }
 
   private pointFingers(weight: number): void {
@@ -477,12 +535,15 @@ export class MetaHumanAvatar implements ElohimAvatar {
   update(dt: number, ctx: AvatarContext): void {
     if (!this.model || this.disposed) return;
     const delta = Number.isFinite(dt) ? clamp(dt, 0, 0.1) : 0;
+    const animationDelta = typeof ctx.animationDt === 'number' && Number.isFinite(ctx.animationDt)
+      ? Math.max(0, ctx.animationDt)
+      : delta;
     const elapsed = Number.isFinite(ctx.elapsed) ? ctx.elapsed : 0;
     const pose = this.fsm.update(delta);
     const statePose = STATE_POSES[pose.state];
     const expressionPose = EXPRESSION_POSES[pose.directive.expression];
     const intensity = finiteUnit(pose.directive.intensity);
-    this.gestureTime += delta;
+    this.gestureTime += animationDelta;
     for (const rest of this.animated) {
       rest.bone.quaternion.copy(rest.quaternion);
       rest.bone.position.copy(rest.position);
@@ -521,7 +582,7 @@ export class MetaHumanAvatar implements ElohimAvatar {
     }
     const envelope = (duration: number): number => {
       const t = this.gestureTime;
-      return Math.min(clamp(t / 0.35, 0, 1), clamp((duration - t) / 0.65, 0, 1));
+      return Math.min(smooth(t / 0.7), smooth((duration - t) / 0.85));
     };
     const requested = pose.directive.gesture;
     const presenting = pose.state === 'EXPLAINING' || pose.state === 'ANALYSIS_COMPLETE';
@@ -529,22 +590,28 @@ export class MetaHumanAvatar implements ElohimAvatar {
     const gestureTargets = {
       open: requested === 'open_palms' ? envelope(2.5) * strength : 0,
       point: requested === 'point_to_hologram' ? (presenting ? 1 : envelope(3.2)) * strength : presenting ? 0.25 : 0,
-      wave: requested === 'small_wave' ? envelope(2.1) * strength : 0,
+      wave: requested === 'small_wave' ? envelope(2.6) * strength : 0,
       chin: requested === 'hand_to_chin' ? envelope(3.2) * strength : 0,
       lean: requested === 'lean_in' ? envelope(2.5) * 0.025 * strength : statePose.lean * 0.35,
     };
     for (const key of ['open', 'point', 'wave', 'chin', 'lean'] as const) {
-      this.gesture[key] += (gestureTargets[key] - this.gesture[key]) * easing;
+      // A replacement gesture must release the lifted arm gently. Using the
+      // fast attack rate for its decay made the first cross-fade frame drop.
+      const rate = gestureTargets[key] < this.gesture[key] ? 2.5 : 7;
+      const gestureEasing = ctx.reducedMotion ? 1 : 1 - Math.exp(-rate * animationDelta);
+      this.gesture[key] += (gestureTargets[key] - this.gesture[key]) * gestureEasing;
     }
-    // Audio, not an inferred speaking state, opens her mouth. This is a jaw
-    // envelope rather than a claim that the file contains phoneme blendshapes.
+    // Audio, not an inferred speaking state, opens her mouth. Small authored
+    // bone poses distinguish spread/rounded vowels; C6 has no blendshapes.
     // Once a speech track supplies phones, its closures win over audio energy:
     // m/b/p and silence must stay closed even while a loud syllable decays.
-    const voiced = this.hasViseme
-      ? this.visemeWeight * JAW_OPEN[this.viseme]
-      : finiteUnit(ctx.speechLevel);
-    const jawTarget = voiced * 0.1;
-    this.jaw += (jawTarget - this.jaw) * (1 - Math.exp(-22 * delta));
+    const speechPose = metaHumanSpeechPose(this.viseme, this.hasViseme ? this.visemeWeight : 0);
+    const jawTarget = this.hasViseme ? speechPose.jaw : finiteUnit(ctx.speechLevel) * 0.1;
+    this.jaw += (jawTarget - this.jaw) * (1 - Math.exp(-22 * animationDelta));
+    for (const target of this.speechTargets.values()) target.set(0, 0, 0);
+    for (const offset of speechPose.offsets) this.speechTargets.get(offset.bone)?.set(offset.x, offset.y, offset.z);
+    const speechEasing = 1 - Math.exp(-32 * animationDelta);
+    for (const [name, offset] of this.speechOffsets) offset.lerp(this.speechTargets.get(name)!, speechEasing);
 
     const breath = ctx.reducedMotion ? 0 : Math.sin(elapsed * Math.PI * 2 * statePose.breathRate) * 0.002 * statePose.breathDepth;
     const drift = ctx.reducedMotion ? 0 : Math.sin(elapsed * 0.47) * 0.006;
@@ -565,22 +632,27 @@ export class MetaHumanAvatar implements ElohimAvatar {
       this.rotate(bones, 'head', X, this.pitch + nod - breath);
       this.rotate(bones, 'head', Z, tilt);
     }
-    const leftWeight = Math.max(this.gesture.open, this.gesture.point);
-    const leftTarget = new THREE.Vector3(0.2, 1.32, 0.18).lerp(new THREE.Vector3(0.46, 1.34, 0.19), this.gesture.point);
-    const leftDirection = new THREE.Vector3(0.15, 0.05, 1).lerp(new THREE.Vector3(1, 0.2, 0.3), this.gesture.point).normalize();
-    this.poseArm('l', leftTarget, leftWeight, leftDirection, Y);
-    const rightWeight = Math.max(this.gesture.open, this.gesture.wave, this.gesture.chin);
-    const rightTarget = new THREE.Vector3(-0.2, 1.32, 0.18)
-      .lerp(new THREE.Vector3(-0.22, 1.55, 0.12), this.gesture.wave)
-      .lerp(new THREE.Vector3(-0.13, 1.46, 0.23), this.gesture.chin);
-    const rightDirection = new THREE.Vector3(-0.15, 0.05, 1).lerp(Y, Math.max(this.gesture.wave, this.gesture.chin)).normalize();
-    const rightPalm = Y.clone().lerp(Z, this.gesture.wave);
-    // A little outward roll avoids a parallel palm/finger basis halfway up
-    // from the palm-up resting gesture to the palm-forward wave.
-    rightPalm.x -= Math.sin(Math.PI * this.gesture.wave) * 0.8;
-    rightPalm.lerp(X, this.gesture.chin).normalize();
-    this.poseArm('r', rightTarget, rightWeight, rightDirection, rightPalm);
-    if (!ctx.reducedMotion) this.rotate(this.body, 'hand_r', Z, Math.sin(this.gestureTime * 9) * this.gesture.wave * 0.09);
+    // Pose choice and its fade are separate. A single fading wave keeps its
+    // target beside the face instead of sweeping through the open-palm pose.
+    const leftWeight = this.gesture.open + this.gesture.point;
+    const pointing = this.gesture.point / Math.max(leftWeight, 1e-6);
+    const leftTarget = new THREE.Vector3(0.2, 1.32, 0.18).lerp(new THREE.Vector3(0.4, 1.34, 0.19), pointing);
+    const leftOrientation = this.handOrientation('l', new THREE.Vector3(0.15, 0.05, 1), Y)
+      .slerp(this.handOrientation('l', new THREE.Vector3(1, 0.2, 0.3), Y), pointing);
+    this.poseArm('l', leftTarget, leftWeight, leftOrientation, animationDelta);
+    const rightWeight = this.gesture.open + this.gesture.wave + this.gesture.chin;
+    const rightTotal = Math.max(rightWeight, 1e-6);
+    const rightTarget = new THREE.Vector3(-0.2, 1.32, 0.18).multiplyScalar(this.gesture.open / rightTotal)
+      .addScaledVector(new THREE.Vector3(-0.22, 1.55, 0.12), this.gesture.wave / rightTotal)
+      .addScaledVector(new THREE.Vector3(-0.13, 1.46, 0.23), this.gesture.chin / rightTotal);
+    const rightOrientation = this.handOrientation('r', new THREE.Vector3(-0.15, 0.05, 1), Y)
+      .slerp(this.handOrientation('r', Y, Z), this.gesture.wave / Math.max(this.gesture.open + this.gesture.wave, 1e-6))
+      .slerp(this.handOrientation('r', Y, X), this.gesture.chin / rightTotal);
+    this.poseArm('r', rightTarget, rightWeight, rightOrientation, animationDelta);
+    // Lift, give a small greeting, lower. No wrist oscillation during the lift.
+    const waveAge = this.gestureTime - 0.85;
+    const waveBeat = smooth(waveAge / 0.2) * smooth((1.7 - this.gestureTime) / 0.2);
+    if (!ctx.reducedMotion) this.rotate(this.body, 'hand_r', Z, Math.sin(waveAge * Math.PI * 4) * waveBeat * this.gesture.wave * 0.065);
     this.pointFingers(this.gesture.point);
     // The face export includes shoulder stubs weighted to the neck seam.
     // Apply the body shoulder's local delta to the corresponding face stub.
@@ -604,8 +676,9 @@ export class MetaHumanAvatar implements ElohimAvatar {
     }
     this.rotate(this.face, 'FACIAL_C_Jaw', X, this.jaw);
     this.rotate(this.face, 'FACIAL_C_LowerLipRotation', X, this.jaw);
-    const blink = this.blink(delta, ctx.reducedMotion);
-    const wink = this.winkClosure(delta);
+    for (const [name, offset] of this.speechOffsets) this.shift(name, offset.y, offset.x, offset.z);
+    const blink = this.blink(animationDelta, ctx.reducedMotion);
+    const wink = this.winkClosure(animationDelta);
     for (const side of ['L', 'R']) {
       // The C6 A roots carry the lid margin and lashes; B carries the crease.
       // Lower the resting upper lid slightly, and let warm expressions reach

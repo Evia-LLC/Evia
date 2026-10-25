@@ -108,6 +108,7 @@ vi.mock('../src/holograms/rig.ts', () => ({ HologramRig: class {
 import { SessionDirector } from '../src/scene/director.ts';
 import { session } from '../src/state/session.svelte.ts';
 import * as sound from '../src/lib/sound.ts';
+import { MutedSpeechTrack } from '../src/character/speech.ts';
 
 let director: SessionDirector | null;
 
@@ -131,6 +132,41 @@ afterEach(() => {
 });
 
 describe('SessionDirector asynchronous lifecycle', () => {
+  it('does not perform speech beats before audio starts and preserves real action time on slow frames', () => {
+    const turn: CharacterDirective = { state: 'SPEAKING', expression: 'reassuring', gesture: 'small_wave', intensity: 0.65 };
+    director!.applyDirective(turn);
+    const silence = { advance: () => ({ viseme: 'sil' as const, weight: 0, level: 0 }), finished: false };
+    const waiting = Object.assign(new MutedSpeechTrack(silence), {
+      advance: vi.fn(silence.advance), finished: false, consumePhrase: () => true,
+    });
+    director!.useSpeechTrack(waiting);
+    const internal = director as unknown as {
+      frame(dt: number, elapsed: number, animationDt: number): void;
+      gesticulate(dt: number, phrase: boolean): void;
+      speechElapsed: number;
+      speechDuration: number;
+      closeFired: boolean;
+    };
+    internal.speechElapsed = 1.8;
+    internal.speechDuration = 2;
+    internal.closeFired = false;
+    controls.procedural[0].applyDirective.mockClear();
+    const gestures = vi.spyOn(internal, 'gesticulate');
+    internal.frame(0.1, 0.25, 0.25);
+    expect(waiting.advance).toHaveBeenCalledWith(0.25);
+    expect(gestures).not.toHaveBeenCalled();
+    expect(controls.procedural[0].applyDirective).not.toHaveBeenCalled();
+    expect(internal.closeFired).toBe(false);
+    expect(controls.procedural[0].update).toHaveBeenLastCalledWith(0.1, expect.objectContaining({ animationDt: 0.25 }));
+    Object.assign(waiting, { finished: true });
+    internal.frame(0.1, 0.35, 0.1);
+    expect(internal.closeFired).toBe(false);
+    expect(controls.procedural[0].applyDirective).toHaveBeenLastCalledWith({ ...turn, state: 'IDLE', gesture: 'none' });
+    director!.useSpeechTrack(silence);
+    expect(internal.speechElapsed).toBe(0);
+    expect(controls.procedural[0].applyDirective).toHaveBeenLastCalledWith(turn);
+  });
+
   it('accepts real gestures only after loading and leaves the conversation untouched by a wink', async () => {
     const loaded = controls.metahuman[0];
     expect(director!.previewGesture('wave')).toBe(false);

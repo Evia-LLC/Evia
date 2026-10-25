@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionDirector } from '../src/scene/director.ts';
-import type { AudioLockedSpeechTrack } from '../src/character/speech.ts';
+import type { AudioLockedSpeechTrack, AudioSpeechFrame } from '../src/character/speech.ts';
+import { VOICE_PREVIEW_LINE } from '../src/lib/lines.ts';
 
 type Callbacks = {
   onStart?: () => void;
   onBoundary?: (value: { word: string; elapsed: number; charIndex: number; charLength: number; duration: number }) => void;
   onLevel?: (level: number) => void;
+  onAudioClock?: (read: () => AudioSpeechFrame) => void;
   onEnd?: () => void;
   onFailed?: (reason: string) => void;
 };
@@ -82,6 +84,45 @@ afterEach(() => {
 });
 
 describe('explicit Evia voice sample', () => {
+  it('installs the recording clock and rejects clocks delivered by retired samples', () => {
+    voice.sample();
+    const first = engines.cloneCalls[0].callbacks;
+    let audioTime = 20.2;
+    const readFirst = vi.fn((): AudioSpeechFrame => ({
+      time: audioTime, level: 0.6,
+      word: { word: 'hello', start: 20, duration: 0.5 },
+    }));
+    first.onAudioClock!(readFirst);
+    first.onStart!();
+    const firstTrack = director.useSpeechTrack.mock.calls.at(-1)![0] as AudioLockedSpeechTrack;
+    expect(firstTrack.advance(0.1).viseme).toBe('EE');
+    audioTime = 20.4;
+    // A 5 FPS renderer caps its integration step at .1, while audio advances .2.
+    // A late boundary must not rewind the installed recording's word phase.
+    first.onBoundary!({ word: 'hello', elapsed: 0, charIndex: 0, charLength: 5, duration: 0.5 });
+    first.onLevel!(1);
+    expect(firstTrack.advance(0.1)).toMatchObject({ viseme: 'OH', level: 0.6 });
+    expect(readFirst).toHaveBeenCalledTimes(2);
+
+    const oldClock = vi.spyOn(firstTrack, 'useAudioClock');
+    voice.sample();
+    const second = engines.cloneCalls[1].callbacks;
+    second.onAudioClock!(() => ({ time: 30.25, level: 0.7, word: { word: 'you', start: 30, duration: 0.5 } }));
+    second.onStart!();
+    const secondTrack = director.useSpeechTrack.mock.calls.at(-1)![0] as AudioLockedSpeechTrack;
+    const staleReader = vi.fn(() => readFirst());
+    first.onAudioClock!(staleReader);
+    expect(oldClock).not.toHaveBeenCalled();
+    expect(secondTrack.advance(0.1)).toMatchObject({ viseme: 'OU', level: 0.7 });
+    expect(staleReader).not.toHaveBeenCalled();
+
+    const currentClock = vi.spyOn(secondTrack, 'useAudioClock');
+    voice.stopSample();
+    second.onAudioClock!(staleReader);
+    expect(currentClock).not.toHaveBeenCalled();
+    expect(session.speaking).toBe(false);
+  });
+
   it('plays a shipped line with speech disabled without changing the reply preference', () => {
     voice.speak('An ordinary reply.');
     expect(engines.cloneCalls).toHaveLength(0);
@@ -89,11 +130,11 @@ describe('explicit Evia voice sample', () => {
 
     voice.sample();
     expect(engines.cloneCalls).toHaveLength(1);
-    expect(engines.cloneCalls[0].text).toBe("I'm right here. What do you need?");
+    expect(engines.cloneCalls[0].text).toBe(VOICE_PREVIEW_LINE);
     expect(engines.cloneCalls[0].text).not.toContain('Elohim');
     expect(session.user!.preferences.voiceEnabled).toBe(false);
     expect(director.elohimSpoke).toHaveBeenCalledWith(
-      expect.objectContaining({ state: 'SPEAKING', gesture: 'small_wave' }),
+      expect.objectContaining({ state: 'SPEAKING', gesture: 'none' }),
       engines.cloneCalls[0].text,
     );
     expect(session.speaking).toBe(false);

@@ -141,6 +141,17 @@ export class SessionDirector {
    * something else happened to overwrite it.
    */
   private reactionUntil = 0;
+  private characterPreview = false;
+  private readonly previewShot = {
+    position: new THREE.Vector3(0, 1.52, 1.38),
+    target: new THREE.Vector3(0, 1.43, 0),
+    fov: 34,
+  };
+  private readonly previewPortraitShot = {
+    position: new THREE.Vector3(0, 1.50, 1.75),
+    target: new THREE.Vector3(0, 1.45, 0),
+    fov: 42,
+  };
   /** The displayed rest after speech ends; keep its turn for late audio. */
   private settledDirective: CharacterDirective | null = null;
 
@@ -262,7 +273,7 @@ export class SessionDirector {
       this.avatar.setFringe?.(tier !== 'low');
       console.info(`[elohim/stage] quality tier resolved to "${tier}"`);
     };
-    this.stage.onFrame = (dt, elapsed) => this.frame(dt, elapsed);
+    this.stage.onFrame = (dt, elapsed, animationDt) => this.frame(dt, elapsed, animationDt);
     this.stage.start();
 
     // Developer handle (brief §35). Exposes the scene for inspection and lets it
@@ -374,25 +385,28 @@ export class SessionDirector {
   // Frame
   // -------------------------------------------------------------------------
 
-  private frame(dt: number, elapsed: number): void {
+  private frame(dt: number, elapsed: number, animationDt = dt): void {
     this.advanceTransition(dt);
 
     if (this.speech) {
-      const { viseme, weight, level } = this.speech.advance(dt);
+      const waitingForVoice = this.speech instanceof MutedSpeechTrack;
+      const { viseme, weight, level } = this.speech.advance(animationDt);
       this.avatar.setViseme(viseme, weight);
       this.speechLevel = level;
-      this.speechElapsed += dt;
+      this.speechElapsed += animationDt;
       // Her phrasing, when the track can report it. A boundary is the instant
       // a pause starts — exactly where a person lands a beat gesture.
       const phrase = this.speech.consumePhrase?.() ?? false;
-      if (phrase) this.maybeCloseTurn(false);
-      this.gesticulate(dt, phrase);
+      if (phrase && !waitingForVoice) this.maybeCloseTurn(false);
+      if (!waitingForVoice && !this.speech.finished) {
+        this.gesticulate(animationDt, phrase);
+      }
       if (this.speech.finished) {
         this.speech = null;
         this.speechLevel = 0;
         this.avatar.setViseme('sil', 0);
         // The last chance for the turn's closing expression to land.
-        this.maybeCloseTurn(true);
+        if (!waitingForVoice) this.maybeCloseTurn(true);
         // Settle back into whatever she was doing, without inventing a mood.
         // The resting state is only adopted where the FSM allows it — a
         // result mood like HAPPY cannot legally reach ANALYSIS_COMPLETE, and
@@ -419,16 +433,10 @@ export class SessionDirector {
     // the turn's own beat two seconds late would read as a second reaction.
     if (this.reactionUntil > 0 && performance.now() >= this.reactionUntil) {
       this.reactionUntil = 0;
-      /*
-       * Head gestures are impulses and would replay on a reapply, so they
-       * are dropped - but the three arm gestures are painted body poses, and
-       * a turn that landed during the reaction still deserves its arms.
-       * Stripping those cut her from open palms back to rest mid-sentence.
-       */
+      // Clinical pointing is a held pose. Waves and open palms are one-shot
+      // gestures, so restoring the turn must not play them again.
       const directive = this.settledDirective ?? this.currentDirective;
-      const g = directive.gesture;
-      const pose = g === 'open_palms' || g === 'point_to_hologram' || g === 'small_wave';
-      this.avatar.applyDirective({ ...directive, gesture: pose ? g : 'none' });
+      this.avatar.applyDirective({ ...directive, gesture: directive.gesture === 'point_to_hologram' ? 'point_to_hologram' : 'none' });
     }
 
     // Thinking is allowed to take a moment; after seven seconds it should
@@ -459,6 +467,9 @@ export class SessionDirector {
     if (directed) this.direct(dt);
     // In the lounge she is talking with you, which is what mood = 1 means.
     else this.mood = damp(this.mood, 1, 1.5, dt);
+    if (this.characterPreview && !directed) {
+      this.stage.setShot(this.stage.aspect < 0.85 ? this.previewPortraitShot : this.previewShot, 0.8);
+    }
 
     // She walks to her mark rather than teleporting. In the lounge that mark is
     // the origin; in the clinical room it is beside the panel.
@@ -471,6 +482,7 @@ export class SessionDirector {
 
     this.avatar.update(dt, {
       elapsed,
+      animationDt,
       // In the clinic the shot decides where she looks. Being looked at while
       // she talks to you, and looked past while she reads the panel, is most of
       // what makes her feel present rather than aimed at the lens forever.
@@ -586,12 +598,12 @@ export class SessionDirector {
     if (performance.now() < this.reactionUntil) return;
     this.gestureTimer -= dt;
     this.phraseGestureGap += dt;
-    const onPhrase = phrase && this.phraseGestureGap >= 2;
+    const onPhrase = phrase && this.phraseGestureGap >= 4;
     if (!onPhrase && this.gestureTimer > 0) return;
     // The fallback stays irregular on purpose: a gesture on a fixed metronome
     // reads as a loop. Four to eight seconds, because a person explaining
     // something moves in phrases, not in ticks.
-    this.gestureTimer = 4.2 + Math.random() * 3.6;
+    this.gestureTimer = 5.5 + Math.random() * 2.5;
     this.phraseGestureGap = 0;
 
     const presenting =
@@ -689,6 +701,12 @@ export class SessionDirector {
   // Conversation hooks
   // -------------------------------------------------------------------------
 
+  /** Keep the face and requested hand gestures inside the preview viewport. */
+  setCharacterPreview(enabled: boolean): void {
+    this.characterPreview = enabled;
+    if (!enabled) this.stage.setShot(SHOT_CONVERSATION, 0.8);
+  }
+
   /** A short, requested action; the ongoing conversation keeps its own state. */
   previewGesture(action: 'wink' | 'wave' | 'explain'): boolean {
     if (this.disposed || this.characterStatus !== 'ready') return false;
@@ -747,6 +765,9 @@ export class SessionDirector {
    */
   elohimSpoke(directive: CharacterDirective, text: string, mouth: 'wait' | 'keep' = 'wait'): void {
     this.applyDirective(directive);
+    // A fetched voice may start much later. Hold the spoken gesture until
+    // actual playback owns the timeline, instead of waving over silence.
+    if (mouth === 'wait') this.avatar.applyDirective({ ...directive, gesture: 'none' });
     // The line's estimated timeline is built either way: it is the mouth when
     // nothing speaks, and the progress yardstick for the turn's closing
     // expression when something does.
@@ -759,7 +780,7 @@ export class SessionDirector {
     this.closeFired = false;
     // First beat lands shortly after she starts, not immediately — nobody
     // gestures on their opening syllable. The phrase path waits with it.
-    this.gestureTimer = 0.9;
+    this.gestureTimer = 3.5;
     this.phraseGestureGap = 0;
 
     // What she is doing decides how she is framed. Pointing at a readout is a
@@ -785,9 +806,11 @@ export class SessionDirector {
     // restoring the turn's directive at that instant wiped the reaction a
     // beat after it landed.
     this.settledDirective = null;
-    if (!this.speech && performance.now() >= this.reactionUntil) {
-      this.avatar.applyDirective(this.currentDirective);
-      this.gestureTimer = Math.max(this.gestureTimer, 0.9);
+    if (!this.speech || this.speech instanceof MutedSpeechTrack) {
+      this.speechElapsed = 0;
+      this.closeFired = false;
+      if (performance.now() >= this.reactionUntil) this.avatar.applyDirective(this.currentDirective);
+      this.gestureTimer = 3.5;
       this.phraseGestureGap = 0;
     }
     this.speech = track;

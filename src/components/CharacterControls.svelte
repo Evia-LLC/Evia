@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { session } from '@/state/session.svelte.ts';
-  import { gestureEvia, sampleEvia, stopEviaSample } from '@/state/controller.ts';
-  import { POKE_LINES } from '@/lib/lines.ts';
+  import { frameEviaPreview, gestureEvia, sampleEvia, stopEviaSample } from '@/state/controller.ts';
+  import { VOICE_PREVIEW_LINE } from '@/lib/lines.ts';
 
   let message = $state('Choose an expression, or hear a short voice sample.');
   let sampled = $state(false);
@@ -21,6 +21,10 @@
   }
 
   onDestroy(stopEviaSample);
+  onMount(() => {
+    frameEviaPreview(true);
+    return () => frameEviaPreview(false);
+  });
 </script>
 
 <section class="character-controls" aria-label="Evia's voice and expressions">
@@ -33,7 +37,7 @@
     <button onclick={() => gesture('wave')} disabled={busy}>Wave</button>
     <button onclick={() => gesture('explain')} disabled={busy}>Open hands</button>
   </div>
-  {#if sampled}<p class="sample-line">“{POKE_LINES.body[0]}”</p>{/if}
+  {#if sampled}<p class="sample-line">“{VOICE_PREVIEW_LINE}”</p>{/if}
   <p class="status" role="status">{message}{#if sampled}<span>{session.voiceStatus}</span>{/if}</p>
 </section>
 

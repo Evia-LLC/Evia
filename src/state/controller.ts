@@ -229,6 +229,10 @@ export function gestureEvia(action: 'wink' | 'wave' | 'explain'): boolean {
   return director?.previewGesture(action) ?? false;
 }
 
+export function frameEviaPreview(enabled: boolean): void {
+  director?.setCharacterPreview(enabled);
+}
+
 export async function listVoiceOptions() {
   return voice.availableVoices();
 }

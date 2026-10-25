@@ -59,7 +59,7 @@ export const CONNECTION_LOST_LINE = 'I lost my connection for a moment. Say that
 export const LONG_THINK_LINE = 'Bear with me — thinking about this one.';
 
 /** A neutral greeting with an existing shipped recording for the voice picker. */
-export const VOICE_PREVIEW_LINE = POKE_LINES.body[0];
+export const VOICE_PREVIEW_LINE = INTRO_LINES[0];
 
 /**
  * Everything above, flat, in the order the voice tooling has always used -
