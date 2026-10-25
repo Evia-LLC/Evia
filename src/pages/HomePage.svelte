@@ -55,14 +55,19 @@
 
 <style>
   .chat-hidden { visibility: hidden; }
-  @media (max-width: 860px), (orientation: portrait) {
+  @media (max-width: 1150px), (orientation: portrait) {
     .welcome--meeting {
+      left: var(--rail-w);
+      right: 0;
+      top: 0;
+      max-width: none;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
       padding: max(8px, var(--safe-t)) 16px 8px;
     }
+    .welcome--meeting::before { content: none; }
     .welcome--meeting .welcome__eyebrow,
     .welcome--meeting .welcome__sub { display: none; }
     .welcome--meeting .welcome__title { font-size: 22px; white-space: nowrap; }
