@@ -1,5 +1,6 @@
 /** P1-T08: no paid provider request may run after budget admission fails. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { VOICE_PREVIEW_LINE } from '../src/lib/lines.ts';
 
 const { admit, anthropicCreate, readCache, writeCache, vendorFetch } = vi.hoisted(() => ({
   admit: vi.fn(),
@@ -80,7 +81,7 @@ describe('vision and voice dispatch gates', () => {
     });
     // P1-T11: only exact stock-line hits are cacheable, so the cached
     // fixture must be a real stock sentence; arbitrary text always misses.
-    const line = await speakLine("Hey, it's Elohim. This is what I sound like.", {}, 'u1');
+    const line = await speakLine(VOICE_PREVIEW_LINE, {}, 'u1');
     expect(line.cached).toBe(true);
     expect(admit).not.toHaveBeenCalled();
     expect(vendorFetch).not.toHaveBeenCalled();
