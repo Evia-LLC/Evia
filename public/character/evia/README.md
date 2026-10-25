@@ -5,7 +5,7 @@
 | Property | Value |
 | --- | --- |
 | Original size | 109,197,784 bytes |
-| Web copy size | 17,901,520 bytes (83.6% smaller) |
+| Web copy size | 19,242,560 bytes (82.4% smaller) |
 | Meshes / materials | 12 / 12 |
 | Triangles | 214,716 |
 | Skins | 3 (342, 876, and 435 joints) |
@@ -13,11 +13,13 @@
 | Embedded images | 12 |
 | Animation clips / morph targets | None in the supplied export |
 
-Color maps and the head normal map retain up to 2,048-pixel detail. Body, eye, teeth, and outfit normal maps use 1,024 pixels. Opaque maps use JPEG quality 92 without chroma subsampling. The repaired hair atlas is a 1,024-pixel RGBA PNG, and the recovered eyelash atlas is a 2,048-pixel RGBA PNG. Texture compression is lossy; all 95 non-image buffer views remain byte-for-byte identical to the original.
+Color maps and the head normal map retain up to 2,048-pixel detail. Body, eye, teeth, and outfit normal maps use 1,024 pixels. Opaque maps use JPEG quality 92 without chroma subsampling. The repaired hair atlas and recovered eyelash atlas are 2,048-pixel RGBA PNGs. Texture compression is lossy; all 95 non-image buffer views remain byte-for-byte identical to the original.
 
 The export omitted the eyelash texture and treated a packed hair Attribute atlas as color and opacity. The eyelash repair uses the recovered C5 atlas from the matching C5/C6 family: their saved thumbnails are pixel-identical, and C6 shares the standard lash UV layout. The hair repair uses coverage reconstructed from C6's own Attribute atlas. This is an estimate of strand opacity, not the original authored opacity; the decoder can undercount coverage in dense ribbons. Both materials use alpha masking, and the original hair tint is retained. See [texture provenance](../../../scripts/metahuman-textures/README.md) for the inputs and method.
 
-The conversion preserves source transforms, including the hair transform. Runtime model adaptation is separate from this asset. The export contains skeletal face controls but no authored animation clips or blend shapes.
+The conversion preserves source transforms, including the hair transform. Runtime model adaptation is separate from this asset. `metahuman-materials.ts` restores eye reflectivity with a small reflected lighting environment, preserves the original eye maps, and adds softer directional hair sheen. It lowers hair brightness uniformly to 0.68 of the original linear RGB, retaining the blonde hue. Alpha-to-coverage is enabled only when the renderer actually supports multisample antialiasing. No extra hair layers or geometry are added: runtime model counts remain 12 meshes and 214,716 triangles.
+
+The missing authored hair-opacity map remains a visual limitation. Reconstructed coverage improves strand edges but cannot fully recover the original groom's density; broad card ribbons and gaps remain visible at close range. The export contains skeletal face controls but no authored animation clips or blend shapes.
 
 ## Recreate
 
@@ -38,7 +40,7 @@ SHA-256 of the source:
 SHA-256 of this web copy:
 
 ```text
-20659f9f9f64ba8edef35dabb134baa130a0681d4c3b0a8ccda0e8f540781502
+266e6d64c5f55679a47d8025ccfd61c784ea818231058ad8b01160206b3e02c6
 ```
 
 The exact compressed bytes can vary with Pillow/libjpeg versions even when settings and visual output match.

@@ -162,7 +162,9 @@ export class Stage {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: false, // costs more than it returns on an iGPU at this stylisation
+      // Thin eyelash and hair cards need multisampling; the adaptive pixel
+      // budget still reduces rendering cost on slower devices.
+      antialias: true,
       alpha: false,
       powerPreference: 'high-performance',
       stencil: false,

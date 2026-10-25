@@ -16,14 +16,20 @@ SHA-256:
 
 ## Hair
 
-`hair-updo-buns.png` is a 1,024 × 1,024 RGBA texture derived from `C6_Hair_S_UpdoBuns_cov.npy` and `C6_Hair_S_UpdoBuns_field.npy`. Those 2,048 × 2,048 arrays contain finite coverage and depth-like field values in `[0, 1]`. Their source, `C6_Hair_S_UpdoBuns_CardsAtlas_Attribute.png`, has pixel-identical RGBA data to the 4,096-pixel hair image embedded in the supplied `C6.glb`.
+`hair-updo-buns.png` is a 2,048 × 2,048 RGBA texture derived from `C6_Hair_S_UpdoBuns_cov.npy` and `C6_Hair_S_UpdoBuns_field.npy`. Those 2,048 × 2,048 arrays contain finite coverage and depth-like field values in `[0, 1]`. Their source, `C6_Hair_S_UpdoBuns_CardsAtlas_Attribute.png`, has pixel-identical RGBA data to the 4,096-pixel hair image embedded in the supplied `C6.glb`.
 
-The earlier `atlas_decode.py` tool estimated a smooth background field `F` from the packed alpha `A`, then reconstructed strand coverage as `C = clamp((A - F) / 76.5, 0, 1)`. It normalized the field on covered strands for shading. The earlier `hair_tex.py` method lightly smooths coverage, box-averages it to 1,024 pixels, shades strands with `0.62 + 0.38 × field`, averages RGB by coverage, and fills gap colors from neighboring strands before sRGB encoding. Alpha stores coverage; the GLB material supplies the original hair tint.
+The earlier `atlas_decode.py` tool estimated a smooth background field `F` from the packed alpha `A`, then reconstructed strand coverage as `C = clamp((A - F) / 76.5, 0, 1)`. It normalized the field on covered strands for shading. `prepare-evia-hair.py` retains the full 2K grid, smooths coverage with three one-pixel box passes, then applies `alpha^0.85` to retain fine strands. Mean coverage rises from 0.136534 to 0.155546; it does not fill the cards with solid opacity. Strand shading uses `0.32 + 0.68 × field`, with the original slightly warm neutral channels. Gap colors are filled from neighboring strands before sRGB encoding to prevent dark mip fringes. Alpha stores coverage; the GLB material supplies the original hair tint.
+
+To reproduce this PNG from the decoded arrays (numpy and Pillow required):
+
+```sh
+python3 scripts/prepare-evia-hair.py /path/to/C6_Hair_S_UpdoBuns_cov.npy /path/to/C6_Hair_S_UpdoBuns_field.npy
+```
 
 This is a reconstruction from the exported Attribute atlas, not a recovered original opacity map or original hair-color map. Dense strand ribbons can have underestimated coverage because their background field is obscured. Alpha masking and mip filtering may also reduce very fine strands at a distance.
 
 SHA-256:
 
 ```text
-e457448201caf83d243ea9939ed2a9be855d535372c9fd33b8b5083389fdc5b8
+b07b4791896efc2341b2f201fbd1bc0c99c1adec09295c9b305a011c60e022b8
 ```

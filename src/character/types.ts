@@ -30,6 +30,8 @@ export interface ElohimAvatar {
   applyDirective(directive: CharacterDirective): void;
   setOutfit(outfit: Outfit, opts?: { transitionSeconds?: number }): void;
   setViseme(viseme: Viseme, weight: number): void;
+  /** A deliberate, one-sided eyelid gesture when supported by the rig. */
+  wink?(side?: 'left' | 'right'): void;
   /**
    * Enables the edge fringe that softens her silhouette into the backdrop.
    *

@@ -141,6 +141,8 @@ export class SessionDirector {
    * something else happened to overwrite it.
    */
   private reactionUntil = 0;
+  /** The displayed rest after speech ends; keep its turn for late audio. */
+  private settledDirective: CharacterDirective | null = null;
 
   /** 0 = lounge, 1 = clinical. Everything in the transition reads from this. */
   private clinicalPresence = 0;
@@ -278,10 +280,11 @@ export class SessionDirector {
     next.root.scale.copy(previous.root.scale);
     // A download can finish after the reading. The new rig starts in IDLE;
     // enter the clinical state before restoring its completed reading.
-    if (this.currentDirective.state === 'ANALYSIS_COMPLETE') {
-      next.applyDirective({ ...this.currentDirective, state: 'CLINICAL_ANALYSIS', gesture: 'none' });
+    const directive = this.settledDirective ?? this.currentDirective;
+    if (directive.state === 'ANALYSIS_COMPLETE') {
+      next.applyDirective({ ...directive, state: 'CLINICAL_ANALYSIS', gesture: 'none' });
     }
-    next.applyDirective(this.currentDirective);
+    next.applyDirective(directive);
     next.setOutfit(this.transitionTarget === 1 ? 'clinical' : 'casual');
     next.lookAt(this.gazeTarget);
     next.mount(this.stage.scene);
@@ -295,7 +298,9 @@ export class SessionDirector {
   }
 
   private async loadCharacter(): Promise<void> {
-    const avatar = new MetaHumanAvatar();
+    const avatar = new MetaHumanAvatar({
+      antialias: this.stage.renderer.getContext().getContextAttributes()?.antialias === true,
+    });
     this.pendingAvatar = avatar;
     avatar.onDirectiveRejected = (info) =>
       console.warn(`[elohim/character] rejected ${info.reason}: ${info.detail}`);
@@ -393,12 +398,18 @@ export class SessionDirector {
         // result mood like HAPPY cannot legally reach ANALYSIS_COMPLETE, and
         // it outlives the line that delivered it.
         const rest = session.sceneMode === 'clinical' ? 'ANALYSIS_COMPLETE' : 'IDLE';
-        this.avatar.applyDirective({
+        this.settledDirective = {
           ...this.currentDirective,
           state: canTransition(this.currentDirective.state, rest)
             ? rest
             : this.currentDirective.state,
-        });
+          // A completed greeting must not replay its wave when a later
+          // requested expression returns to rest. Clinical pointing is held.
+          gesture: rest === 'ANALYSIS_COMPLETE' && this.currentDirective.gesture === 'point_to_hologram'
+            ? 'point_to_hologram'
+            : 'none',
+        };
+        if (performance.now() >= this.reactionUntil) this.avatar.applyDirective(this.settledDirective);
       }
     }
 
@@ -414,9 +425,10 @@ export class SessionDirector {
        * a turn that landed during the reaction still deserves its arms.
        * Stripping those cut her from open palms back to rest mid-sentence.
        */
-      const g = this.currentDirective.gesture;
+      const directive = this.settledDirective ?? this.currentDirective;
+      const g = directive.gesture;
       const pose = g === 'open_palms' || g === 'point_to_hologram' || g === 'small_wave';
-      this.avatar.applyDirective({ ...this.currentDirective, gesture: pose ? g : 'none' });
+      this.avatar.applyDirective({ ...directive, gesture: pose ? g : 'none' });
     }
 
     // Thinking is allowed to take a moment; after seven seconds it should
@@ -571,6 +583,7 @@ export class SessionDirector {
    * for a long unbroken clause where no boundary ever comes.
    */
   private gesticulate(dt: number, phrase: boolean): void {
+    if (performance.now() < this.reactionUntil) return;
     this.gestureTimer -= dt;
     this.phraseGestureGap += dt;
     const onPhrase = phrase && this.phraseGestureGap >= 2;
@@ -649,7 +662,7 @@ export class SessionDirector {
     this.currentDirective = { ...d, expression: 'smile' };
     // Mid-line the cut is applied now; on the settle the caller's own
     // directive spread carries it, so she does not get two cuts in a frame.
-    if (!settling) this.avatar.applyDirective(this.currentDirective);
+    if (!settling && performance.now() >= this.reactionUntil) this.avatar.applyDirective(this.currentDirective);
   }
 
   /** How far through the current line she is, 0..1, best evidence first. */
@@ -675,6 +688,24 @@ export class SessionDirector {
   // -------------------------------------------------------------------------
   // Conversation hooks
   // -------------------------------------------------------------------------
+
+  /** A short, requested action; the ongoing conversation keeps its own state. */
+  previewGesture(action: 'wink' | 'wave' | 'explain'): boolean {
+    if (this.disposed || this.characterStatus !== 'ready') return false;
+    if (action === 'wink') {
+      if (!this.avatar.wink) return false;
+      this.avatar.wink('left');
+      return true;
+    }
+    this.reactionUntil = performance.now() + 2_800;
+    this.avatar.applyDirective({
+      ...(this.settledDirective ?? this.currentDirective),
+      expression: action === 'wave' ? 'smile' : 'warm',
+      gesture: action === 'wave' ? 'small_wave' : 'open_palms',
+      intensity: 0.85,
+    });
+    return true;
+  }
 
   /** Called the moment the user starts typing — she notices. */
   userIsTyping(): void {
@@ -753,6 +784,7 @@ export class SessionDirector {
     // though - the audio arriving here is usually the poke line itself, and
     // restoring the turn's directive at that instant wiped the reaction a
     // beat after it landed.
+    this.settledDirective = null;
     if (!this.speech && performance.now() >= this.reactionUntil) {
       this.avatar.applyDirective(this.currentDirective);
       this.gestureTimer = Math.max(this.gestureTimer, 0.9);
@@ -777,6 +809,10 @@ export class SessionDirector {
   }
 
   applyDirective(directive: CharacterDirective): void {
+    // A newer turn takes ownership immediately; an old preview must not
+    // reapply its gesture when its wall-clock lease expires later.
+    this.reactionUntil = 0;
+    this.settledDirective = null;
     this.currentDirective = directive;
     this.avatar.applyDirective(directive);
   }

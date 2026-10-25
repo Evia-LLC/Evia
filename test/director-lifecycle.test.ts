@@ -34,6 +34,7 @@ function avatarDouble(kind: 'procedural' | 'metahuman' | 'sprite') {
     setOutfit: vi.fn(),
     lookAt: vi.fn(),
     setViseme: vi.fn(),
+    wink: vi.fn(),
     update: vi.fn(),
     stats: vi.fn(() => ({ meshes: 1, triangles: 1 })),
     applyDirective: vi.fn((directive: CharacterDirective) => {
@@ -54,12 +55,18 @@ vi.mock('../src/state/session.svelte.ts', () => ({ session: { sceneMode: 'lounge
 vi.mock('../src/lib/sound.ts', () => ({ startRoom: vi.fn(), stopRoom: vi.fn() }));
 vi.mock('../src/holograms/primitives.ts', () => ({ METRIC_FACE_REGIONS: {} }));
 vi.mock('../src/scene/textures.ts', () => ({ radialTexture: () => new THREE.Texture() }));
-vi.mock('../src/scene/grade.ts', () => ({ Grade: class { dispose = vi.fn(); } }));
+vi.mock('../src/scene/grade.ts', () => ({ Grade: class {
+  setStrength = vi.fn();
+  setMood = vi.fn();
+  update = vi.fn();
+  dispose = vi.fn();
+} }));
 vi.mock('../src/scene/cinematography.ts', () => ({ Cinematographer: class { reset = vi.fn(); request = vi.fn(); } }));
 vi.mock('../src/scene/lounge.ts', () => ({ LoungeEnvironment: class {
   group = new THREE.Group();
   background = new THREE.Color();
   setPresence = vi.fn();
+  update = vi.fn();
   dispose = vi.fn();
 } }));
 vi.mock('../src/scene/stage.ts', () => ({
@@ -70,10 +77,11 @@ vi.mock('../src/scene/stage.ts', () => ({
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera();
     settings = { particles: false, richEffects: false };
-    renderer = { setClearColor: vi.fn() };
+    renderer = { setClearColor: vi.fn(), getContext: () => ({ getContextAttributes: () => ({ antialias: true }) }) };
     aspect = 1.44;
     setShot = vi.fn();
     start = vi.fn();
+    stats = vi.fn(() => ({ calls: 1, triangles: 1 }));
     dispose = vi.fn();
     constructor() { controls.stages.push(this); }
   },
@@ -123,6 +131,96 @@ afterEach(() => {
 });
 
 describe('SessionDirector asynchronous lifecycle', () => {
+  it('accepts real gestures only after loading and leaves the conversation untouched by a wink', async () => {
+    const loaded = controls.metahuman[0];
+    expect(director!.previewGesture('wave')).toBe(false);
+    expect(director!.previewGesture('wink')).toBe(false);
+    expect(loaded.wink).not.toHaveBeenCalled();
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+
+    loaded.applyDirective.mockClear();
+    expect(director!.previewGesture('wink')).toBe(true);
+    expect(loaded.wink).toHaveBeenCalledWith('left');
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    director!.dispose();
+    expect(director!.previewGesture('wave')).toBe(false);
+    expect(director!.previewGesture('wink')).toBe(false);
+    expect(loaded.wink).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a requested pose finish over speech beats and speech ending, then restores the settled pose', async () => {
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+    const loaded = controls.metahuman[0];
+    const internal = director as unknown as {
+      frame(dt: number, elapsed: number): void;
+      closeFired: boolean;
+      speechDuration: number;
+      speechElapsed: number;
+    };
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const speaking: CharacterDirective = { state: 'SPEAKING', expression: 'reassuring', gesture: 'small_wave', intensity: 0.65 };
+    director!.applyDirective(speaking);
+    const track = {
+      advance: vi.fn(() => ({ viseme: 'AA' as const, weight: 0.6, level: 0.5 })),
+      finished: false,
+      consumePhrase: () => true,
+    };
+    director!.useSpeechTrack(track);
+    // Near the end of a reassuring line, both a phrase beat and the closing
+    // smile are due. Neither should cut across an explicitly requested pose.
+    internal.closeFired = false;
+    internal.speechDuration = 2;
+    internal.speechElapsed = 1.6;
+    director!.previewGesture('explain');
+    loaded.applyDirective.mockClear();
+    now = 2000;
+    for (let i = 0; i < 12; i++) internal.frame(0.1, i / 10);
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    expect(loaded.setViseme).toHaveBeenLastCalledWith('AA', 0.6);
+
+    track.finished = true;
+    now = 2200;
+    internal.frame(0.1, 1.2);
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    expect(loaded.setViseme).toHaveBeenLastCalledWith('sil', 0);
+    now = 3900;
+    internal.frame(0.1, 2.9);
+    const completed = { ...speaking, expression: 'smile' as const };
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith({ ...completed, state: 'IDLE', gesture: 'none' });
+
+    // Another preview must borrow the actual rest, not resurrect SPEAKING or
+    // the sample's opening wave. Late audio can still resume its own turn.
+    director!.previewGesture('wave');
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'IDLE', gesture: 'small_wave' }));
+    now = 6800;
+    internal.frame(0.1, 5.8);
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith({ ...completed, state: 'IDLE', gesture: 'none' });
+    director!.useSpeechTrack({ ...track, finished: false });
+    expect(loaded.applyDirective).toHaveBeenLastCalledWith(completed);
+  });
+
+  it('cancels the old gesture lease when a newer conversation turn arrives', async () => {
+    controls.avatarLoad!.resolve();
+    await controls.avatarLoad!.promise;
+    await Promise.resolve();
+    const loaded = controls.metahuman[0];
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    director!.previewGesture('wave');
+    const next: CharacterDirective = { state: 'LISTENING', expression: 'focused', gesture: 'none', intensity: 0.6 };
+    director!.applyDirective(next);
+    loaded.applyDirective.mockClear();
+    now = 4000;
+    (director as unknown as { frame(dt: number, elapsed: number): void }).frame(0.1, 3);
+    expect(loaded.applyDirective).not.toHaveBeenCalled();
+    expect(loaded.state).toBe('LISTENING');
+  });
+
   it('disposes a character that completes after teardown without mounting or announcing it', async () => {
     const loaded = controls.metahuman[0];
     const onStatus = vi.fn();

@@ -26,12 +26,24 @@ function fixture() {
     const neck = add(spine, 'neck_02', 0.15);
     const head = add(neck, 'head', 0.1);
     const eye = add(head, 'FACIAL_L_Eye', 0.075);
+    const eyeRight = add(head, 'FACIAL_R_Eye', 0.075);
     const jaw = add(head, 'FACIAL_C_Jaw', -0.05);
     const lips = add(head, 'FACIAL_C_LowerLipRotation', -0.05);
     const brow = add(head, 'FACIAL_L_ForeheadIn', 0.09);
     const corner = add(head, 'FACIAL_L_LipCorner', -0.03);
     corner.position.x = 0.03;
     const lids = ['UpperA', 'UpperB', 'LowerA', 'LowerB'].map((lid) => add(head, `FACIAL_L_Eyelid${lid}`, 0.075));
+    const lidsRight = ['UpperA', 'UpperB', 'LowerA', 'LowerB'].map((lid) => add(head, `FACIAL_R_Eyelid${lid}`, 0.075));
+    // C6's inner corner has less clearance than its central lid. These
+    // measured offsets exercise the pinch that whole-lid rotation can cause.
+    const margins = [lids, lidsRight].map((side, index) => {
+      const label = index ? 'R' : 'L';
+      const upper = add(side[0], `FACIAL_${label}_EyelidUpperA1`, index ? 0.0016 : 0.0022);
+      upper.position.z = index ? 0.015 : 0.0145;
+      const lower = add(side[2], `FACIAL_${label}_EyelidLowerA1`, index ? -0.0068 : -0.0075);
+      lower.position.z = index ? 0.013 : 0.012;
+      return { upper, lower };
+    });
     const arms = ['l', 'r'].map((side) => {
       const arm = add(spine, `upperarm_${side}`, 0);
       arm.position.x = side === 'l' ? 0.15 : -0.15;
@@ -42,7 +54,7 @@ function fixture() {
       return { arm, lower, hand };
     });
     rig.add(new THREE.Mesh(geometry, material));
-    return { rig, spine, neck, head, eye, jaw, lips, lids, arms, brow, corner };
+    return { rig, spine, neck, head, eye, eyeRight, jaw, lips, lids, lidsRight, margins, arms, brow, corner };
   });
   const hairGeometry = new THREE.BufferGeometry();
   hairGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 1.6, 0, 0.1, 1.7, 0, 0, 1.85, 0], 3));
@@ -150,7 +162,88 @@ describe('MetaHumanAvatar', () => {
       maxBlink = Math.max(maxBlink, model.rigs[1].lids[0].quaternion.angleTo(new THREE.Quaternion()));
     }
     expect(maxBlink).toBeGreaterThan(0.5);
-    expect(model.rigs[1].lids[0].quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-5);
+    // The idle pose is now softly relaxed, rather than the wide-open bind pose.
+    const restingLid = model.rigs[1].lids[0].quaternion.angleTo(new THREE.Quaternion());
+    expect(restingLid).toBeGreaterThan(0.02);
+    expect(restingLid).toBeLessThan(0.12);
+    avatar.dispose();
+  });
+
+  it('winks only the requested eye, keeps speech independent, and restores relaxed lids', async () => {
+    const model = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(loaded(model.scene));
+    const avatar = new MetaHumanAvatar();
+    await avatar.load();
+    avatar.update(0.1, context);
+    const face = model.rigs[1];
+    const rest = [face.lids, face.lidsRight].map((lids) => lids.map((lid) => lid.quaternion.clone()));
+    const marginRest = face.margins.map(({ upper, lower }) => [upper.position.clone(), lower.position.clone()]);
+    avatar.setViseme('AA', 1);
+    for (const [side, active] of [['left', 0], ['right', 1]] as const) {
+      avatar.wink(side);
+      avatar.update(0.1, context);
+      const sides = [face.lids, face.lidsRight];
+      expect(sides[active][0].quaternion.angleTo(rest[active][0])).toBeGreaterThan(0.5);
+      expect(sides[1 - active][0].quaternion.angleTo(rest[1 - active][0])).toBeLessThan(1e-7);
+      expect(face.jaw.quaternion.angleTo(new THREE.Quaternion())).toBeGreaterThan(0.08);
+      const margin = face.margins[active];
+      const gap = model.scene.worldToLocal(margin.upper.getWorldPosition(new THREE.Vector3())).y
+        - model.scene.worldToLocal(margin.lower.getWorldPosition(new THREE.Vector3())).y;
+      expect(gap).toBeGreaterThanOrEqual(0.000349);
+      for (let i = 0; i < 6; i++) avatar.update(0.1, context);
+      sides.forEach((lids, index) => lids.forEach((lid, joint) => {
+        expect(lid.quaternion.angleTo(rest[index][joint])).toBeLessThan(1e-7);
+      }));
+      face.margins.forEach(({ upper, lower }, index) => {
+        expect(upper.position.distanceTo(marginRest[index][0])).toBeLessThan(1e-7);
+        expect(lower.position.distanceTo(marginRest[index][1])).toBeLessThan(1e-7);
+      });
+    }
+    avatar.dispose();
+  });
+
+  it('uses bounded conjugate eye fixations, and stops idle eye motion for reduced motion', async () => {
+    const model = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(loaded(model.scene));
+    const avatar = new MetaHumanAvatar();
+    await avatar.load();
+    const face = model.rigs[1];
+    const poses: THREE.Quaternion[] = [];
+    for (let frame = 0; frame < 600; frame++) {
+      avatar.update(1 / 60, { ...context, elapsed: frame / 60, reducedMotion: false });
+      expect(face.eye.quaternion.angleTo(face.eyeRight.quaternion)).toBeLessThan(1e-7);
+      expect(face.eye.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(0.04);
+      if (frame % 30 === 0) poses.push(face.eye.quaternion.clone());
+    }
+    expect(poses.some((pose) => pose.angleTo(poses[0]) > 0.005)).toBe(true);
+    avatar.update(0.1, context);
+    const reducedPose = face.eye.quaternion.clone();
+    const reducedLid = face.lids[0].quaternion.clone();
+    for (let frame = 0; frame < 300; frame++) {
+      avatar.update(0.1, { ...context, elapsed: frame / 10 });
+      expect(face.eye.quaternion.angleTo(reducedPose)).toBeLessThan(1e-7);
+      expect(face.lids[0].quaternion.angleTo(reducedLid)).toBeLessThan(1e-7);
+    }
+    avatar.dispose();
+  });
+
+  it('lets warmth reach the eyelids without adding expression offsets to a full wink', async () => {
+    const model = fixture();
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockResolvedValue(loaded(model.scene));
+    const avatar = new MetaHumanAvatar();
+    await avatar.load();
+    const face = model.rigs[1];
+    avatar.applyDirective({ ...DEFAULT_DIRECTIVE, expression: 'neutral', intensity: 1 });
+    avatar.update(0.1, context);
+    const neutral = face.lids.map((lid) => lid.quaternion.clone());
+    avatar.applyDirective({ ...DEFAULT_DIRECTIVE, expression: 'smile', intensity: 1 });
+    avatar.update(0.1, context);
+    expect(face.lids[0].quaternion.angleTo(neutral[0])).toBeGreaterThan(0.03);
+    expect(face.lids[2].quaternion.angleTo(neutral[2])).toBeGreaterThan(0.02);
+    avatar.wink();
+    avatar.update(0.1, context);
+    expect(face.lids[0].quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo(0.6, 6);
+    expect(face.lids[2].quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo(0.15, 6);
     avatar.dispose();
   });
 

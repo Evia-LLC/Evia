@@ -66,8 +66,10 @@ variables; the local launcher supplies them. Provider and encryption keys remain
 
 The default character is the supplied C6 nurse MetaHuman, served from
 `public/character/evia/evia-metahuman.glb`. The adapter keeps her body and face rigs
-aligned and adds gaze, blinking, restrained expressions, gestures, and audio-driven
-jaw movement. This export contains no animation clips or facial blendshapes and
+aligned and adds gaze, blinking, one-eye winks, restrained expressions, gestures,
+and audio-driven jaw movement. The eye materials reflect softbox lighting; the
+2K hair atlas and multisample edge smoothing preserve finer strands.
+This export contains no animation clips or facial blendshapes and
 has one nurse outfit. See [asset provenance and conversion](public/character/evia/README.md).
 
 For a frontend-only preview, run `npm run dev:web` and choose **Look around without
@@ -75,6 +77,13 @@ an account**. This tests the character and local guest conversation; accounts,
 saved history, and provider-backed services still require the API. A loading
 caption identifies the character download, and a failed model download falls
 back to the existing illustrated avatar with a visible notice.
+
+On the Talk page, choose **Meet Evia** to try **Wink**, **Wave**, **Open hands**, and
+**Hear Evia**. The voice button plays a shipped recording with mouth movement
+driven by its actual audio envelope. It works in guest mode without the API and
+does not enable speech for later replies. **Stop voice** or returning to the
+conversation stops that sample. Arbitrary replies in her licensed voice still
+require the server voice provider; the offline sample is not dynamic synthesis.
 
 ---
 

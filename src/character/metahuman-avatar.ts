@@ -10,6 +10,7 @@ import type { CharacterDirective, Viseme } from '@shared/types.ts';
 import type { AvatarContext, ElohimAvatar, Outfit } from './types.ts';
 import { CharacterStateMachine } from './state-machine.ts';
 import { EXPRESSION_POSES, STATE_POSES } from './expressions.ts';
+import { configureMetaHumanMaterials, type MetaHumanMaterialOptions } from './metahuman-materials.ts';
 
 export const METAHUMAN_URL = '/character/evia/evia-metahuman.glb';
 const EYE_HEIGHT = 1.6;
@@ -88,6 +89,10 @@ function releaseModel(root: THREE.Object3D): void {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const finiteUnit = (value: number): number => Number.isFinite(value) ? clamp(value, 0, 1) : 0;
+const smooth = (value: number): number => {
+  const t = clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
+};
 
 export class MetaHumanAvatar implements ElohimAvatar {
   /** The director owns this floor-level position and yaw. */
@@ -113,7 +118,11 @@ export class MetaHumanAvatar implements ElohimAvatar {
   private blinkWait = 2.8;
   private blinkAge = -1;
   private blinkCount = 0;
-  private expression = { inner: 0, outer: 0, smile: 0, tilt: 0 };
+  private winkAge = -1;
+  private winkSide: 'L' | 'R' = 'L';
+  private eyeMotion = { yaw: 0, pitch: 0, targetYaw: 0, targetPitch: 0, wait: 0.7 };
+  private eyeSeed = 0x6c657669;
+  private expression = { inner: 0, outer: 0, smile: 0, tilt: 0, lid: 0, squint: 0 };
   private gesture = { open: 0, point: 0, wave: 0, chin: 0, lean: 0 };
 
   private readonly axis = new THREE.Vector3();
@@ -121,10 +130,12 @@ export class MetaHumanAvatar implements ElohimAvatar {
   private readonly modelRotation = new THREE.Quaternion();
   private readonly parentRotation = new THREE.Quaternion();
   private readonly offsetRotation = new THREE.Quaternion();
+  private readonly materialOptions: MetaHumanMaterialOptions;
 
   onDirectiveRejected: ((info: { reason: string; detail: string }) => void) | null = null;
 
-  constructor() {
+  constructor(materialOptions: MetaHumanMaterialOptions = {}) {
+    this.materialOptions = materialOptions;
     this.root.name = 'EviaMetaHuman';
     this.figure.name = 'EviaFigure';
     this.root.add(this.figure);
@@ -203,8 +214,8 @@ export class MetaHumanAvatar implements ElohimAvatar {
         for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
           material.transparent = false;
           material.alphaTest = 0.12;
-          // Stage has no MSAA. Coverage here leaves partial output alpha and
-          // bright fringes in captures; use the atlas's ordinary alpha test.
+          // Safe default until material adaptation reads the actual renderer
+          // context; coverage requires supported multisample antialiasing.
           material.alphaToCoverage = false;
           material.depthWrite = true;
           material.needsUpdate = true;
@@ -213,6 +224,8 @@ export class MetaHumanAvatar implements ElohimAvatar {
       model.updateMatrixWorld(true);
       if (!(hair as THREE.SkinnedMesh).isSkinnedMesh) face.get('head')!.bone.attach(hair);
     }
+
+    configureMetaHumanMaterials(model, this.materialOptions);
 
     const animated: RestBone[] = [];
     for (const bones of [body, face]) {
@@ -229,6 +242,10 @@ export class MetaHumanAvatar implements ElohimAvatar {
       for (const lid of ['UpperA', 'UpperB', 'LowerA', 'LowerB']) {
         const bone = face.get(`FACIAL_${side}_Eyelid${lid}`);
         if (bone) animated.push(bone);
+        for (const index of [1, 2, 3]) {
+          const margin = face.get(`FACIAL_${side}_Eyelid${lid}${index}`);
+          if (margin) animated.push(margin);
+        }
       }
       for (const part of ['Eye', 'ForeheadIn', 'ForeheadInSkin', 'ForeheadMid', 'ForeheadMidSkin', 'ForeheadOut', 'ForeheadOutSkin', 'LipCorner']) {
         const bone = face.get(`FACIAL_${side}_${part}`);
@@ -272,6 +289,16 @@ export class MetaHumanAvatar implements ElohimAvatar {
 
   lookAt(target: THREE.Vector3 | null): void {
     this.gazeTarget = target?.clone() ?? null;
+  }
+
+  /** An intentional, one-shot action; reduced motion only disables idle motion. */
+  wink(side: 'left' | 'right' = 'left'): void {
+    if (this.disposed) return;
+    this.winkSide = side === 'right' ? 'R' : 'L';
+    this.winkAge = 0;
+    // Do not let a scheduled blink turn a requested wink into two shut eyes.
+    this.blinkAge = -1;
+    this.blinkWait = 2.8;
   }
 
   stats(): { meshes: number; triangles: number } {
@@ -389,7 +416,7 @@ export class MetaHumanAvatar implements ElohimAvatar {
   }
 
   private blink(delta: number, reduced: boolean): number {
-    if (reduced) {
+    if (reduced || this.winkAge >= 0) {
       this.blinkAge = -1;
       return 0;
     }
@@ -404,13 +431,47 @@ export class MetaHumanAvatar implements ElohimAvatar {
       this.blinkWait = 3.6 + Math.sin(++this.blinkCount * 2.4) * 0.8;
       return 0;
     }
-    const smooth = (t: number): number => {
-      const v = clamp(t, 0, 1);
-      return v * v * (3 - 2 * v);
-    };
     return this.blinkAge < 0.09
       ? smooth(this.blinkAge / 0.09)
       : 1 - smooth((this.blinkAge - 0.13) / 0.14);
+  }
+
+  private winkClosure(delta: number): number {
+    if (this.winkAge < 0) return 0;
+    this.winkAge += delta;
+    if (this.winkAge >= 0.46) {
+      this.winkAge = -1;
+      return 0;
+    }
+    return this.winkAge < 0.1
+      ? smooth(this.winkAge / 0.1)
+      : 1 - smooth((this.winkAge - 0.22) / 0.24);
+  }
+
+  /** Short fixations, not a looping sine-wave stare; both eyes stay conjugate. */
+  private updateEyeMotion(delta: number, reduced: boolean, idleScale: number): void {
+    const motion = this.eyeMotion;
+    if (reduced) {
+      motion.yaw = motion.pitch = motion.targetYaw = motion.targetPitch = 0;
+      motion.wait = 0.7;
+      return;
+    }
+    motion.wait -= delta;
+    if (motion.wait <= 0) {
+      // A private seeded generator avoids global randomness and makes the
+      // bounded motion reproducible in recorded previews and regression tests.
+      const sample = (): number => {
+        this.eyeSeed = (Math.imul(this.eyeSeed, 1664525) + 1013904223) >>> 0;
+        return this.eyeSeed / 0x100000000;
+      };
+      const scale = clamp(idleScale, 0.25, 1);
+      motion.targetYaw = (sample() * 2 - 1) * 0.018 * scale;
+      motion.targetPitch = (sample() * 2 - 1) * 0.012 * scale;
+      motion.wait = 0.65 + sample() * 1.85;
+    }
+    const easing = 1 - Math.exp(-35 * delta);
+    motion.yaw += (motion.targetYaw - motion.yaw) * easing;
+    motion.pitch += (motion.targetPitch - motion.pitch) * easing;
   }
 
   update(dt: number, ctx: AvatarContext): void {
@@ -452,8 +513,10 @@ export class MetaHumanAvatar implements ElohimAvatar {
       outer: clamp(expressionPose.browOuter * intensity * 0.35, -0.002, 0.0034),
       smile: clamp(expressionPose.mouthCurve * intensity * 0.3, -0.0015, 0.0035),
       tilt: expressionPose.headTilt * intensity * 0.5,
+      lid: clamp((1 - expressionPose.lidOpen) * intensity * 0.24, -0.035, 0.08),
+      squint: clamp(expressionPose.lidSquint * intensity, 0, 0.72),
     };
-    for (const key of ['inner', 'outer', 'smile', 'tilt'] as const) {
+    for (const key of ['inner', 'outer', 'smile', 'tilt', 'lid', 'squint'] as const) {
       this.expression[key] += (expressionTargets[key] - this.expression[key]) * easing;
     }
     const envelope = (duration: number): number => {
@@ -503,12 +566,12 @@ export class MetaHumanAvatar implements ElohimAvatar {
       this.rotate(bones, 'head', Z, tilt);
     }
     const leftWeight = Math.max(this.gesture.open, this.gesture.point);
-    const leftTarget = new THREE.Vector3(0.3, 1.22, 0.29).lerp(new THREE.Vector3(0.46, 1.34, 0.19), this.gesture.point);
+    const leftTarget = new THREE.Vector3(0.2, 1.32, 0.18).lerp(new THREE.Vector3(0.46, 1.34, 0.19), this.gesture.point);
     const leftDirection = new THREE.Vector3(0.15, 0.05, 1).lerp(new THREE.Vector3(1, 0.2, 0.3), this.gesture.point).normalize();
     this.poseArm('l', leftTarget, leftWeight, leftDirection, Y);
     const rightWeight = Math.max(this.gesture.open, this.gesture.wave, this.gesture.chin);
-    const rightTarget = new THREE.Vector3(-0.3, 1.22, 0.29)
-      .lerp(new THREE.Vector3(-0.36, 1.53, 0.14), this.gesture.wave)
+    const rightTarget = new THREE.Vector3(-0.2, 1.32, 0.18)
+      .lerp(new THREE.Vector3(-0.22, 1.55, 0.12), this.gesture.wave)
       .lerp(new THREE.Vector3(-0.13, 1.46, 0.23), this.gesture.chin);
     const rightDirection = new THREE.Vector3(-0.15, 0.05, 1).lerp(Y, Math.max(this.gesture.wave, this.gesture.chin)).normalize();
     const rightPalm = Y.clone().lerp(Z, this.gesture.wave);
@@ -525,9 +588,13 @@ export class MetaHumanAvatar implements ElohimAvatar {
       const body = this.body.get(`upperarm_${side}`), face = this.face.get(`upperarm_${side}`);
       if (body && face) face.bone.quaternion.copy(body.bone.quaternion).multiply(body.quaternion.clone().invert()).multiply(face.quaternion);
     }
+    this.updateEyeMotion(delta, ctx.reducedMotion, statePose.idleScale);
+    // Counter the small idle head turn and nod so eye contact survives them.
+    const eyeYaw = clamp(fullYaw - this.yaw - drift + this.eyeMotion.yaw, -0.12, 0.12);
+    const eyePitch = clamp(fullPitch - this.pitch - nod + this.eyeMotion.pitch, -0.1, 0.1);
     for (const side of ['L', 'R']) {
-      this.rotate(this.face, `FACIAL_${side}_Eye`, Y, clamp(fullYaw - this.yaw, -0.12, 0.12));
-      this.rotate(this.face, `FACIAL_${side}_Eye`, X, clamp(fullPitch - this.pitch, -0.1, 0.1));
+      this.rotate(this.face, `FACIAL_${side}_Eye`, Y, eyeYaw);
+      this.rotate(this.face, `FACIAL_${side}_Eye`, X, eyePitch);
       for (const suffix of ['', 'Skin']) {
         this.shift(`FACIAL_${side}_ForeheadIn${suffix}`, this.expression.inner);
         this.shift(`FACIAL_${side}_ForeheadMid${suffix}`, (this.expression.inner + this.expression.outer) / 2);
@@ -538,14 +605,41 @@ export class MetaHumanAvatar implements ElohimAvatar {
     this.rotate(this.face, 'FACIAL_C_Jaw', X, this.jaw);
     this.rotate(this.face, 'FACIAL_C_LowerLipRotation', X, this.jaw);
     const blink = this.blink(delta, ctx.reducedMotion);
+    const wink = this.winkClosure(delta);
     for (const side of ['L', 'R']) {
       // The C6 A roots carry the lid margin and lashes; B carries the crease.
-      // Measured against the exported eyelid vertices: a restrained closure
-      // leaves a small gap instead of intersecting at the inner corners.
-      this.rotate(this.face, `FACIAL_${side}_EyelidUpperA`, X, 0.6 * blink);
-      this.rotate(this.face, `FACIAL_${side}_EyelidUpperB`, X, 0.48 * blink);
-      this.rotate(this.face, `FACIAL_${side}_EyelidLowerA`, X, -0.15 * blink);
-      this.rotate(this.face, `FACIAL_${side}_EyelidLowerB`, X, -0.12 * blink);
+      // Lower the resting upper lid slightly, and let warm expressions reach
+      // the lower lid. Pitch follow keeps the lid close to the moving iris.
+      const upperRest = clamp(0.045 + this.expression.lid + this.expression.squint * 0.025 + eyePitch * 0.6, 0, 0.16);
+      const lowerRest = clamp(-this.expression.squint * 0.055 + eyePitch * 0.2, -0.065, 0.02);
+      const closure = Math.max(blink, side === this.winkSide ? wink : 0);
+      // Blend TO the measured blink endpoints, never add a closure on top of
+      // the smile/follow pose: addition can drive C6's inner corners together.
+      const upper = THREE.MathUtils.lerp(upperRest, 0.6, closure);
+      const lower = THREE.MathUtils.lerp(lowerRest, -0.15, closure);
+      this.rotate(this.face, `FACIAL_${side}_EyelidUpperA`, X, upper);
+      this.rotate(this.face, `FACIAL_${side}_EyelidUpperB`, X, upper * 0.8);
+      this.rotate(this.face, `FACIAL_${side}_EyelidLowerA`, X, lower);
+      this.rotate(this.face, `FACIAL_${side}_EyelidLowerB`, X, lower * 0.8);
+      if (closure > 0.25) {
+        // The inner margins are asymmetric: rotating the entire lid equally
+        // can cross C6's right inner corner by 2.4 mm. Split a small correction
+        // across the two margin controls, retaining a 0.35 mm seam. Their lash
+        // children follow, and the crease follows at a reduced amount.
+        for (const index of [1, 2, 3]) {
+          const upperName = `FACIAL_${side}_EyelidUpperA${index}`;
+          const lowerName = `FACIAL_${side}_EyelidLowerA${index}`;
+          const upperBone = this.face.get(upperName)?.bone;
+          const lowerBone = this.face.get(lowerName)?.bone;
+          if (!upperBone || !lowerBone) continue;
+          const separation = this.modelPoint(upperBone).y - this.modelPoint(lowerBone).y;
+          const correction = clamp((0.00035 - separation) * 0.5, 0, 0.0016);
+          this.shift(upperName, correction);
+          this.shift(lowerName, -correction);
+          this.shift(`FACIAL_${side}_EyelidUpperB${index}`, correction * 0.6);
+          this.shift(`FACIAL_${side}_EyelidLowerB${index}`, -correction * 0.6);
+        }
+      }
     }
     this.root.updateMatrixWorld(true);
   }
