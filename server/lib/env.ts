@@ -9,13 +9,31 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertEnvGuard } from './env-guard.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const envFile = path.join(root, '.env');
 
-if (fs.existsSync(envFile)) {
+if (fs.existsSync(envFile) && process.env.NODE_ENV !== 'test') {
   process.loadEnvFile(envFile);
 }
+
+/*
+ * Cross-environment startup guard: refuse to boot when APP_ENV names a lane
+ * whose Supabase project ref does not match SUPABASE_URL (staging wired to
+ * production credentials or vice versa). APP_ENV unset (local/dev/CI/test) =
+ * inactive, zero behavior change.
+ *
+ * This module is the earliest single point every boot path evaluates:
+ * server/index.ts and server/app.ts both import it first, and both function
+ * adapters (netlify/functions/api.mts, server/vercel.ts) reach it through
+ * server/app.ts — so this one call covers the server and both functions
+ * BEFORE migrations/sessions, and ready() carries no second wiring. ready()
+ * was deliberately not chosen: both adapters catch ready() failures into a
+ * generic 503 "no database" response, which would mute a cross-env refusal;
+ * an import-time throw here fails the boot loudly on every path instead.
+ */
+assertEnvGuard();
 
 /*
  * Demo mode gives a fresh local checkout a working account and a real scan
@@ -43,8 +61,11 @@ const DEPLOYED = Boolean(
     process.env.AWS_LAMBDA_FUNCTION_NAME ||
     process.env.NODE_ENV === 'production',
 );
-const DATABASE = process.env.NETLIFY_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
-const LOCAL_DATABASE = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(DATABASE);
+const LOCAL_DATABASE = (() => {
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.SUPABASE_URL ?? '').hostname);
+  } catch { return false; }
+})();
 if (process.env.DEMO_MODE === undefined && !DEPLOYED && LOCAL_DATABASE) {
   process.env.DEMO_MODE = '1';
 }

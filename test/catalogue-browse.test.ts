@@ -52,6 +52,24 @@ const profile: SkinProfile = {
   updatedAt: '2026-09-20T00:00:00.000Z',
 };
 
+// Rate-limit buckets live in the database now (main's P1-T02); these route tests
+// have no database, so every limiter lets the request through, as in main's tests.
+vi.mock('../server/lib/rate-limit.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../server/lib/rate-limit.ts')>();
+  const pass = (_req: unknown, _res: unknown, next: () => void) => next();
+  return {
+    ...actual,
+    rateLimit: () => pass,
+    loginLimiter: pass,
+    registerLimiter: pass,
+    chatLimiter: pass,
+    visionLimiter: pass,
+    voiceLimiter: pass,
+    guestVoiceLimiter: pass,
+    scanLimiter: pass,
+  };
+});
+
 vi.mock(import('../server/db/users.ts'), async (importOriginal) => ({
   ...(await importOriginal()),
   userIdForSession: vi.fn(async (token: string) => (token === 'good-token' ? 'user-1' : null)),

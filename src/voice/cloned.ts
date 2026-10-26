@@ -31,6 +31,7 @@
  */
 import type { SpeakHandle, SpeechBoundary } from './synthesis.ts';
 import { audioContext, audioRunning } from '@/lib/sound.ts';
+import { voiceCapabilityGranted, type HealthCapabilities } from '@/lib/api.ts';
 
 /** How often the envelope is sampled, in Hz. Fast enough for syllables. */
 const ENVELOPE_HZ = 40;
@@ -262,8 +263,8 @@ export class ClonedSpeaker {
     }
     const [server, shipped] = await Promise.all([
       fetch('/api/health')
-        .then((r) => r.json() as Promise<{ clonedVoice?: boolean; guestVoice?: boolean }>)
-        .then((body) => (guest ? body.guestVoice === true : body.clonedVoice === true))
+        .then((r) => r.json() as Promise<HealthCapabilities>)
+        .then((body) => voiceCapabilityGranted(body, guest))
         .catch(() => false),
       fetch('/voice/manifest.json')
         .then((r) => (r.ok ? (r.json() as Promise<Record<string, ShippedEntry>>) : null))
@@ -290,9 +291,9 @@ export class ClonedSpeaker {
     if (now - this.lastServerProbe < 10_000) return;
     this.lastServerProbe = now;
     void fetch('/api/health')
-      .then((r) => r.json() as Promise<{ clonedVoice?: boolean; guestVoice?: boolean }>)
+      .then((r) => r.json() as Promise<HealthCapabilities>)
       .then((body) => {
-        if (guest ? body.guestVoice === true : body.clonedVoice === true) this.serverVoice = true;
+        if (voiceCapabilityGranted(body, guest)) this.serverVoice = true;
       })
       .catch(() => undefined);
   }

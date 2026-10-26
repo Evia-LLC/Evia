@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const api = fs.readFileSync(new URL('../server/routes/api.ts', import.meta.url), 'utf8');
 const scans = fs.readFileSync(new URL('../server/db/scans.ts', import.meta.url), 'utf8');
 const photos = fs.readFileSync(new URL('../server/db/progress-photos.ts', import.meta.url), 'utf8');
-const migration = fs.readFileSync(new URL('../server/db/migrations/014_progress_photos.sql', import.meta.url), 'utf8');
+const migration = fs.readFileSync(new URL('../supabase/migrations/20261013000000_application.sql', import.meta.url), 'utf8');
 const controller = fs.readFileSync(new URL('../src/state/controller.ts', import.meta.url), 'utf8');
 
 const scanSubmit = api.slice(api.indexOf("apiRouter.post('/scans',"), api.indexOf('function sanitiseLandmarks'));
@@ -13,7 +13,7 @@ const photoSave = api.slice(api.indexOf("apiRouter.post('/scans/:id/progress-pho
 
 describe('progress-photo privacy boundary', () => {
   it('stores structured analysis without writing a scan image ref', () => {
-    expect(scans).toContain('    null,\n    null,');
+    expect(scans).toContain('image_ref: null, thumb_ref: null');
     expect(scans).not.toContain('refs.imageRef ?? null');
   });
 
@@ -32,7 +32,7 @@ describe('progress-photo privacy boundary', () => {
 
   it('makes a retry idempotent per account and scan', () => {
     expect(migration).toContain('UNIQUE (user_id, skin_scan_id)');
-    expect(photos).toContain('ON CONFLICT (user_id, skin_scan_id) DO NOTHING');
+    expect(photos).toContain("rpc('evia_create_progress_photo'");
   });
 
   it('keeps raw bytes out of scan and blob records unless explicitly saved', () => {
@@ -44,13 +44,13 @@ describe('progress-photo privacy boundary', () => {
   it('shreds a selected progress photo on deletion and account deletion', () => {
     expect(api).toContain("apiRouter.delete('/progress-photos/:id'");
     const deleteService = fs.readFileSync(new URL('../server/privacy/delete-account.ts', import.meta.url), 'utf8');
-    expect(deleteService).toContain('progressPhotos.allProgressPhotoRefs');
+    expect(deleteService).toContain("rpc('evia_delete_account'");
     expect(api).toContain('await shredBlob(ref)');
   });
 
   it('scopes reads and deletes to the authenticated owner', () => {
-    expect(photos).toContain('WHERE id = ? AND user_id = ?');
-    expect(photos).toContain("DELETE FROM progress_photos WHERE id = ? AND user_id = ?");
+    expect(photos).toContain(".eq('id', id).eq('user_id', userId)");
+    expect(photos).toContain("p_user_id: userId, p_id: id");
   });
 
   it('does not define biometric columns on progress photos', () => {

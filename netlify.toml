@@ -1,10 +1,7 @@
-# Elohim on Netlify.
+# Evia on Netlify.
 #
 # The browser half is a static build; the API is one function running the same
-# Express app the local server runs. The database is any hosted Postgres,
-# reached through DATABASE_URL (see RUNBOOK.md) — the app used to keep its data
-# in a SQLite file, and a file does not survive a platform that rebuilds the
-# filesystem for every request.
+# Express app the local server runs. All runtime persistence uses the Supabase Data API.
 
 [build]
   command = "npm run build"
@@ -17,10 +14,6 @@
 
 [functions]
   node_bundler = "esbuild"
-  # `migrate()` reads these off disk with readdirSync at runtime. Without this
-  # the bundle contains the code that looks for them and none of the files, and
-  # the first request to a cold instance dies on an empty migrations directory.
-  included_files = ["server/db/migrations/**"]
 
 # Single page. Anything that is not a real file, and not the API function
 # above, is the app. Declared after the function so it cannot swallow /api.

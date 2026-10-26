@@ -1,8 +1,8 @@
-# Elohim
+# Evia
 
 An AI beauty and skincare consultant who happens to have a physical digital presence.
 
-Elohim is conversation-first. You talk to her; she asks about your skin, and when it would
+Evia is conversation-first. You talk to her; she asks about your skin, and when it would
 actually help, the room changes and she takes a proper look. She is not a selfie scanner
 with a chat box attached.
 
@@ -22,14 +22,15 @@ npm install
 npm run dev
 ```
 
-That starts three processes: a local database, the API on `127.0.0.1:5196`, and Vite on
+Install the Supabase CLI and start Docker or Podman first. The launcher starts a
+persistent local Supabase stack, the API on `127.0.0.1:5196`, and Vite on
 `127.0.0.1:5195`. Open **http://127.0.0.1:5195**.
 
-The database is Postgres. With `DATABASE_URL` (or `NETLIFY_DATABASE_URL`) set, the API
-uses that. With neither set, `scripts/dev-db.mjs` starts PGlite — Postgres compiled to
-WebAssembly, run in-process behind a local socket — so a fresh checkout runs with nothing
-installed. Its data lives in `data/pglite/` and survives restarts; delete the folder to
-start over.
+All application persistence uses the Supabase Data API through the server.
+The launcher obtains local credentials without printing them and overrides inherited
+hosted targets. Local data survives API restarts. Schema migrations live in
+`supabase/migrations/` and run through the CLI, never at application boot.
+See [the data access and release contract](docs/DATA_API_ADR.md).
 
 Node 24 is required — the server runs `.ts` directly with native type-stripping, so there
 is no build step.
@@ -51,8 +52,8 @@ labelled `DEMO FIXTURE` on every scan.
 
 ### Configuration
 
-Copy `.env.example` to `.env`. Everything is optional; each thing you leave unset degrades
-in a stated way rather than silently.
+Copy `.env.example` to `.env`. Hosted persistence requires the three server-only Supabase
+variables; the local launcher supplies them. Provider and encryption keys remain optional.
 
 | Variable | Effect when unset |
 |---|---|
@@ -72,7 +73,7 @@ Per §33 of the brief, nothing fakes. Specifically:
   pixels in CIELAB, and the pipeline is deterministic — the same image always produces the
   same numbers. Formulas and their calibration are in `src/skin-analysis/metrics.ts`.
 - **The progress bar tracks the actual pipeline**, not a timer.
-- **Every number Elohim says comes out of SQLite.** If she says your hydration improved, it
+- **Every persisted number Evia says comes from Postgres through the Data API.** If she says your hydration improved, it
   improved.
 - **A change smaller than the metric's noise floor is reported as "holding steady"**, not
   as progress.
@@ -90,7 +91,7 @@ on every message, and it reads the same real data the model would.
 ### Talking to her
 
 Tap the microphone and speak; the composer fills in live with what she is hearing. Turn on
-*Let Elohim speak* in Profile and she reads her replies aloud, with her mouth locked to the
+*Let Evia speak* in Profile and she reads her replies aloud, with her mouth locked to the
 audio. You can pick her voice there too — the default is the best feminine voice your
 system has installed.
 
@@ -109,9 +110,10 @@ so whenever it meets something it does not know.
 ## Layout
 
 ```
-server/           API. Express + node:sqlite.
+server/           API. Express + Supabase Data API.
   ai/             persona, classification, context retrieval, orchestrator, fallback
-  db/             migrations and repositories
+  db/             typed domain repositories
+supabase/         out-of-band schema migrations and local stack configuration
   skin/           longitudinal model, ingredient assessment
   demo/           seeded fixtures
 shared/           the contract both sides import — types and the character FSM
@@ -138,6 +140,8 @@ still hold a correct conversation and store correct scans.
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run check        # svelte-check
+npm run test:unit    # no database/container required
+npm run test:data-api # disposable Supabase/PostgREST integration lane
 ```
 
 In a dev build the scene director is on `window.__elohim`:
@@ -191,7 +195,7 @@ the real thing.
 
 ## Positioning
 
-Elohim is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
+Evia is a beauty and skincare assistant with a clinical *aesthetic*. She is not a medical
 device. Observational phrasing is required and diagnostic phrasing is forbidden at the
 prompt level; a deterministic escalation check — which does not depend on the model being
 reachable — routes anything that sounds medical to a dermatologist instead of to a score.

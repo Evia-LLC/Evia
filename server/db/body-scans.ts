@@ -10,7 +10,7 @@
  * is a longitudinal engine that will one day chart a shoulder ratio against a
  * hydration score and present the result as progress.
  */
-import { row, rows, run } from './index.ts';
+import { database, result, allPages } from '../lib/data-api.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type { BodyAnalysisRecord } from '../../shared/types.ts';
 
@@ -55,26 +55,15 @@ export async function insertBodyScan(
   refs: { imageRef?: string; profileImageRef?: string } = {},
 ): Promise<BodyAnalysisRecord> {
   const id = newId();
-  await run(
-    `INSERT INTO body_scans (id, user_id, captured_at, image_ref, profile_image_ref,
-                             metrics_json, waist_source, profile_json, profile_detail_json,
-                             landmarks_json, confidence, model_version, profile_model_version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id,
-    userId,
-    analysis.capturedAt || nowIso(),
-    refs.imageRef ?? null,
-    refs.profileImageRef ?? null,
-    JSON.stringify(analysis.metrics),
-    analysis.waistSource,
-    analysis.profile ? JSON.stringify(analysis.profile) : null,
-    analysis.profileDetail ? JSON.stringify(analysis.profileDetail) : null,
-    JSON.stringify(analysis.landmarks ?? []),
-    // See scans.ts: NOT NULL column, and `pg` maps undefined to NULL.
-    analysis.confidence ?? 0,
-    analysis.modelVersion,
-    analysis.profileModelVersion ?? null,
-  );
+  await result(database().rpc('evia_insert_body_scan', { p_row: {
+    id, user_id: userId, captured_at: analysis.capturedAt || nowIso(),
+    image_ref: refs.imageRef ?? null, profile_image_ref: refs.profileImageRef ?? null,
+    metrics_json: JSON.stringify(analysis.metrics), waist_source: analysis.waistSource,
+    profile_json: analysis.profile ? JSON.stringify(analysis.profile) : null,
+    profile_detail_json: analysis.profileDetail ? JSON.stringify(analysis.profileDetail) : null,
+    landmarks_json: JSON.stringify(analysis.landmarks ?? []), confidence: analysis.confidence ?? 0,
+    model_version: analysis.modelVersion, profile_model_version: analysis.profileModelVersion ?? null,
+  } }));
   return {
     ...analysis,
     id,
@@ -85,21 +74,12 @@ export async function insertBodyScan(
 
 /** Newest first. */
 export async function listBodyScans(userId: string, limit = 50): Promise<BodyAnalysisRecord[]> {
-  return (await rows<BodyScanRow>(
-    'SELECT * FROM body_scans WHERE user_id = ? ORDER BY captured_at DESC LIMIT ?',
-    userId,
-    limit,
-  )).map(hydrate);
+  return (await result<BodyScanRow[]>(database().from('body_scans').select('id,user_id,captured_at,image_ref,profile_image_ref,metrics_json,waist_source,profile_json,profile_detail_json,landmarks_json,confidence,model_version,profile_model_version').eq('user_id', userId).order('captured_at', { ascending: false }).limit(limit))).map(hydrate);
 }
 
 /** Complete export list, without encrypted photo bytes or storage references. */
 export async function exportBodyScans(userId: string): Promise<BodyAnalysisRecord[]> {
-  return (await rows<BodyScanRow>(
-    `SELECT id, user_id, captured_at, image_ref, profile_image_ref, metrics_json, waist_source,
-            profile_json, profile_detail_json, landmarks_json, confidence, model_version,
-            profile_model_version FROM body_scans WHERE user_id = ? ORDER BY captured_at`,
-    userId,
-  )).map(hydrate);
+  return (await allPages<BodyScanRow>((from, to) => database().from('body_scans').select('id,user_id,captured_at,image_ref,profile_image_ref,metrics_json,waist_source,profile_json,profile_detail_json,landmarks_json,confidence,model_version,profile_model_version').eq('user_id', userId).order('captured_at').order('id').range(from, to))).map(hydrate);
 }
 
 export async function latestBodyScan(userId: string): Promise<BodyAnalysisRecord | null> {
@@ -120,10 +100,7 @@ export async function previousBodyScan(userId: string): Promise<BodyAnalysisReco
 
 /** Every blob ref this user owns here — account deletion shreds them. */
 export async function allBodyBlobRefs(userId: string): Promise<string[]> {
-  const all = await rows<{ image_ref: string | null; profile_image_ref: string | null }>(
-    'SELECT image_ref, profile_image_ref FROM body_scans WHERE user_id = ?',
-    userId,
-  );
+  const all = await allPages<{ image_ref: string | null; profile_image_ref: string | null }>((from, to) => database().from('body_scans').select('image_ref,profile_image_ref').eq('user_id', userId).order('id').range(from, to));
   const refs: string[] = [];
   for (const r of all) {
     if (r.image_ref) refs.push(r.image_ref);
@@ -132,21 +109,7 @@ export async function allBodyBlobRefs(userId: string): Promise<string[]> {
   return refs;
 }
 
-/**
- * Removes one reading and hands back the blobs it owned, for shredding.
- *
- * Returns the refs rather than deleting them itself so the caller owns the
- * order: the row goes first, and if blob storage then refuses, the record is
- * already gone. A picture with no row is an orphan; a row with no picture is
- * merely a scan whose image was dropped, and the reader is told which.
- */
+/** Deletes a reading and its encrypted assets in one database transaction. */
 export async function deleteBodyScan(userId: string, scanId: string): Promise<string[]> {
-  const found = await row<{ image_ref: string | null; profile_image_ref: string | null }>(
-    'SELECT image_ref, profile_image_ref FROM body_scans WHERE id = ? AND user_id = ?',
-    scanId,
-    userId,
-  );
-  if (!found) return [];
-  await run('DELETE FROM body_scans WHERE id = ? AND user_id = ?', scanId, userId);
-  return [found.image_ref, found.profile_image_ref].filter((r): r is string => Boolean(r));
+  return result<string[]>(database().rpc('evia_delete_body_scan', { p_user_id: userId, p_id: scanId }));
 }

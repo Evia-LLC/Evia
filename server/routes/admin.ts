@@ -11,6 +11,13 @@ import type { NextFunction, Request, Response } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { asyncRouter } from '../lib/async-router.ts';
 import { catalogueStatus, importCatalogue, listCatalogue, syncStore } from '../catalogue/store.ts';
+import { dayString, todaySummary } from '../ai/budget.ts';
+import { MODEL, modelAvailable } from '../ai/claude.ts';
+import { analysisProvider, perfectCorpAvailable, sampleDemoEnabled } from '../ai/perfectcorp.ts';
+import { blobStorageAvailable } from '../lib/crypto.ts';
+import { verifyDataApi, DATA_API_CONTRACT } from '../lib/data-api.ts';
+import { dataApiConfigured } from '../lib/supabase.ts';
+import { clonedVoiceAvailable, guestVoiceAllowed } from '../voice/tts.ts';
 import { log } from '../lib/log.ts';
 
 export const adminRouter = asyncRouter();
@@ -32,6 +39,44 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
 }
 
 adminRouter.use(requireAdmin);
+
+/**
+ * P1-T13 — operator diagnostics. The other half of the public capability
+ * check: everything the anonymous /api/health deliberately withholds.
+ *
+ * Spend totals are computed on demand here, never on health polls. Database
+ * state is counts and booleans only — never connection strings, hosts, or
+ * credentials. Provider detail is availability booleans plus public names,
+ * never keys, endpoints, or payloads. Reaching this handler at all means
+ * boot (`ready()`) succeeded, which is what `boot.ready` reports.
+ */
+adminRouter.get('/diagnostics', async (_req, res) => {
+  const summary = await todaySummary();
+  const configured = dataApiConfigured();
+  let reachable = false;
+  try { await verifyDataApi(); reachable = true; } catch { reachable = false; }
+  res.json({
+    ok: reachable,
+    day: dayString(),
+    budget: {
+      turns: summary.turns,
+      tokens: summary.tokens,
+      limits: summary.limits,
+    },
+    database: { configured, reachable, transport: 'postgrest', schemaCompatible: reachable, expectedContract: DATA_API_CONTRACT },
+    providers: {
+      model: { available: modelAvailable(), name: modelAvailable() ? MODEL : null },
+      voice: { configured: clonedVoiceAvailable(), guestsAllowed: guestVoiceAllowed() },
+      imageStorage: blobStorageAvailable(),
+      analysis: {
+        provider: analysisProvider(),
+        available: perfectCorpAvailable(),
+        sampleDemo: sampleDemoEnabled(),
+      },
+    },
+    boot: { ready: true },
+  });
+});
 
 adminRouter.get('/catalogue', async (_req, res) => {
   res.json({ status: await catalogueStatus(), products: await listCatalogue(1000) });

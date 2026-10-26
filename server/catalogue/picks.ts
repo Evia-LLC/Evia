@@ -28,7 +28,7 @@ import type {
   Offer,
   ProductPick,
   SkinProfile,
-} from '../../shared/types.ts';
+} from "../../shared/types.ts";
 
 /**
  * What a product's name tends to say when it contains an active. The INCI
@@ -36,30 +36,30 @@ import type {
  * shelf without ingredient lists still has names.
  */
 const ACTIVE_KEYWORDS: Record<string, RegExp> = {
-  'Salicylic Acid': /salicylic|bha\b/i,
-  'Azelaic Acid': /azelaic/i,
-  'Centella Asiatica': /centella|cica\b|madecassoside/i,
+  "Salicylic Acid": /salicylic|bha\b/i,
+  "Azelaic Acid": /azelaic/i,
+  "Centella Asiatica": /centella|cica\b|madecassoside/i,
   Niacinamide: /niacinamide|vitamin b3|b3\b/i,
   Retinol: /retinol|retinoid/i,
   Retinaldehyde: /retinal|retinaldehyde/i,
-  'Mandelic Acid': /mandelic/i,
-  'Tranexamic Acid': /tranexamic/i,
-  'Ascorbic Acid': /vitamin c|ascorbic|ascorb/i,
-  'Ethyl Ascorbic Acid': /vitamin c|ascorb/i,
-  'Hyaluronic Acid': /hyaluron|\bha\b|hydrat/i,
+  "Mandelic Acid": /mandelic/i,
+  "Tranexamic Acid": /tranexamic/i,
+  "Ascorbic Acid": /vitamin c|ascorbic|ascorb/i,
+  "Ethyl Ascorbic Acid": /vitamin c|ascorb/i,
+  "Hyaluronic Acid": /hyaluron|\bha\b|hydrat/i,
   Glycerin: /glycerin|hydrat|moistur/i,
-  'Ceramide NP': /ceramide|barrier/i,
+  "Ceramide NP": /ceramide|barrier/i,
   Squalane: /squalane/i,
   Caffeine: /caffeine|eye/i,
   Peptides: /peptide/i,
-  'Zinc Oxide': /spf|sunscreen|sun screen|mineral sun/i,
+  "Zinc Oxide": /spf|sunscreen|sun screen|mineral sun/i,
   Tinosorb: /spf|sunscreen/i,
   Avobenzone: /spf|sunscreen/i,
-  'Coco-Betaine': /cleanser|wash|foam/i,
+  "Coco-Betaine": /cleanser|wash|foam/i,
 };
 
 /** What a step is called on a shelf. */
-const STEP_WORDS: Record<Suggestion['step'], RegExp> = {
+const STEP_WORDS: Record<Suggestion["step"], RegExp> = {
   cleanse: /cleanser|cleansing|wash|foam|balm/i,
   treat: /serum|treatment|toner|essence|ampoule|drops|solution|concentrate/i,
   hydrate: /moisturi|cream|lotion|gel|hydrat|eye/i,
@@ -67,7 +67,7 @@ const STEP_WORDS: Record<Suggestion['step'], RegExp> = {
 };
 
 /** Categories that rule a product out for a step, whatever its name says. */
-const STEP_EXCLUDES: Record<Suggestion['step'], RegExp | null> = {
+const STEP_EXCLUDES: Record<Suggestion["step"], RegExp | null> = {
   cleanse: /serum|moisturi|spf|sunscreen/i,
   treat: /cleanser|wash|spf|sunscreen/i,
   hydrate: /cleanser|wash|spf|sunscreen/i,
@@ -80,9 +80,13 @@ interface Scored {
   matched: string[];
 }
 
-function scoreProduct(product: CatalogueProduct, suggestion: Suggestion, profile: SkinProfile): Scored | null {
-  const haystack = `${product.name} ${product.category ?? ''} ${product.tags.join(' ')} ${product.description.slice(0, 600)}`;
-  const label = `${product.name} ${product.category ?? ''}`;
+function scoreProduct(
+  product: CatalogueProduct,
+  suggestion: Suggestion,
+  profile: SkinProfile,
+): Scored | null {
+  const haystack = `${product.name} ${product.category ?? ""} ${product.tags.join(" ")} ${product.description.slice(0, 600)}`;
+  const label = `${product.name} ${product.category ?? ""}`;
   if (STEP_EXCLUDES[suggestion.step]?.test(label)) return null;
 
   let score = 0;
@@ -91,10 +95,14 @@ function scoreProduct(product: CatalogueProduct, suggestion: Suggestion, profile
   // What it contains, when that is known.
   if (product.ingredients.length) {
     const { matches } = matchIngredients(product.ingredients);
-    const families = new Set<IngredientFamily>(matches.map((m) => m.rule.family));
+    const families = new Set<IngredientFamily>(
+      matches.map((m) => m.rule.family),
+    );
     if (families.has(suggestion.family)) score += 3;
     for (const active of suggestion.actives) {
-      const hit = product.ingredients.find((i) => i.toLowerCase().includes(active.toLowerCase().split(' ')[0]));
+      const hit = product.ingredients.find((i) =>
+        i.toLowerCase().includes(active.toLowerCase().split(" ")[0]),
+      );
       if (hit) {
         score += 2;
         matched.push(hit);
@@ -120,21 +128,30 @@ function scoreProduct(product: CatalogueProduct, suggestion: Suggestion, profile
   // The same veto a product they typed in gets: sensitivities rule things out.
   if (product.ingredients.length) {
     const verdict = assessProduct(
-      { id: product.id, name: product.name, brand: product.brand, category: product.category, ingredients: product.ingredients, source: 'catalogue' },
+      {
+        id: product.id,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        ingredients: product.ingredients,
+        source: "catalogue",
+      },
       profile,
       [],
     ).verdict;
-    if (verdict === 'not_now') return null;
-    if (verdict === 'be_cautious') score -= 1;
+    if (verdict === "not_now") return null;
+    if (verdict === "be_cautious") score -= 1;
   }
 
   return { product, score, matched };
 }
 
 function money(cents: number | null, currency: string | null): string {
-  if (cents === null || !currency) return '';
+  if (cents === null || !currency) return "";
   try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return new Intl.NumberFormat("en", { style: "currency", currency }).format(
+      cents / 100,
+    );
   } catch {
     return `${(cents / 100).toFixed(2)} ${currency}`;
   }
@@ -159,12 +176,27 @@ function priceNote(store: CatalogueProduct | null, offers: Offer[]): { note: str
     priced.push({ label: seller!, cents: store.priceCents, url: store.url, own: true });
   }
   for (const o of offers) {
-    if (o.compared && o.priceCents !== null && (!store || o.currency === store.currency)) {
-      priced.push({ label: o.merchant, cents: o.priceCents, url: o.url, own: false });
+    if (
+      o.compared &&
+      o.priceCents !== null &&
+      (!store || o.currency === store.currency)
+    ) {
+      priced.push({
+        label: o.merchant,
+        cents: o.priceCents,
+        url: o.url,
+        own: false,
+      });
     }
   }
   if (priced.length === 0) {
-    return { note: store ? 'No price listed yet.' : 'No prices fetched — these are places to look.', compared: 0, bestUrl: null };
+    return {
+      note: store
+        ? "No price listed yet."
+        : "No prices fetched — these are places to look.",
+      compared: 0,
+      bestUrl: null,
+    };
   }
   if (priced.length === 1) {
     return {
@@ -177,7 +209,8 @@ function priceNote(store: CatalogueProduct | null, offers: Offer[]): { note: str
   }
   const sorted = [...priced].sort((a, b) => a.cents - b.cents);
   const best = sorted[0];
-  const currency = store?.currency ?? offers.find((o) => o.compared)?.currency ?? null;
+  const currency =
+    store?.currency ?? offers.find((o) => o.compared)?.currency ?? null;
   const note = best.own
     ? `Best price of the ${priced.length} I checked: ${money(best.cents, currency)} at ${seller}.`
     : `Cheapest of the ${priced.length} I checked is ${best.label} at ${money(best.cents, currency)}` +
@@ -187,9 +220,28 @@ function priceNote(store: CatalogueProduct | null, offers: Offer[]): { note: str
 
 function queryFor(suggestion: Suggestion): string {
   const active = suggestion.actives[0] ?? suggestion.title;
-  const kind = { cleanse: 'cleanser', treat: 'serum', hydrate: 'moisturiser', protect: 'sunscreen SPF 50' }[suggestion.step];
+  const kind = {
+    cleanse: "cleanser",
+    treat: "serum",
+    hydrate: "moisturiser",
+    protect: "sunscreen SPF 50",
+  }[suggestion.step];
   return `${active} ${kind}`;
 }
+
+/**
+ * P1-T12 — why this file changes: the per-suggestion marketplace awaits
+ * below were individually unbounded and sequential, so ≤4 suggestions × a
+ * hung eBay call outlived every host deadline (10 s Netlify default, 26 s
+ * raised, 30 s Vercel). Bounding requires fan-out control here, in the only
+ * place that fans out: per-pick 10 s cap, concurrency 2, ≤4 picks → worst
+ * case ⌈4/2⌉ × 10 s = 20 s < 26 s host (≥6 s slack; ≥10 s on Vercel).
+ * Imports from offers.ts are unchanged (the catalogue suite mocks that
+ * module with exactly these three names), and scoring/notes/verdicts are
+ * byte-identical — only the offers fetch is bounded and overlapped.
+ */
+export const PICK_OFFERS_TIMEOUT_MS = 10_000;
+export const PICK_OFFERS_CONCURRENCY = 2;
 
 /**
  * Picks for a plan: at most `limit` suggestions, one product each, plus
@@ -198,17 +250,23 @@ function queryFor(suggestion: Suggestion): string {
 export async function pickProducts(
   plan: RoutinePlan,
   profile: SkinProfile,
-  opts: { limit?: number; web?: boolean } = {},
+  opts: { limit?: number; web?: boolean; offersTimeoutMs?: number } = {},
 ): Promise<ProductPick[]> {
   const limit = opts.limit ?? 4;
   const web = opts.web ?? true;
+  const offersTimeoutMs = opts.offersTimeoutMs ?? PICK_OFFERS_TIMEOUT_MS;
   const shelf = await listCatalogue().catch(() => [] as CatalogueProduct[]);
   const picks: ProductPick[] = [];
   const used = new Set<string>();
 
-  const suggestions = plan.suggestions.filter((s) => !s.alreadyCovered).slice(0, limit);
+  const suggestions = plan.suggestions
+    .filter((s) => !s.alreadyCovered)
+    .slice(0, limit);
 
-  for (const suggestion of suggestions) {
+  // Phase 1 — shelf scoring stays sequential and local: `used` makes each
+  // pick depend on the previous one's choice, so order is deterministic and
+  // identical to the old loop.
+  const prepared = suggestions.map((suggestion) => {
     const candidates = shelf
       .filter((p) => !used.has(p.id))
       .map((p) => scoreProduct(p, suggestion, profile))
@@ -217,17 +275,52 @@ export async function pickProducts(
 
     const top = candidates[0] ?? null;
     if (top) used.add(top.product.id);
+    const query = top
+      ? `${top.product.brand ? top.product.brand + " " : ""}${top.product.name}`
+      : queryFor(suggestion);
+    return { suggestion, top, query };
+  });
 
-    // Offers: to compare a shelf price, or to stand in for a missing one.
-    let offers: Offer[] = [];
-    if (web) {
-      const query = top ? `${top.product.brand ? top.product.brand + ' ' : ''}${top.product.name}` : queryFor(suggestion);
-      if (top) {
-        if (comparisonAvailable()) offers = await ebayOffers(query).catch(() => []);
-      } else {
-        offers = await webOffers(query).catch(() => []);
+  // Phase 2 — bounded marketplace fan-out: at most PICK_OFFERS_CONCURRENCY
+  // in flight, each raced against the per-pick budget via its own signal.
+  // A timed-out pick keeps its shelf product (or, with no shelf product,
+  // resolves to search links inside webOffers) instead of stalling the chat.
+  const offersByIndex: Offer[][] = new Array(prepared.length).fill([]);
+  if (web) {
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < prepared.length) {
+        const index = next;
+        next += 1;
+        const { top, query } = prepared[index];
+        const timeout = AbortSignal.timeout(offersTimeoutMs);
+        try {
+          if (top) {
+            if (comparisonAvailable())
+              offersByIndex[index] = await ebayOffers(query, 4, {
+                signal: timeout,
+              }).catch(() => []);
+          } else {
+            offersByIndex[index] = await webOffers(query, {
+              signal: timeout,
+            }).catch(() => []);
+          }
+        } catch {
+          offersByIndex[index] = [];
+        }
       }
-    }
+    };
+    const workers = Array.from(
+      { length: Math.min(PICK_OFFERS_CONCURRENCY, prepared.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
+  }
+
+  for (let index = 0; index < prepared.length; index++) {
+    const { suggestion, top } = prepared[index];
+    // Offers: to compare a shelf price, or to stand in for a missing one.
+    const offers = offersByIndex[index];
 
     const { note, compared, bestUrl } = priceNote(top?.product ?? null, offers);
     if (!top && offers.length === 0) continue;
@@ -261,15 +354,20 @@ export async function pickProducts(
 
 /** A compact rendering for the prompt, so she can talk about the picks. */
 export function renderPicks(picks: ProductPick[]): string {
-  if (!picks.length) return '';
+  if (!picks.length) return "";
   const lines = picks.map((p) => {
     const where = p.product
       ? `${p.product.brand ? p.product.brand + ' ' : ''}${p.product.name}, sold by ${p.from ?? sellerOf(p.product)} — ${p.priceNote} Link: ${p.product.url}`
       : `no shelf product; ${p.priceNote} ${p.offers
           .slice(0, 2)
-          .map((o) => `${o.merchant}${o.priceCents !== null ? ' ' + money(o.priceCents, o.currency) : ''}: ${o.url}`)
-          .join(' | ')}`;
-    const because = p.suggestion.because ? ` (${p.suggestion.because.label} ${p.suggestion.because.value})` : '';
+          .map(
+            (o) =>
+              `${o.merchant}${o.priceCents !== null ? " " + money(o.priceCents, o.currency) : ""}: ${o.url}`,
+          )
+          .join(" | ")}`;
+    const because = p.suggestion.because
+      ? ` (${p.suggestion.because.label} ${p.suggestion.because.value})`
+      : "";
     return `- [${p.suggestion.step}] for ${p.suggestion.title}${because}: ${where}`;
   });
   /* The store's name only when one is configured; otherwise each line names its own seller. */
@@ -278,6 +376,6 @@ export function renderPicks(picks: ProductPick[]): string {
     '# Products you can point to',
     `${store ? `The shop behind you is ${store}${storeUrl() ? ` (${storeUrl()})` : ''}. ` : ''}These are the only products you may name, with the shop that sells each one and the prices exactly as written:`,
     ...lines,
-    'Rules: recommend the ingredient first and the product second. Say where it is from and the price as written above. Only claim a price comparison when the line says prices were checked; otherwise say plainly that you have not compared. Never invent a product, price or shop.',
-  ].join('\n');
+    "Rules: recommend the ingredient first and the product second. Say where it is from and the price as written above. Only claim a price comparison when the line says prices were checked; otherwise say plainly that you have not compared. Never invent a product, price or shop.",
+  ].join("\n");
 }

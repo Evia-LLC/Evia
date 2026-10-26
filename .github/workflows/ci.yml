@@ -30,11 +30,17 @@ jobs:
           package-manager-cache: false
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+        with:
+          version: 2.120.0
       - name: TypeScript checks
         run: npm run typecheck
       - name: Svelte checks
         run: npm run check
-      - name: Tests with disposable database
-        run: npm run test:local
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Integration tests on the real Data API
+        run: npm run test:data-api
       - name: Production build
         run: npm run build

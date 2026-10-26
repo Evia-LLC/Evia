@@ -5,15 +5,6 @@ import { fileURLToPath } from 'node:url';
 const API_PORT = Number(process.env.ELOHIM_PORT ?? 5196);
 const WEB_PORT = Number(process.env.ELOHIM_WEB_PORT ?? 5195);
 
-/*
- * Where the database tests point.
- *
- * There is no file to throw away any more — the database is Postgres. The
- * tests that touch it run against whatever NETLIFY_DATABASE_URL names, inside
- * a schema of their own that they create and drop, and skip themselves with a
- * printed reason when nothing is configured. Everything else in the suite never
- * opens a connection.
- */
 export default defineConfig({
   plugins: [svelte()],
   test: {
@@ -22,9 +13,11 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: 1,
     fileParallelism: false,
-    env: {
-      NETLIFY_DATABASE_URL: process.env.NETLIFY_DATABASE_URL ?? '',
-    },
+    exclude: ['node_modules/**', 'test/integration/**', 'test/integration.setup.ts',
+      'test/body-store.test.ts', 'test/product-ownership.test.ts', 'test/rate-limit.test.ts',
+      'test/ownership-boundaries.test.ts', 'test/request-validation.test.ts', 'test/image-upload-boundaries.test.ts',
+      'test/deletion-states.test.ts', 'test/voice-cache-privacy.test.ts', 'test/consents.test.ts',
+      'test/registration-store.test.ts', 'test/integrated-migrations.test.ts'],
   },
   resolve: {
     alias: {

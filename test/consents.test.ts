@@ -1,73 +1,46 @@
-import fs from 'node:fs';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { PGlite } from '@electric-sql/pglite';
-import { consentWordingVersion } from '../shared/legal-content.ts';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { createUser } from '../server/db/users.ts';
+import { recordConsentDecision, currentConsent, currentConsents, consentHistory } from '../server/db/consents.ts';
+import { database, result } from './helpers/data-api.ts';
 
-const init = fs.readFileSync(new URL('../server/db/migrations/001_init.sql', import.meta.url), 'utf8');
-const migration = fs.readFileSync(new URL('../server/db/migrations/011_versioned_consents.sql', import.meta.url), 'utf8');
-let db: PGlite;
-
-async function user(id = 'u1') {
-  await db.query(`INSERT INTO users VALUES ($1,'a@example.test','A','h','s','2026-01-01')`, [id]);
-}
-async function event(type: string, state: 'granted' | 'withdrawn', version: string, key: string, at: string) {
-  await db.query(`INSERT INTO consent_events
-    (id,user_id,consent_type,wording_version_id,state,recorded_at,idempotency_key)
-    VALUES ($1,'u1',$2,$3,$4,$5,$6) ON CONFLICT (user_id,idempotency_key) DO NOTHING`,
-  [`e-${key}`, type, version, state, at, key]);
-}
-async function current(type: string) {
-  const result = await db.query<{ state: string; wording_version_id: string }>(
-    `SELECT state, wording_version_id FROM consent_events WHERE user_id='u1' AND consent_type=$1
-     ORDER BY recorded_at DESC, event_sequence DESC LIMIT 1`, [type]);
-  return result.rows[0];
-}
-
-beforeAll(async () => {
-  db = new PGlite();
-  await db.exec(init);
-  await db.exec(migration);
-}, 30_000);
-
-beforeEach(async () => {
-  await db.exec('TRUNCATE consent_events, users CASCADE');
-  await user();
-});
-
-describe('versioned consent events', () => {
-  it('represents no decision with no event', async () => expect(await current('new-key')).toBeUndefined());
-  it('resolves a grant', async () => { await event('photos','granted','v1','1','2026-01-01'); expect((await current('photos'))?.state).toBe('granted'); });
-  it('resolves withdrawal without changing the grant', async () => {
-    await event('photos','granted','v1','1','2026-01-01'); await event('photos','withdrawn','v1','2','2026-01-02');
-    expect((await current('photos'))?.state).toBe('withdrawn');
-    expect((await db.query(`SELECT * FROM consent_events WHERE consent_type='photos'`)).rows).toHaveLength(2);
+let user: string;
+beforeEach(async () => { user = await createUser(`consent-${crypto.randomUUID()}@test.local`, 'password', 'Tester'); });
+describe('versioned consent events over the Data API', () => {
+  it('represents no decision with no event', async () => {
+    expect(await currentConsent(user, 'new-key')).toBeNull();
+    expect(await currentConsents(user)).toEqual({});
   });
-  it('allows a grant after withdrawal', async () => {
-    await event('photos','withdrawn','v1','1','2026-01-01'); await event('photos','granted','v2','2','2026-01-02');
-    expect(await current('photos')).toMatchObject({ state: 'granted', wording_version_id: 'v2' });
+  it('retains grant and withdrawal history and resolves current summaries', async () => {
+    await recordConsentDecision(user, 'photos', 'v1', 'granted');
+    await recordConsentDecision(user, 'photos', 'v1', 'withdrawn');
+    expect(await currentConsent(user, 'photos')).toMatchObject({ state: 'withdrawn' });
+    expect((await consentHistory(user, 'photos')).map((e) => e.state)).toEqual(['withdrawn', 'granted']);
   });
-  it('rejects mutation of history', async () => {
-    await event('photos','granted','v1','1','2026-01-01');
-    await expect(db.exec(`UPDATE consent_events SET state='withdrawn' WHERE id='e-1'`)).rejects.toThrow(/immutable/);
+  it('breaks timestamp ties by event sequence and groups the view by user too', async () => {
+    const other = await createUser('other-consent@example.test', 'password', 'Other');
+    const at = '2026-01-01T00:00:00.000Z';
+    await result(database().from('consent_events').insert([
+      { id: 'tie-grant', user_id: user, consent_type: 'photos', wording_version_id: 'v1', state: 'granted', recorded_at: at, idempotency_key: 'a' },
+      { id: 'tie-withdraw', user_id: user, consent_type: 'photos', wording_version_id: 'v2', state: 'withdrawn', recorded_at: at, idempotency_key: 'b' },
+      { id: 'other-grant', user_id: other, consent_type: 'photos', wording_version_id: 'v3', state: 'granted', recorded_at: at, idempotency_key: 'c' },
+    ]));
+    expect(await currentConsents(user)).toMatchObject({ photos: { state: 'withdrawn', decisionId: 'tie-withdraw' } });
+    expect(await currentConsents(other)).toMatchObject({ photos: { state: 'granted' } });
   });
-  it('retains decisions under different wording versions', async () => {
-    await event('photos','granted','v1','1','2026-01-01'); await event('photos','granted','v2','2','2026-01-02');
-    expect((await db.query(`SELECT DISTINCT wording_version_id FROM consent_events`)).rows).toHaveLength(2);
+  it('replays the first event, rejects mismatched retries, and never updates immutable events', async () => {
+    const first = await recordConsentDecision(user, 'photos', 'v1', 'granted', { idempotencyKey: 'retry' });
+    expect(await recordConsentDecision(user, 'photos', 'v1', 'granted', { idempotencyKey: 'retry' })).toEqual(first);
+    await expect(recordConsentDecision(user, 'photos', 'v2', 'granted', { idempotencyKey: 'retry' })).rejects.toThrow(/different consent/);
+    await expect(result(database().from('consent_events').update({ state: 'withdrawn' }).eq('id', first.id))).rejects.toThrow(/immutable/);
+    expect(await consentHistory(user)).toHaveLength(1);
   });
-  it('keeps consent types independent', async () => {
-    await event('photos','granted','v1','1','2026-01-01'); await event('cloud','withdrawn','v1','2','2026-01-02');
-    expect((await current('photos'))?.state).toBe('granted'); expect((await current('cloud'))?.state).toBe('withdrawn');
-  });
-  it('makes retries idempotent', async () => {
-    await event('photos','granted','v1','same','2026-01-01'); await event('photos','granted','v1','same','2026-01-01');
-    expect((await db.query(`SELECT * FROM consent_events`)).rows).toHaveLength(1);
-  });
-  it('uses insertion sequence to resolve equal timestamps deterministically', async () => {
-    await event('photos','granted','v1','1','2026-01-01'); await event('photos','withdrawn','v1','2','2026-01-01');
-    expect((await current('photos'))?.state).toBe('withdrawn');
-  });
-  it('only recognises registered wording versions', () => {
-    expect(consentWordingVersion('cloud-reasoning-v1')?.consentType).toBe('cloud_reasoning');
-    expect(consentWordingVersion('unknown')).toBeUndefined();
+  it('preserves server-derived evidence and multiple wording versions', async () => {
+    await recordConsentDecision(user, 'photos', 'v1', 'granted', { actorId: 'forged', source: 'forged', custom: true },
+      { actorType: 'account', actorId: user, source: 'settings', ip: '127.0.0.1' });
+    await recordConsentDecision(user, 'photos', 'v2', 'granted');
+    const history = await consentHistory(user);
+    expect(new Set(history.map((e) => e.wordingVersionId))).toEqual(new Set(['v1', 'v2']));
+    expect(history.find((e) => e.wordingVersionId === 'v1')).toMatchObject({ actorId: user,
+      metadata: { custom: true, source: 'settings', ip: '127.0.0.1' } });
   });
 });

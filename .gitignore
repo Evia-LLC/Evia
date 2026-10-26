@@ -10,6 +10,9 @@ data/blobs/
 .env.local
 .env.*
 !.env.example
+# Live Supabase credential files (rotated secrets — never commit).
+staging.txt
+production.txt
 *.log
 shots/
 

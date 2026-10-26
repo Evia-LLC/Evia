@@ -17,6 +17,7 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
+  import type { DeleteResult } from '@shared/delete-result.ts';
   import { ACCOUNT_COPY } from '@shared/legal-screen-copy.ts';
   import { recordLegalReview } from '@/lib/legal-review.ts';
   import { session } from '@/state/session.svelte.ts';
@@ -35,6 +36,19 @@
   let secondConfirmation = $state(false);
   let deleting = $state(false);
   let deletionError = $state<string | null>(null);
+  /**
+   * P1-T10 — the durable outcome of the last deletion attempt. `completed`
+   * renders the signed-out success receipt, `pending` the status screen with
+   * the session and export intact, and a failure lands in `deletionError`
+   * with the account untouched.
+   */
+  let deletionOutcome = $state<DeleteResult | null>(null);
+  const completedReceipt = $derived(
+    deletionOutcome !== null && deletionOutcome.status === 'completed' ? deletionOutcome : null,
+  );
+  const pendingReceipt = $derived(
+    deletionOutcome !== null && deletionOutcome.status === 'pending' ? deletionOutcome : null,
+  );
   const phrase = 'DELETE';
   const typedCorrectly = $derived(typed.trim() === phrase);
   /** No account to act on: a guest, or an account set aside for sample data. */
@@ -81,12 +95,16 @@
     try {
       // Audit availability must not prevent the existing account deletion right.
       try { await recordLegalReview('account-controls', 'attempted', session.user?.id, { action: 'delete_account' }); } catch { /* Account deletion still proceeds; retention gap is disclosed below. */ }
-      await deleteAccount();
+      deletionOutcome = await deleteAccount();
+      // `completed`: the controller cleared the token and session; the
+      // receipt branch below states what was deleted. `pending`: the session
+      // is preserved and the status branch below keeps the export available.
     } catch (err) {
       deletionError = err instanceof Error ? err.message : 'Your account could not be deleted.';
       deleting = false;
       await stepBack();
     }
+    deleting = false;
   }
 </script>
 
@@ -138,41 +156,63 @@
         <p class="placeholder">Placeholder legal text · {ACCOUNT_DELETION_NOTICE_PLACEHOLDER.id}</p>
       {/if}
 
-      <TextField
-        class="confirm"
-        label="Type DELETE to continue"
-        ariaLabel="Type DELETE to confirm account deletion"
-        bind:value={typed}
-        autocomplete="off"
-        size="short"
-        disabled={deleting || secondConfirmation || unavailable}
-      />
-
-      {#if secondConfirmation}
-        <div class="final" role="alert" bind:this={finalStep}>
-          <strong class="final__title">Final confirmation</strong>
-          <p class="final__text">This cannot be undone. Delete the account and all attached data now?</p>
-          <div class="actions">
-            <button class="danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly || unavailable}>
-              {deleting ? 'Deleting account…' : 'Permanently delete my account'}
-            </button>
-            <Button variant="secondary" class="go-back" onclick={stepBack} disabled={deleting}>Go back</Button>
-          </div>
+      {#if completedReceipt}
+        <div class="receipt" role="status">
+          <strong class="receipt__title">Your account is deleted.</strong>
+          <p class="receipt__text">{completedReceipt.message}</p>
+          <p class="receipt__text">Permanently removed: your profile, preferences, {completedReceipt.blobsShredded} stored photo file{completedReceipt.blobsShredded === 1 ? '' : 's'}, scans, progress photos, routine, memories, consent history and sessions. You are signed out.</p>
+        </div>
+      {:else if pendingReceipt}
+        <div class="receipt receipt--pending" role="status">
+          <strong class="receipt__title">Deletion is pending.</strong>
+          <p class="receipt__text">{pendingReceipt.message}</p>
+          <ul class="receipt__list">
+            {#each pendingReceipt.outstanding as job (job)}
+              <li>{job}</li>
+            {/each}
+          </ul>
+          <p class="receipt__text">Your data is not yet fully erased. You stay signed in, and your export above remains available.</p>
         </div>
       {:else}
-        <div class="actions">
-          <button
-            class="danger"
-            type="button"
-            bind:this={continueButton}
-            onclick={continueDeletion}
-            disabled={!typedCorrectly || deleting || unavailable}
-          >
-            Continue
-          </button>
-        </div>
+        <TextField
+          class="confirm"
+          label="Type DELETE to continue"
+          ariaLabel="Type DELETE to confirm account deletion"
+          bind:value={typed}
+          autocomplete="off"
+          size="short"
+          disabled={deleting || secondConfirmation || unavailable}
+        />
+
+        {#if secondConfirmation}
+          <div class="final" role="alert" bind:this={finalStep}>
+            <strong class="final__title">Final confirmation</strong>
+            <p class="final__text">This cannot be undone. Delete the account and all attached data now?</p>
+            <div class="actions">
+              <button class="danger" type="button" onclick={removeAccount} disabled={deleting || !typedCorrectly || unavailable}>
+                {deleting ? 'Deleting account…' : 'Permanently delete my account'}
+              </button>
+              <Button variant="secondary" class="go-back" onclick={stepBack} disabled={deleting}>Go back</Button>
+            </div>
+          </div>
+        {:else}
+          <div class="actions">
+            <button
+              class="danger"
+              type="button"
+              bind:this={continueButton}
+              onclick={continueDeletion}
+              disabled={!typedCorrectly || deleting || unavailable}
+            >
+              Continue
+            </button>
+          </div>
+        {/if}
+        {#if deletionError}
+          <p class="error" aria-live="assertive">{deletionError}</p>
+          <p class="intact">Your account and data are intact — nothing was deleted. Your export above is still available, and you can retry once the problem passes.</p>
+        {/if}
       {/if}
-      {#if deletionError}<p class="error" aria-live="assertive">{deletionError}</p>{/if}
     </Card>
   </div>
 </PageFrame>
@@ -300,5 +340,38 @@
     font-size: var(--fs-body-sm);
     font-weight: var(--fw-medium);
     color: var(--text-danger);
+  }
+  /* P1-T10 deletion receipts: the durable outcome, in the page's own card language. */
+  .receipt {
+    margin-top: 20px;
+    padding: 16px 18px;
+    border: 1px solid var(--chip-selected-border);
+    border-radius: var(--r-md);
+    background: var(--cream-50);
+  }
+  .receipt--pending {
+    border-style: dashed;
+  }
+  .receipt__title {
+    display: block;
+    font-size: var(--fs-label);
+    color: var(--text-strong);
+  }
+  .receipt__text {
+    margin: 6px 0 0;
+    font-size: var(--fs-body);
+    line-height: var(--lh-normal);
+    color: var(--text);
+  }
+  .receipt__list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    font-size: var(--fs-body-sm);
+    color: var(--text);
+  }
+  .intact {
+    margin: 6px 0 0;
+    font-size: var(--fs-body-sm);
+    color: var(--text-secondary);
   }
 </style>

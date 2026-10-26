@@ -39,19 +39,35 @@ import {
   getBlob,
   shredBlob,
 } from '../lib/crypto.ts';
+import { ImageInputError, validateImageInput, type ValidatedImage } from '../lib/image-input.ts';
+import type { Response } from 'express';
+import {
+  sanitizeConsentClientMetadata,
+  validateBodyAnalysis,
+  validateIdempotencyKey,
+  validatePreferencesPatch,
+  validateProductInput,
+  validateProfilePatch,
+  validateRoutineInput,
+  validateScanAnalysis,
+  ValidationError,
+} from '../../shared/boundary-validators.ts';
 import { newId } from '../lib/ids.ts';
 import { chatLimiter, scanLimiter, visionLimiter, voiceLimiter } from '../lib/rate-limit.ts';
 import { log } from '../lib/log.ts';
 import { assembleDataExport } from '../privacy/export.ts';
 import { deleteAccount } from '../privacy/delete-account.ts';
 import {
+  completedAccountDeletion,
+  completedItemDeletion,
+  failedDeletion,
+  pendingDeletion,
+} from '../../shared/delete-result.ts';
+import {
   BODY_METRIC_KEYS,
   PROFILE_METRIC_KEYS,
   SKIN_METRIC_KEYS,
-  SKIN_MODEL_VERSION,
   type BodyAnalysisRecord,
-  PREGNANCY_STATUSES,
-  type PregnancyStatus,
   type SkinAnalysis,
 } from '../../shared/types.ts';
 import type { ConsentState } from '../../shared/types.ts';
@@ -61,6 +77,18 @@ import { approvedConsent, consentWordingVersion } from '../../shared/legal-conte
 export const apiRouter = asyncRouter();
 apiRouter.use(requireAuth);
 
+/**
+ * P1-T06 — structured-write validation answers 400 before any repository
+ * call. Returns true when the response was sent (caller must return).
+ */
+function rejectMalformed(res: Response, err: unknown): boolean {
+  if (err instanceof ValidationError) {
+    res.status(err.status).json({ error: err.message });
+    return true;
+  }
+  return false;
+}
+
 // --- me ---------------------------------------------------------------------
 
 apiRouter.get('/me', async (req, res) => {
@@ -68,30 +96,39 @@ apiRouter.get('/me', async (req, res) => {
 });
 
 apiRouter.patch('/me/profile', async (req, res) => {
-  const { skinType, fitzpatrick, concerns, sensitivities, pregnancyStatus } = req.body ?? {};
+  // P1-T06: allowlisted before the write. Malformed enums, non-string array
+  // members and out-of-range values answer 400 here; previously they were
+  // dropped or coerced silently.
+  let patch;
+  try {
+    patch = validateProfilePatch(req.body ?? {});
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
+  }
   res.json({
-    profile: await users.updateProfile(req.userId!, {
-      ...(skinType !== undefined && { skinType }),
-      // Validated rather than passed through: the column is INTEGER, and
-      // Postgres rejects "III" or 2.5 where SQLite's type affinity accepted
-      // them. Only I-VI is a meaningful value anyway.
-      ...(Number.isInteger(fitzpatrick) &&
-        fitzpatrick >= 1 &&
-        fitzpatrick <= 6 && { fitzpatrick }),
-      ...(Array.isArray(concerns) && { concerns }),
-      ...(Array.isArray(sensitivities) && { sensitivities }),
-      // Allowlisted against the union. An unrecognised value is dropped rather
-      // than stored, so a malformed request cannot land something that later
-      // reads as neither restricted nor unknown.
-      ...(PREGNANCY_STATUSES.includes(pregnancyStatus as PregnancyStatus) && {
-        pregnancyStatus: pregnancyStatus as PregnancyStatus,
-      }),
-    }),
+    profile: await users.updateProfile(
+      req.userId!,
+      patch as Parameters<typeof users.updateProfile>[1],
+    ),
   });
 });
 
 apiRouter.patch('/me/preferences', async (req, res) => {
-  res.json({ preferences: await users.updatePreferences(req.userId!, req.body ?? {}) });
+  // P1-T06: allowlisted before the write, like the profile route.
+  let patch;
+  try {
+    patch = validatePreferencesPatch(req.body ?? {});
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
+  }
+  res.json({
+    preferences: await users.updatePreferences(
+      req.userId!,
+      patch as Parameters<typeof users.updatePreferences>[1],
+    ),
+  });
 });
 
 apiRouter.get('/me/consents', async (req, res) => {
@@ -119,14 +156,35 @@ apiRouter.post('/me/consents/:type/decisions', async (req, res) => {
     res.status(403).json({ error: 'This consent wording is still awaiting approval.' });
     return;
   }
-  if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
-    res.status(400).json({ error: 'idempotencyKey is required.' });
-    return;
+  // P1-T06: idempotency keys are bounded (1..100 chars, unified with the
+  // analysis consent routes) and consent evidence is server-constructed.
+  // Client metadata is allowlisted and stripped; actor identity and provenance
+  // come from the authenticated request, never from the payload.
+  let key: string;
+  let clientMetadata: Record<string, unknown>;
+  try {
+    key = validateIdempotencyKey(idempotencyKey);
+    clientMetadata = sanitizeConsentClientMetadata(metadata);
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
   }
-  const decision = await consentsRepo.recordConsentDecision(
-    req.userId!, consentType, wordingVersionId, state as ConsentState,
-    { ...(metadata && typeof metadata === 'object' ? metadata : {}), idempotencyKey },
-  );
+  let decision;
+  try {
+    decision = await consentsRepo.recordConsentDecision(
+      req.userId!, consentType, wordingVersionId, state as ConsentState,
+      { ...clientMetadata, idempotencyKey: key },
+      {
+        actorType: 'account',
+        actorId: req.userId!,
+        source: 'consent-decision',
+        ip: req.ip ?? null,
+      },
+    );
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
+  }
   res.status(201).json({ decision, current: await consentsRepo.currentConsent(req.userId!, consentType) });
 });
 
@@ -139,9 +197,34 @@ apiRouter.get('/me/data-export', async (req, res) => {
   res.type('application/json').send(JSON.stringify(document, null, 2));
 });
 
+/**
+ * P1-T10 — the response reflects durable completion. The transactional store
+ * completes or rolls back atomically: a commit answers `completed`, a throw
+ * answers `failed` with the account preserved. `pending` is reserved for
+ * Phase 4 durable jobs and is answered below only when work is genuinely
+ * outstanding — never for the current store.
+ */
+function outstandingDurableDeletions(): string[] {
+  // Phase 4 (P4-T04) fills this in from the durable deletion-job ledger
+  // (object storage, managed identity, backup rotation). Today every blob and
+  // row shares one Postgres transaction, so nothing can be outstanding.
+  return [];
+}
+
 /** Hard delete orchestration lives in privacy/delete-account.ts. */
 apiRouter.delete('/me/data', async (req, res) => {
-  res.json(await deleteAccount(req.userId!));
+  const outstanding = outstandingDurableDeletions();
+  if (outstanding.length > 0) {
+    res.status(202).json(pendingDeletion('account', outstanding));
+    return;
+  }
+  try {
+    const result = await deleteAccount(req.userId!);
+    res.json(completedAccountDeletion(result.blobsShredded));
+  } catch (err) {
+    const receipt = failedDeletion('account', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
+  }
 });
 
 // --- chat -------------------------------------------------------------------
@@ -253,13 +336,22 @@ apiRouter.get('/progress-photos/:id/image', async (req, res) => {
 });
 
 apiRouter.delete('/progress-photos/:id', async (req, res) => {
-  const ref = await progressPhotos.deleteProgressPhoto(req.userId!, req.params.id);
-  if (!ref) {
-    res.status(404).json({ error: 'No such progress photo.' });
-    return;
+  // P1-T10 — item deletes answer the same durable contract: `completed` only
+  // after the row and its blob are gone, `failed` (with the same 404/500
+  // semantics as before) when nothing was touched.
+  try {
+    const ref = await progressPhotos.deleteProgressPhoto(req.userId!, req.params.id);
+    if (!ref) {
+      const receipt = failedDeletion('photo', 'No such progress photo.');
+      res.status(404).json({ ...receipt, error: receipt.error });
+      return;
+    }
+    await shredBlob(ref);
+    res.json(completedItemDeletion('photo', req.params.id));
+  } catch (err) {
+    const receipt = failedDeletion('photo', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
   }
-  await shredBlob(ref);
-  res.json({ ok: true });
 });
 
 /** An explicit per-capture action. Consent merely makes this route available. */
@@ -280,16 +372,28 @@ apiRouter.post('/scans/:id/progress-photo', scanLimiter, async (req, res) => {
     res.status(403).json({ error: 'Progress-photo consent is required before saving.' });
     return;
   }
-  const imageBase64 = req.body?.imageBase64;
-  if (typeof imageBase64 !== 'string' || imageBase64.length < 100) {
-    res.status(400).json({ error: 'The pending capture is required.' });
+  // Consent above runs first: a denial returns before the payload is even
+  // decoded, so nothing is stored or encrypted for a refused capture.
+  // Availability is a config check rather than a storage call, so it also
+  // stays ahead of the decode.
+  let image: ValidatedImage;
+  try {
+    image = validateImageInput(req.body?.imageBase64, 'progress');
+  } catch (err) {
+    delete req.body?.imageBase64;
+    const inputError = err instanceof ImageInputError ? err : null;
+    const status = inputError?.status ?? 400;
+    res.status(status).json({ error: status === 400 ? 'The pending capture is required.' : (err as Error).message });
     return;
   }
+  delete req.body?.imageBase64;
   if (!blobStorageAvailable()) {
+    image.bytes.fill(0);
     res.status(503).json({ error: 'Encrypted photo storage is unavailable.' });
     return;
   }
-  const blobRef = await putBlob(Buffer.from(imageBase64, 'base64'), `${newId()}.bin`);
+  const blobRef = await putBlob(image.bytes, `${newId()}.bin`);
+  image.bytes.fill(0);
   try {
     const { photo, created } = await progressPhotos.createProgressPhoto(req.userId!, {
       skinScanId: scanId,
@@ -328,9 +432,19 @@ apiRouter.get('/body-scans', async (req, res) => {
 });
 
 apiRouter.delete('/body-scans/:id', async (req, res) => {
-  const refs = await bodyRepo.deleteBodyScan(req.userId!, req.params.id);
-  for (const ref of refs) await shredBlob(ref);
-  res.json({ ok: true });
+  // P1-T10 — same durable contract as the other item deletes. A row without
+  // stored blobs deletes zero refs, so existence is read first: a missing or
+  // foreign row stays an owner-scoped no-op 200, reported honestly with
+  // `deleted: false` instead of a bare `ok: true`.
+  try {
+    const existing = (await bodyRepo.exportBodyScans(req.userId!)).some((scan) => scan.id === req.params.id);
+    const refs = await bodyRepo.deleteBodyScan(req.userId!, req.params.id);
+    for (const ref of refs) await shredBlob(ref);
+    res.json(completedItemDeletion('scan', req.params.id, { deleted: existing, blobsShredded: refs.length }));
+  } catch (err) {
+    const receipt = failedDeletion('scan', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
+  }
 });
 
 apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
@@ -365,11 +479,21 @@ apiRouter.post('/body-scans', scanLimiter, async (req, res) => {
     res.status(400).json({ error: 'waistSource must be "silhouette" or "joints".' });
     return;
   }
+  // P1-T06: nested structures, confidence, timestamps, model versions and
+  // stored landmarks are validated too — malformed values answer 400 here,
+  // before any write.
+  let validatedBody;
+  try {
+    validatedBody = validateBodyAnalysis(req.body?.analysis);
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
+  }
 
   const refs: { imageRef?: string; profileImageRef?: string } = {};
   const stored = await bodyRepo.insertBodyScan(
     req.userId!,
-    { ...analysis, profile: analysis.profile ?? null },
+    validatedBody as unknown as BodyAnalysisRecord,
     refs,
   );
   res.json({ scan: stored, previous: await bodyRepo.previousBodyScan(req.userId!) });
@@ -467,7 +591,7 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
       previousText:
         typeof req.body?.previous_text === 'string' ? req.body.previous_text.slice(0, 600) : undefined,
       nextText: typeof req.body?.next_text === 'string' ? req.body.next_text.slice(0, 600) : undefined,
-    });
+    }, req.userId!);
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       audio: line.audio.toString('base64'),
@@ -495,6 +619,10 @@ apiRouter.post('/voice/speak', voiceLimiter, async (req, res) => {
           }),
     });
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('over budget:')) {
+      res.status(429).json({ error: 'The shared voice allowance is exhausted. Try again later.' });
+      return;
+    }
     if (err instanceof VoiceUnavailable) {
       res.status(503).json({ error: err.message });
       return;
@@ -525,9 +653,19 @@ apiRouter.get('/scans/:id', async (req, res) => {
 });
 
 apiRouter.delete('/scans/:id', async (req, res) => {
-  const refs = await scansRepo.deleteScan(req.userId!, req.params.id);
-  for (const ref of refs) await shredBlob(ref);
-  res.json({ ok: true });
+  // P1-T10 — same durable contract as the other item deletes. A row without
+  // stored blobs deletes zero refs, so existence is read first: a missing or
+  // foreign row stays an owner-scoped no-op 200, reported honestly with
+  // `deleted: false` instead of a bare `ok: true`.
+  try {
+    const existing = await scansRepo.getScan(req.userId!, req.params.id);
+    const refs = await scansRepo.deleteScan(req.userId!, req.params.id);
+    for (const ref of refs) await shredBlob(ref);
+    res.json(completedItemDeletion('scan', req.params.id, { deleted: existing !== null, blobsShredded: refs.length }));
+  } catch (err) {
+    const receipt = failedDeletion('scan', err);
+    res.status(500).json({ ...receipt, error: receipt.error });
+  }
 });
 
 /**
@@ -552,6 +690,16 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
       return;
     }
   }
+  // P1-T06: regions, quality, confidence, timestamps, observations and notes
+  // are validated as well — malformed values answer 400 before any write.
+  // Facial geometry stays rejected by the explicit check above.
+  let validated;
+  try {
+    validated = validateScanAnalysis(req.body?.analysis);
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
+  }
 
   // Raw facial captures are kept only in browser memory until the user saves
   // one through the separate progress-photo endpoint.
@@ -560,14 +708,14 @@ apiRouter.post('/scans', scanLimiter, async (req, res) => {
   const stored = await scansRepo.insertScan(
     req.userId!,
     {
-      capturedAt: analysis.capturedAt || new Date().toISOString(),
-      metrics: analysis.metrics,
-      regions: analysis.regions ?? {},
-      quality: analysis.quality,
-      confidence: analysis.confidence,
-      modelVersion: analysis.modelVersion || SKIN_MODEL_VERSION,
-      observations: analysis.observations ?? [],
-      ...(typeof analysis.notes === 'string' && { notes: analysis.notes }),
+      capturedAt: validated.capturedAt,
+      metrics: validated.metrics as SkinAnalysis['metrics'],
+      regions: validated.regions as SkinAnalysis['regions'],
+      quality: validated.quality as unknown as SkinAnalysis['quality'],
+      confidence: validated.confidence,
+      modelVersion: validated.modelVersion,
+      observations: validated.observations,
+      ...(validated.notes !== undefined && { notes: validated.notes }),
     },
     {},
   );
@@ -640,27 +788,32 @@ apiRouter.get('/catalogue/:id', async (req, res) => {
 // --- products ---------------------------------------------------------------
 
 apiRouter.get('/products/search', async (req, res) => {
-  res.json({ products: await productsRepo.searchProducts(String(req.query.q ?? ''), 20) });
+  res.json({ products: await productsRepo.searchProducts(String(req.query.q ?? ''), req.userId!, 20) });
 });
 
 apiRouter.post('/products', async (req, res) => {
-  const { name, brand, category, ingredients } = req.body ?? {};
-  if (typeof name !== 'string' || !name.trim()) {
-    res.status(400).json({ error: 'A product name is required.' });
-    return;
+  // P1-T06: name/brand/category lengths and ingredients shape are bounded
+  // before the write. Objects inside ingredients or an over-long name answer
+  // 400 instead of reaching the upsert.
+  let input;
+  try {
+    input = validateProductInput(req.body ?? {});
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
   }
+  // Owner-scoped: may create or update ONLY the caller's own row. A shared row
+  // or another user's row with the same name/brand is never touched — the
+  // caller gets a separate row instead (see products.upsertProduct).
   res.json({
-    product: await productsRepo.upsertProduct({
-      name,
-      brand,
-      category,
-      ingredients: Array.isArray(ingredients) ? ingredients : [],
-    }),
+    product: await productsRepo.upsertProduct(input, req.userId!),
   });
 });
 
 apiRouter.post('/products/:id/assess', async (req, res) => {
-  const product = await productsRepo.getProduct(req.params.id);
+  // Owner-aware: shared rows are assessable by all, private rows only by
+  // their owner. Anything else reads as a miss, never a forbidden confirmation.
+  const product = await productsRepo.getVisibleProduct(req.params.id, req.userId!);
   if (!product) {
     res.status(404).json({ error: 'No such product.' });
     return;
@@ -679,25 +832,43 @@ apiRouter.post('/products/:id/assess', async (req, res) => {
  * scan, because a label photo is still a photo the user took.
  */
 apiRouter.post('/products/read-label', visionLimiter, async (req, res) => {
-  const imageBase64 = req.body?.imageBase64;
-  if (typeof imageBase64 !== 'string' || imageBase64.length < 100) {
-    res.status(400).json({ error: 'An image is required.' });
-    return;
-  }
-  if (!modelAvailable()) {
-    res.status(503).json({ error: 'No model is configured; use the on-device reader.' });
-    return;
-  }
+  // Consent first: a denial returns before the payload is even decoded, so
+  // no image leaves for the provider on a refused read.
   if (!approvedConsent((await consentsRepo.currentConsents(req.userId!))[CONSENT_KEYS.CLOUD_REASONING])) {
+    delete req.body?.imageBase64;
     res.status(403).json({ error: 'Cloud reading is off. Turn it on in Privacy, or use on-device OCR.' });
     return;
   }
+  if (!modelAvailable()) {
+    delete req.body?.imageBase64;
+    res.status(503).json({ error: 'No model is configured; use the on-device reader.' });
+    return;
+  }
+  let image: ValidatedImage;
   try {
-    const result = await log.timed('products', 'label read', () => readProductLabel(imageBase64));
+    image = validateImageInput(req.body?.imageBase64, 'label');
+  } catch (err) {
+    delete req.body?.imageBase64;
+    const inputError = err instanceof ImageInputError ? err : null;
+    const status = inputError?.status ?? 400;
+    res.status(status).json({ error: status === 400 ? 'An image is required.' : (err as Error).message });
+    return;
+  }
+  delete req.body?.imageBase64;
+  try {
+    // Forward the canonical re-encode of the validated bytes, never the raw
+    // client string.
+    const result = await log.timed('products', 'label read', () => readProductLabel(image.bytes.toString('base64'), image.type === 'png' ? 'image/png' : 'image/jpeg', req.userId!));
     res.json(result);
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('over budget:')) {
+      res.status(429).json({ error: 'The shared analysis allowance is exhausted. Try again later.' });
+      return;
+    }
     log.error('products', 'label read failed', { error: describeApiError(err) });
     res.status(502).json({ error: 'I could not read that label.' });
+  } finally {
+    image.bytes.fill(0);
   }
 });
 
@@ -707,12 +878,32 @@ apiRouter.get('/routine', async (req, res) => {
 });
 
 apiRouter.post('/routine', async (req, res) => {
-  const { productId, frequency, startedAt, notes } = req.body ?? {};
-  if (typeof productId !== 'string' || !await productsRepo.getProduct(productId)) {
+  // P1-T06: productId presence plus frequency/notes lengths and startedAt
+  // shape are bounded before the product checks, so malformed fields answer
+  // 400 with zero writes.
+  let input;
+  try {
+    input = validateRoutineInput(req.body ?? {});
+  } catch (err) {
+    if (rejectMalformed(res, err)) return;
+    throw err;
+  }
+  const { productId, frequency, startedAt, notes } = input;
+  if (!await productsRepo.getProduct(productId)) {
     res.status(400).json({ error: 'A known productId is required.' });
     return;
   }
-  const id = await productsRepo.startUsage(req.userId!, productId, { frequency, startedAt, notes });
+  // Owner-aware gate: attaching a product the caller may not see (another
+  // user's private row) is a 404 and writes no usage row.
+  if (!await productsRepo.getVisibleProduct(productId, req.userId!)) {
+    res.status(404).json({ error: 'No such product.' });
+    return;
+  }
+  const id = await productsRepo.startUsage(req.userId!, productId, {
+    ...(frequency !== null && { frequency }),
+    ...(startedAt !== null && { startedAt }),
+    ...(notes !== null && { notes }),
+  });
   res.json({ id, usage: await productsRepo.listUsage(req.userId!) });
 });
 

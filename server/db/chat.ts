@@ -1,4 +1,4 @@
-import { row, rows, run } from './index.ts';
+import { database, result, allPages } from '../lib/data-api.ts';
 import { newId, nowIso } from '../lib/ids.ts';
 import type {
   CharacterDirective,
@@ -12,30 +12,17 @@ import type {
 // --- conversations ----------------------------------------------------------
 
 export async function currentConversation(userId: string): Promise<string> {
-  const found = await row<{ id: string }>(
-    'SELECT id FROM conversations WHERE user_id = ? ORDER BY last_active_at DESC LIMIT 1',
-    userId,
-  );
+  const found = await result<{ id: string } | null>(database().from('conversations').select('id').eq('user_id', userId).order('last_active_at', { ascending: false }).limit(1).maybeSingle());
   if (found) return found.id;
 
   const id = newId();
   const now = nowIso();
-  await run(
-    'INSERT INTO conversations (id, user_id, started_at, last_active_at) VALUES (?, ?, ?, ?)',
-    id,
-    userId,
-    now,
-    now,
-  );
+  await result(database().from('conversations').insert({ id, user_id: userId, started_at: now, last_active_at: now }));
   return id;
 }
 
 export async function touchConversation(conversationId: string): Promise<void> {
-  await run(
-    'UPDATE conversations SET last_active_at = ? WHERE id = ?',
-    nowIso(),
-    conversationId,
-  );
+  await result(database().from('conversations').update({ last_active_at: nowIso() }).eq('id', conversationId));
 }
 
 // --- messages ---------------------------------------------------------------
@@ -77,19 +64,12 @@ export async function appendMessage(
 ): Promise<ChatMessage> {
   const id = newId();
   const now = nowIso();
-  await run(
-    `INSERT INTO messages (id, conversation_id, role, content, emotion, intent, directive_json, demo, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id,
-    conversationId,
-    message.role,
-    message.content,
-    message.emotion ?? null,
-    message.intent ?? null,
-    message.directive ? JSON.stringify(message.directive) : null,
-    message.demo ? 1 : 0,
-    now,
-  );
+  await result(database().from('messages').insert({
+    id, conversation_id: conversationId, role: message.role, content: message.content,
+    emotion: message.emotion ?? null, intent: message.intent ?? null,
+    directive_json: message.directive ? JSON.stringify(message.directive) : null,
+    demo: message.demo ? 1 : 0, created_at: now,
+  }));
   await touchConversation(conversationId);
   return { id, createdAt: now, ...message };
 }
@@ -99,11 +79,7 @@ export async function recentMessages(
   conversationId: string,
   limit = 20,
 ): Promise<ChatMessage[]> {
-  return (await rows<MessageRow>(
-    'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?',
-    conversationId,
-    limit,
-  ))
+  return (await result<MessageRow[]>(database().from('messages').select('id,role,content,emotion,intent,directive_json,demo,created_at').eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(limit)))
     .map(hydrateMessage)
     .reverse();
 }
@@ -118,34 +94,22 @@ export interface ConversationExport {
 
 /** Every transcript owned by one user, with no UI-oriented message limit. */
 export async function exportTranscripts(userId: string): Promise<ConversationExport[]> {
-  const conversations = await rows<{
-    id: string; started_at: string; last_active_at: string; title: string | null;
-  }>(
-    `SELECT id, started_at, last_active_at, title FROM conversations
-      WHERE user_id = ? ORDER BY started_at`,
-    userId,
+  const conversations = await allPages<{ id: string; started_at: string; last_active_at: string; title: string | null }>(
+    (from, to) => database().from('conversations').select('id,started_at,last_active_at,title').eq('user_id', userId).order('started_at').order('id').range(from, to),
   );
   return Promise.all(conversations.map(async (conversation) => ({
     id: conversation.id,
     startedAt: conversation.started_at,
     lastActiveAt: conversation.last_active_at,
     title: conversation.title,
-    messages: (await rows<MessageRow>(
-      `SELECT id, role, content, emotion, intent, directive_json, demo, created_at
-         FROM messages WHERE conversation_id = ? ORDER BY created_at`,
-      conversation.id,
-    )).map(hydrateMessage),
+    messages: (await allPages<MessageRow>((from, to) => database().from('messages').select('id,role,content,emotion,intent,directive_json,demo,created_at').eq('conversation_id', conversation.id).order('created_at').order('id').range(from, to))).map(hydrateMessage),
   })));
 }
 
 /** Complete memory list for portability; the normal reader remains capped. */
 export async function exportMemories(userId: string): Promise<MemoryRecord[]> {
-  const found = await rows<{
-    id: string; kind: string; key: string; value: string; confidence: number; updated_at: string;
-  }>(
-    `SELECT id, kind, key, value, confidence, updated_at FROM memories
-      WHERE user_id = ? ORDER BY updated_at`,
-    userId,
+  const found = await allPages<{ id: string; kind: string; key: string; value: string; confidence: number; updated_at: string }>(
+    (from, to) => database().from('memories').select('id,kind,key,value,confidence,updated_at').eq('user_id', userId).order('updated_at').order('id').range(from, to),
   );
   return found.map((memory) => ({
     id: memory.id,
@@ -165,44 +129,15 @@ export async function upsertMemory(
   write: MemoryWrite,
   sourceMessageId?: string,
 ): Promise<void> {
-  await run(
-    /*
-     * GREATEST, not MAX.
-     *
-     * SQLite's MAX doubles as a two-argument scalar; Postgres reserves MAX for
-     * the aggregate and would reject this outright. The intent is unchanged:
-     * a memory that is re-stated never becomes less certain than it already was.
-     */
-    `INSERT INTO memories (id, user_id, kind, key, value, confidence, source_message_id, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (user_id, kind, key) DO UPDATE SET
-       value = excluded.value,
-       confidence = GREATEST(memories.confidence, excluded.confidence),
-       source_message_id = excluded.source_message_id,
-       updated_at = excluded.updated_at`,
-    newId(),
-    userId,
-    write.kind,
-    write.key,
-    write.value,
-    write.confidence,
-    sourceMessageId ?? null,
-    nowIso(),
-  );
+  await result(database().rpc('evia_upsert_memory', { p_row: {
+    id: newId(), user_id: userId, kind: write.kind, key: write.key, value: write.value,
+    confidence: write.confidence, source_message_id: sourceMessageId ?? null, updated_at: nowIso(),
+  } }));
 }
 
 export async function listMemories(userId: string, limit = 60): Promise<MemoryRecord[]> {
-  return (await rows<{
-    id: string;
-    kind: string;
-    key: string;
-    value: string;
-    confidence: number;
-    updated_at: string;
-  }>(
-    'SELECT * FROM memories WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?',
-    userId,
-    limit,
+  return (await result<{ id: string; kind: string; key: string; value: string; confidence: number; updated_at: string }[]>(
+    database().from('memories').select('id,kind,key,value,confidence,updated_at').eq('user_id', userId).order('updated_at', { ascending: false }).limit(limit),
   )).map((r) => ({
     id: r.id,
     kind: r.kind as MemoryRecord['kind'],
@@ -214,5 +149,5 @@ export async function listMemories(userId: string, limit = 60): Promise<MemoryRe
 }
 
 export async function forgetMemory(userId: string, id: string): Promise<void> {
-  await run('DELETE FROM memories WHERE id = ? AND user_id = ?', id, userId);
+  await result(database().from('memories').delete().eq('id', id).eq('user_id', userId));
 }

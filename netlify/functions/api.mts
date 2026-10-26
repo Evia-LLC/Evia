@@ -1,3 +1,4 @@
+import { dataApiConfigured } from '../../server/lib/supabase.ts';
 /**
  * The whole API, as one function.
  *
@@ -8,7 +9,7 @@
  * every endpoint — several cold starts where there should be one.
  *
  * `ready()` is awaited per invocation. It is memoised, so on a warm instance it
- * costs nothing; on a cold one it applies migrations and seeds the demo account
+ * costs nothing; on a cold one it verifies the Data API and seeds the demo account
  * before the request is served, which is the only moment those can happen when
  * there is no boot sequence to hang them off.
  */
@@ -18,6 +19,7 @@ import { modelAvailable } from '../../server/ai/claude.ts';
 import { blobStorageAvailable } from '../../server/lib/crypto.ts';
 import { bridge, type LambdaHandler } from '../../server/lib/web-lambda.ts';
 import { clonedVoiceAvailable, guestVoiceAllowed } from '../../server/voice/tts.ts';
+import { extractNetlifyClientIp } from '../../server/lib/rate-limit.ts';
 
 /*
  * The runtime speaks web `Request`/`Response`; `serverless-http` speaks API
@@ -26,14 +28,24 @@ import { clonedVoiceAvailable, guestVoiceAllowed } from '../../server/voice/tts.
  */
 const handler = bridge(serverless(app, { binary: true }) as unknown as LambdaHandler);
 
+function sanitizeForwardingHeaders(request: Request): Request {
+  // On the real CDN the header below is always present and authoritative.
+  if (extractNetlifyClientIp(request.headers) !== null) return request;
+  const headers = new Headers(request.headers);
+  // No CDN header to prefer, so a forwarding header here is caller-supplied.
+  if (!headers.has('x-forwarded-for')) return request;
+  headers.delete('x-forwarded-for');
+  return new Request(request, { headers });
+}
+
 export default async (request: Request, context: unknown) => {
   try {
     await ready();
-  } catch (err) {
+  } catch {
     /*
      * No database attached.
      *
-     * `ready()` migrates, and migrating needs a connection string. Without one
+     * `ready()` requires a configured, reachable Data API. Without one
      * every request — including the health check the entry screen relies on —
      * died with a stack trace, so the site reported itself as offline when the
      * truth was narrower: the static app and everything on-device is fine,
@@ -42,20 +54,21 @@ export default async (request: Request, context: unknown) => {
      * are configured by environment, not by the database, so a missing
      * database must not make them look missing too.
      */
+    // P1-T13 — cold start with no usable database: the same anonymous-safe
+    // capability shape as the warm /api/health, and the same generic 503 as
+    // the Vercel function. No raw exception text, no database configuration
+    // or error detail, no provider payloads — operator detail lives on
+    // GET /api/admin/diagnostics, behind admin auth.
+    //
     // A database that is configured but unreachable is a different failure
-    // from one that was never configured; the health answer says which, with
-    // the reason and any connection string in it redacted.
-    const configured = Boolean(process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL);
-    const reason = (err instanceof Error ? `${err.name}: ${err.message}` : String(err))
-      .replace(/postgres(ql)?:\/\/\S+/g, '<url>')
-      .slice(0, 200);
+    // from one that was never configured; the 503 below says which, without
+    // the reason and without any connection string in it.
+    const configured = dataApiConfigured();
     const url = new URL(request.url);
     if (url.pathname === '/api/health') {
       return Response.json({
         ok: false,
         database: false,
-        databaseConfigured: configured,
-        databaseError: reason,
         modelAvailable: modelAvailable(),
         model: null,
         imageStorage: blobStorageAvailable(),
@@ -73,7 +86,20 @@ export default async (request: Request, context: unknown) => {
       { status: 503 },
     );
   }
-  return handler(request, context) as Promise<Response>;
+  /*
+   * Trusted client address for the abuse limiter.
+   *
+   * Netlify's CDN sets `x-nf-client-connection-ip` to the client address,
+   * overwriting anything the caller sent under that name, and the bridge in
+   * server/lib/web-lambda.ts carries it into the Express request as `req.ip`
+   * — so trusting that header means trusting Netlify, not the caller.
+   * `X-Forwarded-For` is never a trusted source. When the CDN header is
+   * absent (local `netlify dev`, direct invoke) any caller-supplied
+   * `X-Forwarded-For` is stripped here, before the bridge, so a forged value
+   * can never select a limiter bucket downstream; those requests fall back
+   * to the direct peer.
+   */
+  return handler(sanitizeForwardingHeaders(request), context) as Promise<Response>;
 };
 
 export const config = {

@@ -1,8 +1,4 @@
-import * as users from '../db/users.ts';
-import * as scans from '../db/scans.ts';
-import * as bodyScans from '../db/body-scans.ts';
-import * as progressPhotos from '../db/progress-photos.ts';
-import { shredBlob } from '../lib/crypto.ts';
+import { database, result } from '../lib/data-api.ts';
 import { log } from '../lib/log.ts';
 
 export interface DeleteAccountResult {
@@ -11,49 +7,22 @@ export interface DeleteAccountResult {
   blobsFailed: number;
 }
 
+/** Tests substitute the same atomic operation, never a second deletion algorithm. */
 export interface DeleteAccountDependencies {
-  skinBlobRefs: (userId: string) => Promise<string[]>;
-  bodyBlobRefs: (userId: string) => Promise<string[]>;
-  progressPhotoRefs: (userId: string) => Promise<string[]>;
-  shred: (ref: string) => Promise<void>;
-  deleteUser: (userId: string) => Promise<void>;
+  erase: (userId: string) => Promise<DeleteAccountResult>;
 }
 
 const defaults: DeleteAccountDependencies = {
-  skinBlobRefs: scans.allBlobRefs,
-  bodyBlobRefs: bodyScans.allBodyBlobRefs,
-  progressPhotoRefs: progressPhotos.allProgressPhotoRefs,
-  shred: shredBlob,
-  deleteUser: users.deleteUser,
+  erase: (userId) => result<DeleteAccountResult>(database().rpc('evia_delete_account', { p_user_id: userId })),
 };
 
-/** Shreds every discoverable blob, then relies on the user FK cascades. */
 export async function deleteAccount(
   userId: string,
   dependencies: DeleteAccountDependencies = defaults,
 ): Promise<DeleteAccountResult> {
-  const refs = [
-    ...(await dependencies.skinBlobRefs(userId)),
-    ...(await dependencies.bodyBlobRefs(userId)),
-    ...(await dependencies.progressPhotoRefs(userId)),
-  ];
-  let blobsShredded = 0;
-  let blobsFailed = 0;
-  for (const ref of refs) {
-    try {
-      await dependencies.shred(ref);
-      blobsShredded += 1;
-    } catch (err) {
-      blobsFailed += 1;
-      log.error('privacy', 'blob shred failed', { error: (err as Error).message });
-    }
-  }
-  // Preserve the existing privacy behavior: a failed/orphaned encrypted blob
-  // must not prevent account rows and sessions from being cascade-deleted.
-  await dependencies.deleteUser(userId);
-  log.info('privacy', 'account and all relational data deleted', {
-    blobsShredded,
-    blobsFailed,
+  const erased = await dependencies.erase(userId);
+  log.info('privacy', 'account and all relational data deleted atomically', {
+    blobsShredded: erased.blobsShredded, blobsFailed: erased.blobsFailed,
   });
-  return { ok: true, blobsShredded, blobsFailed };
+  return erased;
 }

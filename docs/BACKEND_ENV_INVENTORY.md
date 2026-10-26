@@ -50,6 +50,15 @@ Do not duplicate or override these in the dashboard:
 
 No Stripe key, certified-age-provider key, Supabase key, JWT secret or separate session secret is required by the current implementation. Sessions are random tokens backed by Postgres. PaymentService remains disabled even if Stripe variables are present. Missing features cannot be activated just by inventing env variables.
 
+## Supabase (planned, Phase 2+ — not current configuration)
+
+P2-T01 records the environment and recovery contract in `docs/SUPABASE_ROLLOUT.md`:
+placeholder-only `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` /
+`SUPABASE_DB_DIRECT_URL` (commented, in `.env.example`), full public-vs-server-only
+classification, and the cutover blocker register (project/region, SMTP, redirect
+allowlists, pooler mode, bucket quota, RPO/RTO, blob-key custody, staging). Setting any
+`SUPABASE_*` value before its blocker is closed does not enable managed features.
+
 ## Development, build and platform variables
 
 These are not credentials to collect for the hosted backend:
